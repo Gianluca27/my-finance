@@ -1,0 +1,19 @@
+{
+  "name": "my-finance",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Gestión financiera personal (PFM) — web + móvil",
+  "workspaces": [
+    "packages/*",
+    "apps/api",
+    "apps/web"
+  ],
+  "scripts": {
+    "build": "npm run build -w @myfinance/shared && npm run build -w @myfinance/api && npm run build -w @myfinance/web",
+    "dev:api": "npm run dev -w @myfinance/api",
+    "dev:web": "npm run dev -w @myfinance/web",
+    "typecheck": "npm run typecheck -w @myfinance/shared && npm run typecheck -w @myfinance/api && npm run typecheck -w @myfinance/web",
+    "db:migrate": "npm run db:migrate -w @myfinance/api",
+    "db:seed": "npm run db:seed -w @myfinance/api"
+  }
+}

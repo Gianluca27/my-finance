@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "MyFinance",
+    "slug": "myfinance",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "myfinance",
+    "userInterfaceStyle": "automatic",
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "app.myfinance.mobile"
+    },
+    "android": {
+      "package": "app.myfinance.mobile"
+    },
+    "plugins": ["expo-notifications"],
+    "extra": {
+      "apiUrl": "http://10.0.2.2:4000"
+    }
+  }
+}

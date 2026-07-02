@@ -29,7 +29,9 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   return (
     <div className="auth-wrap">
       <form className="card auth-card" onSubmit={onSubmit}>
-        <h1>💰 MyFinance</h1>
+        <h1>
+          MyFinance<span className="brand-dot">.</span>
+        </h1>
         <p className="muted">
           {mode === 'login' ? 'Iniciá sesión para continuar' : 'Creá tu cuenta gratis'}
         </p>

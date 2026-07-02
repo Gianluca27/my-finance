@@ -133,19 +133,19 @@ export function BudgetsPage() {
                   />
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                  <span className="muted">
-                    {formatMoney(budget.spent)} de {formatMoney(budget.amount)}
+                  <span className="muted mono">
+                    {formatMoney(budget.spent)} / {formatMoney(budget.amount)}
                   </span>
                   <span className="legend-value">{budget.percentUsed}%</span>
                 </div>
                 {over && (
-                  <p className="status-note" style={{ color: 'var(--critical)', margin: '8px 0 0' }}>
-                    ⛔ Presupuesto superado
+                  <p className="status-note over" style={{ margin: '8px 0 0' }}>
+                    Presupuesto superado
                   </p>
                 )}
                 {near && (
-                  <p className="status-note" style={{ color: 'var(--warning)', margin: '8px 0 0' }}>
-                    ⚠️ Cerca del límite (umbral {budget.alertThreshold}%)
+                  <p className="status-note near" style={{ margin: '8px 0 0' }}>
+                    Cerca del límite (umbral {budget.alertThreshold}%)
                   </p>
                 )}
               </div>

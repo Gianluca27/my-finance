@@ -5,7 +5,6 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
-  Legend,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -21,16 +20,25 @@ function useThemeTokens() {
     const style = getComputedStyle(document.documentElement);
     const token = (name: string) => style.getPropertyValue(name).trim();
     return {
-      income: token('--income'),
-      expense: token('--expense'),
-      gridline: token('--gridline'),
-      muted: token('--text-muted'),
-      surface: token('--surface-1'),
+      ink: token('--ink'),
+      debit: token('--debit'),
+      rule: token('--rule'),
+      muted: token('--ink-mut'),
+      sheet: token('--sheet'),
     };
   }, []);
 }
 
 function monthLabel(month: string): string {
+  const [y, m] = month.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('es-AR', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+function shortMonthLabel(month: string): string {
   const [y, m] = month.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('es-AR', {
     month: 'short',
@@ -49,50 +57,60 @@ export function DashboardPage() {
   }, []);
 
   if (error) return <div className="error-banner">{error}</div>;
-  if (!data) return <p className="muted">Cargando dashboard…</p>;
+  if (!data) return <p className="muted">Cargando resumen…</p>;
 
   const comparison = data.monthlyComparison.map((m) => ({
     ...m,
-    label: monthLabel(m.month),
+    label: shortMonthLabel(m.month),
   }));
   const totalExpenses = data.expensesByCategory.reduce((sum, c) => sum + c.total, 0);
+  const monthResult = data.monthIncome - data.monthExpense;
+
+  const tooltipStyle = {
+    background: tokens.sheet,
+    border: `1px solid ${tokens.rule}`,
+    borderRadius: 4,
+    fontSize: 13,
+    fontFamily: "'IBM Plex Mono', monospace",
+  };
 
   return (
     <>
-      <h1 className="page-title">Dashboard</h1>
-      <p className="page-subtitle">Resumen de {monthLabel(data.month)}</p>
-
-      <div className="grid kpi-row" style={{ marginBottom: 16 }}>
-        <div className="card stat-tile">
-          <div className="stat-label">Balance actual</div>
-          <div className={`stat-value ${data.balance >= 0 ? 'positive' : 'negative'}`}>
-            {formatMoney(data.balance)}
+      <header className="ledger-hero">
+        <p className="eyebrow">Estado de cuenta · {monthLabel(data.month)}</p>
+        <p className={`hero-balance ${data.balance < 0 ? 'negative' : ''}`}>
+          {formatMoney(data.balance)}
+        </p>
+        <p className="hero-sub">Saldo total acumulado</p>
+        <dl className="ledger-lines">
+          <div className="ledger-line">
+            <dt>Ingresos del mes</dt>
+            <span className="leader" aria-hidden="true" />
+            <dd>+{formatMoney(data.monthIncome)}</dd>
           </div>
-          <div className="stat-delta">acumulado histórico</div>
-        </div>
-        <div className="card stat-tile">
-          <div className="stat-label">Ingresos del mes</div>
-          <div className="stat-value">{formatMoney(data.monthIncome)}</div>
-        </div>
-        <div className="card stat-tile">
-          <div className="stat-label">Gastos del mes</div>
-          <div className="stat-value">{formatMoney(data.monthExpense)}</div>
-        </div>
-        <div className="card stat-tile">
-          <div className="stat-label">Resultado del mes</div>
-          <div
-            className={`stat-value ${data.monthIncome - data.monthExpense >= 0 ? 'positive' : 'negative'}`}
-          >
-            {formatMoney(data.monthIncome - data.monthExpense)}
+          <div className="ledger-line">
+            <dt>Gastos del mes</dt>
+            <span className="leader" aria-hidden="true" />
+            <dd className="debit">−{formatMoney(data.monthExpense)}</dd>
           </div>
-        </div>
-      </div>
+          <div className="ledger-line">
+            <dt>Resultado del mes</dt>
+            <span className="leader" aria-hidden="true" />
+            <dd className={monthResult < 0 ? 'debit' : ''}>
+              {monthResult < 0 ? '−' : ''}
+              {formatMoney(Math.abs(monthResult))}
+            </dd>
+          </div>
+        </dl>
+      </header>
 
       <div className="grid two-col" style={{ marginBottom: 16 }}>
         <div className="card">
           <h3>Gastos por categoría</h3>
           {data.expensesByCategory.length === 0 ? (
-            <p className="muted">Sin gastos este mes.</p>
+            <p className="muted">
+              Todavía no hay gastos este mes. Registrá el primero desde Movimientos.
+            </p>
           ) : (
             <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
               <ResponsiveContainer width={200} height={200}>
@@ -104,14 +122,17 @@ export function DashboardPage() {
                     innerRadius={55}
                     outerRadius={90}
                     paddingAngle={2}
-                    stroke={tokens.surface}
+                    stroke={tokens.sheet}
                     strokeWidth={2}
                   >
                     {data.expensesByCategory.map((entry) => (
                       <Cell key={entry.categoryId ?? 'none'} fill={entry.color} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(value: number) => formatMoney(value)} />
+                  <Tooltip
+                    formatter={(value: number) => formatMoney(value)}
+                    contentStyle={tooltipStyle}
+                  />
                 </PieChart>
               </ResponsiveContainer>
               <div className="chart-legend" style={{ flex: 1, minWidth: 180 }}>
@@ -136,10 +157,22 @@ export function DashboardPage() {
         </div>
 
         <div className="card">
-          <h3>Comparativa mes a mes</h3>
+          <div className="card-head">
+            <h3>Mes a mes</h3>
+            <div className="chip-legend">
+              <span className="chip">
+                <span className="chip-swatch" style={{ background: tokens.ink }} />
+                Ingresos
+              </span>
+              <span className="chip">
+                <span className="chip-swatch" style={{ background: tokens.debit }} />
+                Gastos
+              </span>
+            </div>
+          </div>
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={comparison} barGap={2}>
-              <CartesianGrid vertical={false} stroke={tokens.gridline} />
+              <CartesianGrid vertical={false} stroke={tokens.rule} />
               <XAxis
                 dataKey="label"
                 tick={{ fill: tokens.muted, fontSize: 12 }}
@@ -159,12 +192,11 @@ export function DashboardPage() {
                   name === 'income' ? 'Ingresos' : 'Gastos',
                 ]}
                 labelFormatter={(label) => `Mes: ${label}`}
+                contentStyle={tooltipStyle}
+                cursor={{ fill: tokens.rule, fillOpacity: 0.35 }}
               />
-              <Legend
-                formatter={(value: string) => (value === 'income' ? 'Ingresos' : 'Gastos')}
-              />
-              <Bar dataKey="income" fill={tokens.income} radius={[4, 4, 0, 0]} maxBarSize={28} />
-              <Bar dataKey="expense" fill={tokens.expense} radius={[4, 4, 0, 0]} maxBarSize={28} />
+              <Bar dataKey="income" fill={tokens.ink} radius={[2, 2, 0, 0]} maxBarSize={28} />
+              <Bar dataKey="expense" fill={tokens.debit} radius={[2, 2, 0, 0]} maxBarSize={28} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -173,7 +205,7 @@ export function DashboardPage() {
       <div className="card">
         <h3>Próximos pagos (14 días)</h3>
         {data.upcomingPayments.length === 0 ? (
-          <p className="muted">No hay pagos próximos. 🎉</p>
+          <p className="muted">No hay vencimientos en los próximos 14 días.</p>
         ) : (
           <table>
             <thead>
@@ -197,8 +229,8 @@ export function DashboardPage() {
                       {item.category?.name ?? 'Sin categoría'}
                     </span>
                   </td>
-                  <td>{formatDate(item.nextDueDate)}</td>
-                  <td className="num">{formatMoney(item.amount)}</td>
+                  <td className="mono">{formatDate(item.nextDueDate)}</td>
+                  <td className="num amount-expense">{formatMoney(item.amount)}</td>
                 </tr>
               ))}
             </tbody>

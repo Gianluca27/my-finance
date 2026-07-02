@@ -101,7 +101,7 @@ export function RecurringPage() {
 
   return (
     <>
-      <h1 className="page-title">Gastos fijos recurrentes</h1>
+      <h1 className="page-title">Gastos fijos</h1>
       <p className="page-subtitle">
         Suscripciones, alquiler, expensas… con recordatorios antes del vencimiento
       </p>
@@ -237,7 +237,7 @@ export function RecurringPage() {
                   <td>
                     {FREQUENCY_LABEL[item.frequency]} {dueLabel(item)}
                   </td>
-                  <td>{formatDate(item.nextDueDate)}</td>
+                  <td className="mono">{formatDate(item.nextDueDate)}</td>
                   <td className="num amount-expense">{formatMoney(item.amount)}</td>
                   <td>
                     <div className="row-actions">

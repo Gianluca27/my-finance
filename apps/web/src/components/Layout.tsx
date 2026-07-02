@@ -3,12 +3,12 @@ import { NavLink } from 'react-router-dom';
 import { useAuth } from '../auth';
 
 const NAV_ITEMS = [
-  { to: '/', label: 'Dashboard', icon: '📊' },
-  { to: '/transacciones', label: 'Transacciones', icon: '💸' },
-  { to: '/recurrentes', label: 'Gastos fijos', icon: '🔁' },
-  { to: '/presupuestos', label: 'Presupuestos', icon: '🎯' },
-  { to: '/categorias', label: 'Categorías', icon: '🏷️' },
-  { to: '/reportes', label: 'Reportes', icon: '📄' },
+  { to: '/', label: 'Resumen' },
+  { to: '/transacciones', label: 'Movimientos' },
+  { to: '/recurrentes', label: 'Gastos fijos' },
+  { to: '/presupuestos', label: 'Presupuestos' },
+  { to: '/categorias', label: 'Categorías' },
+  { to: '/reportes', label: 'Reportes' },
 ];
 
 export function Layout({ children }: { children: ReactNode }) {
@@ -16,28 +16,31 @@ export function Layout({ children }: { children: ReactNode }) {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">💰 MyFinance</div>
-        <nav>
-          {NAV_ITEMS.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === '/'}
-              className={({ isActive }) => (isActive ? 'active' : '')}
-            >
-              {item.icon} <span className="label">{item.label}</span>
-            </NavLink>
-          ))}
-        </nav>
-        <div className="spacer" />
-        <div className="muted" style={{ padding: '0 12px 8px' }}>
-          {user?.name}
+      <header className="masthead">
+        <div className="masthead-inner">
+          <NavLink to="/" className="brand">
+            MyFinance<span className="brand-dot">.</span>
+          </NavLink>
+          <nav className="tabs">
+            {NAV_ITEMS.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.to === '/'}
+                className={({ isActive }) => (isActive ? 'active' : '')}
+              >
+                {item.label}
+              </NavLink>
+            ))}
+          </nav>
+          <div className="masthead-user">
+            <span className="user-name">{user?.name}</span>
+            <button className="ghost" onClick={logout}>
+              Salir
+            </button>
+          </div>
         </div>
-        <button className="secondary" onClick={logout}>
-          Salir
-        </button>
-      </aside>
+      </header>
       <main className="main">{children}</main>
     </div>
   );

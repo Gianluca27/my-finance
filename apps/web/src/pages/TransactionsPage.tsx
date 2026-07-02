@@ -69,7 +69,7 @@ export function TransactionsPage() {
   }
 
   async function onDelete(id: string) {
-    if (!confirm('¿Eliminar esta transacción?')) return;
+    if (!confirm('¿Eliminar este movimiento?')) return;
     try {
       await api.deleteTransaction(id);
       load();
@@ -82,12 +82,12 @@ export function TransactionsPage() {
 
   return (
     <>
-      <h1 className="page-title">Transacciones</h1>
+      <h1 className="page-title">Movimientos</h1>
       <p className="page-subtitle">Registrá tus ingresos y gastos</p>
       {error && <div className="error-banner">{error}</div>}
 
       <form className="card" onSubmit={onSubmit} style={{ marginBottom: 16 }}>
-        <h3>Nueva transacción</h3>
+        <h3>Nuevo movimiento</h3>
         <div className="form-row">
           <label className="field">
             Tipo
@@ -133,7 +133,7 @@ export function TransactionsPage() {
             Nota
             <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} />
           </label>
-          <button disabled={busy}>{busy ? 'Guardando…' : 'Agregar'}</button>
+          <button disabled={busy}>{busy ? 'Guardando…' : 'Agregar movimiento'}</button>
         </div>
       </form>
 
@@ -187,7 +187,7 @@ export function TransactionsPage() {
         {!data ? (
           <p className="muted">Cargando…</p>
         ) : data.items.length === 0 ? (
-          <p className="muted">No hay transacciones con esos filtros.</p>
+          <p className="muted">No hay movimientos con esos filtros. Probá ampliar las fechas.</p>
         ) : (
           <table>
             <thead>
@@ -202,7 +202,7 @@ export function TransactionsPage() {
             <tbody>
               {data.items.map((tx) => (
                 <tr key={tx.id}>
-                  <td>{formatDate(tx.date)}</td>
+                  <td className="mono">{formatDate(tx.date)}</td>
                   <td>
                     <span className="cat-chip">
                       <span

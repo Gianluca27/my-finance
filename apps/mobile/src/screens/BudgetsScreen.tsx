@@ -1,11 +1,14 @@
 import type { BudgetStatus } from '@myfinance/shared';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { api } from '../api';
-import { colors, formatMoney, spacing } from '../theme';
+import { formatMoney, spacing, type ThemeColors } from '../theme';
+import { useTheme } from '../ThemeContext';
 
 export function BudgetsScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [budgets, setBudgets] = useState<BudgetStatus[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,25 +76,27 @@ export function BudgetsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: { flex: 1, backgroundColor: colors.page },
-  muted: { color: colors.textMuted, textAlign: 'center', marginTop: spacing.lg },
-  error: { color: colors.critical, padding: spacing.sm, textAlign: 'center' },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-    gap: 6,
-  },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  title: { color: colors.textPrimary, fontWeight: '600', fontSize: 15 },
-  percent: { color: colors.textPrimary, fontWeight: '700' },
-  sub: { color: colors.textMuted, fontSize: 12 },
-  status: { fontWeight: '600', fontSize: 13 },
-  dot: { width: 10, height: 10, borderRadius: 5 },
-  meter: { height: 8, borderRadius: 4, backgroundColor: colors.gridline, overflow: 'hidden' },
-  meterFill: { height: '100%', borderRadius: 4, backgroundColor: colors.accent },
-});
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    wrap: { flex: 1, backgroundColor: colors.page },
+    muted: { color: colors.textMuted, textAlign: 'center', marginTop: spacing.lg },
+    error: { color: colors.critical, padding: spacing.sm, textAlign: 'center' },
+    card: {
+      backgroundColor: colors.surface,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: spacing.md,
+      marginBottom: spacing.sm,
+      gap: 6,
+    },
+    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    title: { color: colors.textPrimary, fontWeight: '600', fontSize: 15 },
+    percent: { color: colors.textPrimary, fontWeight: '700' },
+    sub: { color: colors.textMuted, fontSize: 12 },
+    status: { fontWeight: '600', fontSize: 13 },
+    dot: { width: 10, height: 10, borderRadius: 5 },
+    meter: { height: 8, borderRadius: 4, backgroundColor: colors.gridline, overflow: 'hidden' },
+    meterFill: { height: '100%', borderRadius: 4, backgroundColor: colors.accent },
+  });
+}

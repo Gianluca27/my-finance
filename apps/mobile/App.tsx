@@ -1,4 +1,4 @@
-import { NavigationContainer } from '@react-navigation/native';
+import { DarkTheme, DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect } from 'react';
@@ -10,7 +10,7 @@ import { DashboardScreen } from './src/screens/DashboardScreen';
 import { LoginScreen } from './src/screens/LoginScreen';
 import { RecurringScreen } from './src/screens/RecurringScreen';
 import { TransactionsScreen } from './src/screens/TransactionsScreen';
-import { colors } from './src/theme';
+import { ThemeProvider, useTheme, type ThemePreference } from './src/ThemeContext';
 
 const Tab = createBottomTabNavigator();
 
@@ -21,8 +21,15 @@ const TAB_ICONS: Record<string, string> = {
   Presupuestos: '🎯',
 };
 
+const PREFERENCE_ICON: Record<ThemePreference, string> = {
+  system: '🖥️',
+  light: '☀️',
+  dark: '🌙',
+};
+
 function LogoutButton() {
   const { logout } = useAuth();
+  const { colors } = useTheme();
   return (
     <TouchableOpacity onPress={logout} style={{ paddingHorizontal: 16 }}>
       <Text style={{ color: colors.accent, fontWeight: '600' }}>Salir</Text>
@@ -30,8 +37,18 @@ function LogoutButton() {
   );
 }
 
+function ThemeToggleButton() {
+  const { preference, cyclePreference } = useTheme();
+  return (
+    <TouchableOpacity onPress={cyclePreference} style={{ paddingHorizontal: 8 }}>
+      <Text style={{ fontSize: 18 }}>{PREFERENCE_ICON[preference]}</Text>
+    </TouchableOpacity>
+  );
+}
+
 function Root() {
   const { user, loading } = useAuth();
+  const { colors, scheme } = useTheme();
 
   useEffect(() => {
     if (user) registerForPushNotifications();
@@ -47,11 +64,32 @@ function Root() {
 
   if (!user) return <LoginScreen />;
 
+  const navTheme = {
+    ...(scheme === 'dark' ? DarkTheme : DefaultTheme),
+    colors: {
+      ...(scheme === 'dark' ? DarkTheme.colors : DefaultTheme.colors),
+      background: colors.page,
+      card: colors.surface,
+      text: colors.textPrimary,
+      border: colors.border,
+      primary: colors.accent,
+      notification: colors.critical,
+    },
+  };
+
   return (
-    <NavigationContainer>
+    <NavigationContainer theme={navTheme}>
       <Tab.Navigator
         screenOptions={({ route }) => ({
-          headerRight: () => <LogoutButton />,
+          headerRight: () => (
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <ThemeToggleButton />
+              <LogoutButton />
+            </View>
+          ),
+          headerStyle: { backgroundColor: colors.surface },
+          headerTintColor: colors.textPrimary,
+          tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border },
           tabBarActiveTintColor: colors.accent,
           tabBarInactiveTintColor: colors.textMuted,
           tabBarIcon: () => <Text>{TAB_ICONS[route.name] ?? '•'}</Text>,
@@ -66,11 +104,22 @@ function Root() {
   );
 }
 
+function ThemedRoot() {
+  const { scheme } = useTheme();
+  return (
+    <>
+      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+      <Root />
+    </>
+  );
+}
+
 export default function App() {
   return (
-    <AuthProvider>
-      <StatusBar style="auto" />
-      <Root />
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <ThemedRoot />
+      </AuthProvider>
+    </ThemeProvider>
   );
 }

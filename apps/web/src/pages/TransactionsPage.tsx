@@ -21,6 +21,15 @@ export function TransactionsPage() {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
 
+  // Edición inline
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editType, setEditType] = useState<TransactionType>('EXPENSE');
+  const [editAmount, setEditAmount] = useState('');
+  const [editDate, setEditDate] = useState('');
+  const [editCategoryId, setEditCategoryId] = useState('');
+  const [editNote, setEditNote] = useState('');
+  const [editBusy, setEditBusy] = useState(false);
+
   const listKey = `transactions:${JSON.stringify([page, filterType, filterCategory, filterFrom, filterTo])}`;
   const { data, error: loadError, refresh } = useCached<Paginated<Transaction>>(listKey, () =>
     api.listTransactions({
@@ -76,6 +85,42 @@ export function TransactionsPage() {
       setError(err instanceof Error ? err.message : 'Error inesperado');
     }
   }
+
+  function onStartEdit(tx: Transaction) {
+    setEditingId(tx.id);
+    setEditType(tx.type);
+    setEditAmount(String(tx.amount));
+    setEditDate(tx.date.slice(0, 10));
+    setEditCategoryId(tx.categoryId ?? '');
+    setEditNote(tx.note ?? '');
+    setError(null);
+  }
+
+  function onCancelEdit() {
+    setEditingId(null);
+  }
+
+  async function onSaveEdit(id: string) {
+    setError(null);
+    setEditBusy(true);
+    try {
+      await api.updateTransaction(id, {
+        type: editType,
+        amount: Number(editAmount),
+        date: editDate,
+        note: editNote || null,
+        categoryId: editCategoryId || null,
+      });
+      setEditingId(null);
+      invalidateAfterMutation();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error inesperado');
+    } finally {
+      setEditBusy(false);
+    }
+  }
+
+  const editCategories = categories.filter((c) => c.type === editType);
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
 
@@ -199,30 +244,102 @@ export function TransactionsPage() {
               </tr>
             </thead>
             <tbody>
-              {data.items.map((tx) => (
-                <tr key={tx.id}>
-                  <td className="mono">{formatDate(tx.date)}</td>
-                  <td>
-                    <span className="cat-chip">
-                      <span
-                        className="cat-dot"
-                        style={{ background: tx.category?.color ?? '#9ca3af' }}
+              {data.items.map((tx) =>
+                editingId === tx.id ? (
+                  <tr key={tx.id}>
+                    <td>
+                      <input
+                        type="date"
+                        value={editDate}
+                        onChange={(e) => setEditDate(e.target.value)}
                       />
-                      {tx.category?.name ?? 'Sin categoría'}
-                    </span>
-                  </td>
-                  <td className="muted">{tx.note}</td>
-                  <td className={`num ${tx.type === 'INCOME' ? 'amount-income' : 'amount-expense'}`}>
-                    {tx.type === 'INCOME' ? '+' : '−'}
-                    {formatMoney(tx.amount)}
-                  </td>
-                  <td className="num">
-                    <button className="danger" onClick={() => onDelete(tx.id)}>
-                      Eliminar
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td>
+                      <select
+                        value={editCategoryId}
+                        onChange={(e) => setEditCategoryId(e.target.value)}
+                      >
+                        <option value="">Sin categoría</option>
+                        {editCategories.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.icon ? `${c.icon} ` : ''}
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <input
+                        value={editNote}
+                        onChange={(e) => setEditNote(e.target.value)}
+                        maxLength={500}
+                      />
+                    </td>
+                    <td className="num">
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        <select
+                          value={editType}
+                          onChange={(e) => {
+                            const t = e.target.value as TransactionType;
+                            setEditType(t);
+                            setEditCategoryId('');
+                          }}
+                        >
+                          <option value="EXPENSE">Gasto</option>
+                          <option value="INCOME">Ingreso</option>
+                        </select>
+                        <input
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          value={editAmount}
+                          onChange={(e) => setEditAmount(e.target.value)}
+                          style={{ width: 90 }}
+                          required
+                        />
+                      </div>
+                    </td>
+                    <td className="num">
+                      <div className="row-actions">
+                        <button disabled={editBusy} onClick={() => onSaveEdit(tx.id)}>
+                          {editBusy ? 'Guardando…' : 'Guardar'}
+                        </button>
+                        <button className="secondary" disabled={editBusy} onClick={onCancelEdit}>
+                          Cancelar
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  <tr key={tx.id}>
+                    <td className="mono">{formatDate(tx.date)}</td>
+                    <td>
+                      <span className="cat-chip">
+                        <span
+                          className="cat-dot"
+                          style={{ background: tx.category?.color ?? '#9ca3af' }}
+                        />
+                        {tx.category?.name ?? 'Sin categoría'}
+                      </span>
+                    </td>
+                    <td className="muted">{tx.note}</td>
+                    <td className={`num ${tx.type === 'INCOME' ? 'amount-income' : 'amount-expense'}`}>
+                      {tx.type === 'INCOME' ? '+' : '−'}
+                      {formatMoney(tx.amount)}
+                    </td>
+                    <td className="num">
+                      <div className="row-actions">
+                        <button className="ghost" onClick={() => onStartEdit(tx)}>
+                          Editar
+                        </button>
+                        <button className="danger" onClick={() => onDelete(tx.id)}>
+                          Eliminar
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ),
+              )}
             </tbody>
           </table>
         )}

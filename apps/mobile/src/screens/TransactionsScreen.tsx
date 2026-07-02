@@ -1,5 +1,5 @@
 import type { Category, Transaction, TransactionType } from '@myfinance/shared';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -13,9 +13,12 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { api } from '../api';
-import { colors, formatDate, formatMoney, spacing } from '../theme';
+import { formatDate, formatMoney, spacing, type ThemeColors } from '../theme';
+import { useTheme } from '../ThemeContext';
 
 export function TransactionsScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [items, setItems] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -96,7 +99,7 @@ export function TransactionsScreen() {
           <TouchableOpacity style={styles.row} onLongPress={() => onDelete(tx)}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
               <View
-                style={[styles.dot, { backgroundColor: tx.category?.color ?? '#9ca3af' }]}
+                style={[styles.dot, { backgroundColor: tx.category?.color ?? colors.neutralDot }]}
               />
               <View style={{ flex: 1 }}>
                 <Text style={styles.rowTitle}>{tx.category?.name ?? 'Sin categoría'}</Text>
@@ -192,83 +195,85 @@ export function TransactionsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: { flex: 1, backgroundColor: colors.page },
-  muted: { color: colors.textMuted, textAlign: 'center', marginTop: spacing.lg },
-  error: { color: colors.critical, padding: spacing.sm, textAlign: 'center' },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.surface,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.md - 2,
-    marginBottom: spacing.sm,
-  },
-  rowTitle: { color: colors.textPrimary, fontWeight: '600', fontSize: 14 },
-  rowSub: { color: colors.textMuted, fontSize: 12 },
-  rowAmount: { fontWeight: '700', fontSize: 14 },
-  dot: { width: 10, height: 10, borderRadius: 5 },
-  fab: {
-    position: 'absolute',
-    right: 20,
-    bottom: 24,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 4,
-  },
-  fabText: { color: '#fff', fontSize: 26, lineHeight: 30 },
-  modalWrap: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
-  modalCard: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    padding: spacing.lg,
-    gap: spacing.sm + 2,
-  },
-  modalTitle: { fontSize: 17, fontWeight: '700', color: colors.textPrimary },
-  segment: {
-    flexDirection: 'row',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.gridline,
-    overflow: 'hidden',
-  },
-  segmentItem: { flex: 1, padding: 10, alignItems: 'center' },
-  segmentActive: { backgroundColor: colors.accent },
-  segmentText: { color: colors.textSecondary, fontWeight: '600' },
-  segmentTextActive: { color: '#fff' },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.gridline,
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 15,
-    color: colors.textPrimary,
-  },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderWidth: 1,
-    borderColor: colors.gridline,
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  chipActive: { borderColor: colors.accent, backgroundColor: 'rgba(42,120,214,0.10)' },
-  chipText: { color: colors.textSecondary, fontSize: 13 },
-  button: {
-    backgroundColor: colors.accent,
-    borderRadius: 8,
-    padding: 13,
-    alignItems: 'center',
-  },
-  buttonText: { color: '#fff', fontWeight: '600', fontSize: 15 },
-});
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    wrap: { flex: 1, backgroundColor: colors.page },
+    muted: { color: colors.textMuted, textAlign: 'center', marginTop: spacing.lg },
+    error: { color: colors.critical, padding: spacing.sm, textAlign: 'center' },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      backgroundColor: colors.surface,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: spacing.md - 2,
+      marginBottom: spacing.sm,
+    },
+    rowTitle: { color: colors.textPrimary, fontWeight: '600', fontSize: 14 },
+    rowSub: { color: colors.textMuted, fontSize: 12 },
+    rowAmount: { fontWeight: '700', fontSize: 14 },
+    dot: { width: 10, height: 10, borderRadius: 5 },
+    fab: {
+      position: 'absolute',
+      right: 20,
+      bottom: 24,
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: colors.accent,
+      alignItems: 'center',
+      justifyContent: 'center',
+      elevation: 4,
+    },
+    fabText: { color: colors.onAccent, fontSize: 26, lineHeight: 30 },
+    modalWrap: { flex: 1, justifyContent: 'flex-end', backgroundColor: colors.overlay },
+    modalCard: {
+      backgroundColor: colors.surface,
+      borderTopLeftRadius: 16,
+      borderTopRightRadius: 16,
+      padding: spacing.lg,
+      gap: spacing.sm + 2,
+    },
+    modalTitle: { fontSize: 17, fontWeight: '700', color: colors.textPrimary },
+    segment: {
+      flexDirection: 'row',
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.gridline,
+      overflow: 'hidden',
+    },
+    segmentItem: { flex: 1, padding: 10, alignItems: 'center' },
+    segmentActive: { backgroundColor: colors.accent },
+    segmentText: { color: colors.textSecondary, fontWeight: '600' },
+    segmentTextActive: { color: colors.onAccent },
+    input: {
+      borderWidth: 1,
+      borderColor: colors.gridline,
+      borderRadius: 8,
+      padding: 12,
+      fontSize: 15,
+      color: colors.textPrimary,
+    },
+    chip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      borderWidth: 1,
+      borderColor: colors.gridline,
+      borderRadius: 16,
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+    },
+    chipActive: { borderColor: colors.accent, backgroundColor: colors.chipActiveBg },
+    chipText: { color: colors.textSecondary, fontSize: 13 },
+    button: {
+      backgroundColor: colors.accent,
+      borderRadius: 8,
+      padding: 13,
+      alignItems: 'center',
+    },
+    buttonText: { color: colors.onAccent, fontWeight: '600', fontSize: 15 },
+  });
+}

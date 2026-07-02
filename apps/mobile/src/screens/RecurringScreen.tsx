@@ -1,5 +1,5 @@
 import type { RecurringExpense } from '@myfinance/shared';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -10,11 +10,14 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { api } from '../api';
-import { colors, formatDate, formatMoney, spacing } from '../theme';
+import { formatDate, formatMoney, spacing, type ThemeColors } from '../theme';
+import { useTheme } from '../ThemeContext';
 
 const FREQUENCY_LABEL = { WEEKLY: 'Semanal', MONTHLY: 'Mensual', YEARLY: 'Anual' } as const;
 
 export function RecurringScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [items, setItems] = useState<RecurringExpense[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -76,30 +79,32 @@ export function RecurringScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: { flex: 1, backgroundColor: colors.page },
-  muted: { color: colors.textMuted, textAlign: 'center', marginTop: spacing.lg },
-  error: { color: colors.critical, padding: spacing.sm, textAlign: 'center' },
-  card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.surface,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  rowTitle: { color: colors.textPrimary, fontWeight: '600', fontSize: 15 },
-  rowSub: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
-  amount: { color: colors.textPrimary, fontWeight: '700', fontSize: 15, marginTop: 4 },
-  payButton: {
-    borderWidth: 1,
-    borderColor: colors.accent,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  payButtonText: { color: colors.accent, fontWeight: '600', fontSize: 13 },
-});
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    wrap: { flex: 1, backgroundColor: colors.page },
+    muted: { color: colors.textMuted, textAlign: 'center', marginTop: spacing.lg },
+    error: { color: colors.critical, padding: spacing.sm, textAlign: 'center' },
+    card: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      backgroundColor: colors.surface,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: spacing.md,
+      marginBottom: spacing.sm,
+    },
+    rowTitle: { color: colors.textPrimary, fontWeight: '600', fontSize: 15 },
+    rowSub: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
+    amount: { color: colors.textPrimary, fontWeight: '700', fontSize: 15, marginTop: 4 },
+    payButton: {
+      borderWidth: 1,
+      borderColor: colors.accent,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+    },
+    payButtonText: { color: colors.accent, fontWeight: '600', fontSize: 13 },
+  });
+}

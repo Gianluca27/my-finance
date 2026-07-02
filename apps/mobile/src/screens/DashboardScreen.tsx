@@ -1,11 +1,14 @@
 import type { DashboardData } from '@myfinance/shared';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { api } from '../api';
-import { colors, formatDate, formatMoney, spacing } from '../theme';
+import { formatDate, formatMoney, spacing, type ThemeColors } from '../theme';
+import { useTheme } from '../ThemeContext';
 
 export function DashboardScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -163,32 +166,34 @@ export function DashboardScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: { flex: 1, backgroundColor: colors.page },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.md,
-  },
-  cardTitle: { fontSize: 15, fontWeight: '600', color: colors.textPrimary, marginBottom: spacing.sm },
-  tileRow: { flexDirection: 'row', gap: spacing.md },
-  tile: { flex: 1 },
-  tileLabel: { fontSize: 13, color: colors.textMuted },
-  tileValue: { fontSize: 22, fontWeight: '700', color: colors.textPrimary, marginTop: 2 },
-  muted: { color: colors.textMuted },
-  error: { color: colors.critical },
-  legendRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 4,
-  },
-  legendName: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  legendText: { color: colors.textSecondary, fontSize: 13 },
-  legendValue: { color: colors.textPrimary, fontWeight: '600', fontSize: 13 },
-  dot: { width: 10, height: 10, borderRadius: 5 },
-  meter: { height: 6, borderRadius: 3, backgroundColor: colors.gridline, overflow: 'hidden' },
-  meterFill: { height: '100%', borderRadius: 3 },
-});
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    wrap: { flex: 1, backgroundColor: colors.page },
+    card: {
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: spacing.md,
+    },
+    cardTitle: { fontSize: 15, fontWeight: '600', color: colors.textPrimary, marginBottom: spacing.sm },
+    tileRow: { flexDirection: 'row', gap: spacing.md },
+    tile: { flex: 1 },
+    tileLabel: { fontSize: 13, color: colors.textMuted },
+    tileValue: { fontSize: 22, fontWeight: '700', color: colors.textPrimary, marginTop: 2 },
+    muted: { color: colors.textMuted },
+    error: { color: colors.critical },
+    legendRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingVertical: 4,
+    },
+    legendName: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    legendText: { color: colors.textSecondary, fontSize: 13 },
+    legendValue: { color: colors.textPrimary, fontWeight: '600', fontSize: 13 },
+    dot: { width: 10, height: 10, borderRadius: 5 },
+    meter: { height: 6, borderRadius: 3, backgroundColor: colors.gridline, overflow: 'hidden' },
+    meterFill: { height: '100%', borderRadius: 3 },
+  });
+}

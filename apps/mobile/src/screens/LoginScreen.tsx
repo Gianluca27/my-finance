@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -10,10 +10,15 @@ import {
   View,
 } from 'react-native';
 import { useAuth } from '../auth';
-import { colors, spacing } from '../theme';
+import { spacing, type ThemeColors } from '../theme';
+import { useTheme } from '../ThemeContext';
+
+const PREFERENCE_ICON = { system: '🖥️', light: '☀️', dark: '🌙' } as const;
 
 export function LoginScreen() {
   const { login, register } = useAuth();
+  const { colors, preference, cyclePreference } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -39,6 +44,9 @@ export function LoginScreen() {
       style={styles.wrap}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
+      <TouchableOpacity style={styles.themeToggle} onPress={cyclePreference}>
+        <Text style={{ fontSize: 18 }}>{PREFERENCE_ICON[preference]}</Text>
+      </TouchableOpacity>
       <View style={styles.card}>
         <Text style={styles.title}>💰 MyFinance</Text>
         <Text style={styles.subtitle}>
@@ -73,7 +81,7 @@ export function LoginScreen() {
         />
         <TouchableOpacity style={styles.button} onPress={onSubmit} disabled={busy}>
           {busy ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={colors.onAccent} />
           ) : (
             <Text style={styles.buttonText}>
               {mode === 'login' ? 'Iniciar sesión' : 'Crear cuenta'}
@@ -90,39 +98,42 @@ export function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: {
-    flex: 1,
-    backgroundColor: colors.page,
-    justifyContent: 'center',
-    padding: spacing.lg,
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    gap: spacing.sm + 4,
-  },
-  title: { fontSize: 24, fontWeight: '700', color: colors.textPrimary },
-  subtitle: { color: colors.textMuted, marginBottom: spacing.xs },
-  error: { color: colors.critical, fontSize: 14 },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.gridline,
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 15,
-    color: colors.textPrimary,
-    backgroundColor: colors.surface,
-  },
-  button: {
-    backgroundColor: colors.accent,
-    borderRadius: 8,
-    padding: 13,
-    alignItems: 'center',
-  },
-  buttonText: { color: '#fff', fontWeight: '600', fontSize: 15 },
-  switchText: { color: colors.accent, textAlign: 'center', marginTop: spacing.xs },
-});
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    wrap: {
+      flex: 1,
+      backgroundColor: colors.page,
+      justifyContent: 'center',
+      padding: spacing.lg,
+    },
+    themeToggle: { position: 'absolute', top: 50, right: 20, padding: 8 },
+    card: {
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: spacing.lg,
+      gap: spacing.sm + 4,
+    },
+    title: { fontSize: 24, fontWeight: '700', color: colors.textPrimary },
+    subtitle: { color: colors.textMuted, marginBottom: spacing.xs },
+    error: { color: colors.critical, fontSize: 14 },
+    input: {
+      borderWidth: 1,
+      borderColor: colors.gridline,
+      borderRadius: 8,
+      padding: 12,
+      fontSize: 15,
+      color: colors.textPrimary,
+      backgroundColor: colors.surface,
+    },
+    button: {
+      backgroundColor: colors.accent,
+      borderRadius: 8,
+      padding: 13,
+      alignItems: 'center',
+    },
+    buttonText: { color: colors.onAccent, fontWeight: '600', fontSize: 15 },
+    switchText: { color: colors.accent, textAlign: 'center', marginTop: spacing.xs },
+  });
+}

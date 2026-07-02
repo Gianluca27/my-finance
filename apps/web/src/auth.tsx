@@ -1,6 +1,7 @@
-import type { User } from '@myfinance/shared';
+import { ApiError, type User } from '@myfinance/shared';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { api, getToken, setToken } from './api';
+import { api, getCachedUser, getToken, setCachedUser, setToken } from './api';
+import { invalidate } from './cache';
 
 interface AuthContextValue {
   user: User | null;
@@ -13,8 +14,10 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Render optimista: si hay usuario cacheado se muestra la app de inmediato
+  // y /auth/me revalida en segundo plano (solo un 401 desloguea).
+  const [user, setUser] = useState<User | null>(() => (getToken() ? getCachedUser() : null));
+  const [loading, setLoading] = useState(() => Boolean(getToken()) && !getCachedUser());
 
   useEffect(() => {
     if (!getToken()) {
@@ -23,25 +26,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     api
       .me()
-      .then(setUser)
-      .catch(() => setToken(null))
+      .then((me) => {
+        setUser(me);
+        setCachedUser(me);
+      })
+      .catch((err) => {
+        if (err instanceof ApiError && err.status === 401) {
+          setToken(null);
+          setCachedUser(null);
+          setUser(null);
+        }
+      })
       .finally(() => setLoading(false));
   }, []);
 
   async function login(email: string, password: string) {
     const res = await api.login({ email, password });
     setToken(res.token);
+    setCachedUser(res.user);
     setUser(res.user);
   }
 
   async function register(name: string, email: string, password: string) {
     const res = await api.register({ name, email, password });
     setToken(res.token);
+    setCachedUser(res.user);
     setUser(res.user);
   }
 
   function logout() {
     setToken(null);
+    setCachedUser(null);
+    invalidate();
     setUser(null);
   }
 

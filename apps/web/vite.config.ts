@@ -3,6 +3,17 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    rollupOptions: {
+      output: {
+        // Vendor estable en su propio chunk: cambia poco entre deploys,
+        // así el navegador lo mantiene cacheado aunque cambie el código propio.
+        manualChunks: {
+          react: ['react', 'react-dom', 'react-router-dom'],
+        },
+      },
+    },
+  },
   server: {
     port: 5173,
     proxy: {

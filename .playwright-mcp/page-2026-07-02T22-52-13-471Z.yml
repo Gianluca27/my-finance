@@ -1,0 +1,67 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e14]:
+    - banner [ref=e15]:
+      - generic [ref=e16]:
+        - link "MyFinance ." [ref=e17] [cursor=pointer]:
+          - /url: /
+          - text: MyFinance
+          - generic [ref=e18]: .
+        - navigation [ref=e19]:
+          - link "Resumen" [ref=e20] [cursor=pointer]:
+            - /url: /
+          - link "Movimientos" [ref=e21] [cursor=pointer]:
+            - /url: /transacciones
+          - link "Gastos fijos" [ref=e22] [cursor=pointer]:
+            - /url: /recurrentes
+          - link "Presupuestos" [ref=e23] [cursor=pointer]:
+            - /url: /presupuestos
+          - link "Categorías" [ref=e24] [cursor=pointer]:
+            - /url: /categorias
+          - link "Reportes" [ref=e25] [cursor=pointer]:
+            - /url: /reportes
+        - generic [ref=e26]:
+          - generic [ref=e27]: Usuario Demo
+          - button "Salir" [ref=e28] [cursor=pointer]
+    - main [ref=e29]:
+      - generic [ref=e30]:
+        - paragraph [ref=e31]: Estado de cuenta · julio de 2026
+        - paragraph [ref=e32]: "-$ 190.000,00"
+        - paragraph [ref=e33]: Saldo total acumulado
+        - generic [ref=e34]:
+          - generic [ref=e35]:
+            - term [ref=e36]: Ingresos del mes
+            - definition [ref=e38]: +$ 0,00
+          - generic [ref=e39]:
+            - term [ref=e40]: Gastos del mes
+            - definition [ref=e42]: −$ 0,00
+          - generic [ref=e43]:
+            - term [ref=e44]: Resultado del mes
+            - definition [ref=e46]: $ 0,00
+      - generic [ref=e47]:
+        - generic [ref=e48]:
+          - heading "Gastos por categoría" [level=3] [ref=e49]
+          - paragraph [ref=e50]: Todavía no hay gastos este mes. Registrá el primero desde Movimientos.
+        - generic [ref=e51]:
+          - generic [ref=e52]:
+            - heading "Mes a mes" [level=3] [ref=e53]
+            - generic [ref=e54]:
+              - generic [ref=e55]: Ingresos
+              - generic [ref=e57]: Gastos
+          - img [ref=e61]:
+            - generic [ref=e65]:
+              - generic [ref=e67]: feb 26
+              - generic [ref=e69]: mar 26
+              - generic [ref=e71]: abr 26
+              - generic [ref=e73]: may 26
+              - generic [ref=e75]: jun 26
+              - generic [ref=e77]: jul 26
+            - generic [ref=e79]:
+              - generic [ref=e81]: "0"
+              - generic [ref=e83]: 50k
+              - generic [ref=e85]: 100k
+              - generic [ref=e87]: 150k
+              - generic [ref=e89]: 200k
+      - generic [ref=e95]:
+        - heading "Próximos pagos (14 días)" [level=3] [ref=e96]
+        - paragraph [ref=e97]: No hay vencimientos en los próximos 14 días.
+  - generic [ref=e98]: "0"

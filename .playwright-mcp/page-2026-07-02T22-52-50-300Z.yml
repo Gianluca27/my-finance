@@ -1,0 +1,63 @@
+- generic [ref=f1e3]:
+  - banner [ref=f1e4]:
+    - generic [ref=f1e5]:
+      - link "MyFinance ." [ref=f1e6] [cursor=pointer]:
+        - /url: /
+        - text: MyFinance
+        - generic [ref=f1e7]: .
+      - navigation [ref=f1e8]:
+        - link "Resumen" [ref=f1e9] [cursor=pointer]:
+          - /url: /
+        - link "Movimientos" [ref=f1e10] [cursor=pointer]:
+          - /url: /transacciones
+        - link "Gastos fijos" [ref=f1e11] [cursor=pointer]:
+          - /url: /recurrentes
+        - link "Presupuestos" [ref=f1e12] [cursor=pointer]:
+          - /url: /presupuestos
+        - link "Categorías" [ref=f1e13] [cursor=pointer]:
+          - /url: /categorias
+        - link "Reportes" [ref=f1e14] [cursor=pointer]:
+          - /url: /reportes
+      - generic [ref=f1e15]:
+        - generic [ref=f1e16]: Usuario Demo
+        - button "Salir" [ref=f1e17] [cursor=pointer]
+  - main [ref=f1e18]:
+    - heading "Movimientos" [level=1] [ref=f1e19]
+    - paragraph [ref=f1e20]: Registrá tus ingresos y gastos
+    - generic [ref=f1e21]:
+      - heading "Nuevo movimiento" [level=3] [ref=f1e22]
+      - generic [ref=f1e23]:
+        - generic [ref=f1e24]:
+          - text: Tipo
+          - combobox "Tipo" [ref=f1e25]:
+            - option "Gasto" [selected]
+            - option "Ingreso"
+        - generic [ref=f1e26]:
+          - text: Monto
+          - spinbutton "Monto" [ref=f1e27]
+        - generic [ref=f1e28]:
+          - text: Fecha
+          - textbox "Fecha" [ref=f1e29]: 2026-07-02
+        - generic [ref=f1e30]:
+          - text: Categoría
+          - combobox "Categoría" [ref=f1e31]:
+            - option "Sin categoría" [selected]
+        - generic [ref=f1e32]:
+          - text: Nota
+          - textbox "Nota" [ref=f1e33]
+        - button "Agregar movimiento" [ref=f1e34] [cursor=pointer]
+    - generic [ref=f1e35]:
+      - generic [ref=f1e36]:
+        - combobox [ref=f1e37]:
+          - option "Todos los tipos" [selected]
+          - option "Ingresos"
+          - option "Gastos"
+        - combobox [ref=f1e38]:
+          - option "Todas las categorías" [selected]
+        - textbox "Desde" [ref=f1e39]
+        - textbox "Hasta" [ref=f1e40]
+      - paragraph [ref=f1e41]: Cargando…
+      - generic [ref=f1e42]:
+        - button "← Anterior" [disabled] [ref=f1e43]
+        - generic [ref=f1e44]: Página 1 de 1
+        - button "Siguiente →" [disabled] [ref=f1e45]

@@ -1,6 +1,7 @@
 import type { Category, Frequency, RecurringExpense } from '@myfinance/shared';
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { api, formatDate, formatMoney } from '../api';
+import { invalidate, useCached } from '../cache';
 
 const WEEKDAYS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 const MONTHS = [
@@ -15,8 +16,6 @@ const FREQUENCY_LABEL: Record<Frequency, string> = {
 };
 
 export function RecurringPage() {
-  const [items, setItems] = useState<RecurringExpense[] | null>(null);
-  const [categories, setCategories] = useState<Category[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const [name, setName] = useState('');
@@ -28,17 +27,11 @@ export function RecurringPage() {
   const [categoryId, setCategoryId] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(() => {
-    api.listRecurring().then(setItems).catch((err) => setError(err.message));
-  }, []);
-
-  useEffect(() => {
-    load();
-    api
-      .listCategories()
-      .then((cats) => setCategories(cats.filter((c) => c.type === 'EXPENSE')))
-      .catch(() => {});
-  }, [load]);
+  const { data: items, error: loadError, refresh } = useCached<RecurringExpense[]>('recurring', () =>
+    api.listRecurring(),
+  );
+  const { data: categoriesData } = useCached<Category[]>('categories', () => api.listCategories());
+  const categories = (categoriesData ?? []).filter((c) => c.type === 'EXPENSE');
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -56,7 +49,8 @@ export function RecurringPage() {
       });
       setName('');
       setAmount('');
-      load();
+      invalidate('recurring');
+      refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error inesperado');
     } finally {
@@ -68,7 +62,12 @@ export function RecurringPage() {
     if (!confirm(`¿Registrar el pago de "${item.name}" por ${formatMoney(item.amount)}?`)) return;
     try {
       await api.payRecurring(item.id);
-      load();
+      // El pago crea una transacción: además del listado, cambian resumen y presupuestos.
+      invalidate('recurring');
+      invalidate('transactions');
+      invalidate('dashboard');
+      invalidate('budgets');
+      refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error inesperado');
     }
@@ -77,7 +76,9 @@ export function RecurringPage() {
   async function onToggle(item: RecurringExpense) {
     try {
       await api.updateRecurring(item.id, { active: !item.active });
-      load();
+      invalidate('recurring');
+      invalidate('dashboard');
+      refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error inesperado');
     }
@@ -87,7 +88,9 @@ export function RecurringPage() {
     if (!confirm('¿Eliminar este gasto recurrente?')) return;
     try {
       await api.deleteRecurring(id);
-      load();
+      invalidate('recurring');
+      invalidate('dashboard');
+      refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error inesperado');
     }
@@ -105,7 +108,7 @@ export function RecurringPage() {
       <p className="page-subtitle">
         Suscripciones, alquiler, expensas… con recordatorios antes del vencimiento
       </p>
-      {error && <div className="error-banner">{error}</div>}
+      {(error ?? loadError) && <div className="error-banner">{error ?? loadError}</div>}
 
       <form className="card" onSubmit={onSubmit} style={{ marginBottom: 16 }}>
         <h3>Nuevo gasto fijo</h3>

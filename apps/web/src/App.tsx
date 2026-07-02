@@ -1,13 +1,17 @@
+import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from './auth';
 import { Layout } from './components/Layout';
-import { AuthPage } from './pages/AuthPage';
-import { BudgetsPage } from './pages/BudgetsPage';
-import { CategoriesPage } from './pages/CategoriesPage';
-import { DashboardPage } from './pages/DashboardPage';
-import { RecurringPage } from './pages/RecurringPage';
-import { ReportsPage } from './pages/ReportsPage';
-import { TransactionsPage } from './pages/TransactionsPage';
+
+// Cada página se carga bajo demanda: el bundle inicial no arrastra Recharts
+// (solo lo usa el Dashboard) ni el resto de las vistas.
+const AuthPage = lazy(() => import('./pages/AuthPage').then((m) => ({ default: m.AuthPage })));
+const BudgetsPage = lazy(() => import('./pages/BudgetsPage').then((m) => ({ default: m.BudgetsPage })));
+const CategoriesPage = lazy(() => import('./pages/CategoriesPage').then((m) => ({ default: m.CategoriesPage })));
+const DashboardPage = lazy(() => import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })));
+const RecurringPage = lazy(() => import('./pages/RecurringPage').then((m) => ({ default: m.RecurringPage })));
+const ReportsPage = lazy(() => import('./pages/ReportsPage').then((m) => ({ default: m.ReportsPage })));
+const TransactionsPage = lazy(() => import('./pages/TransactionsPage').then((m) => ({ default: m.TransactionsPage })));
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -18,25 +22,29 @@ export default function App() {
 
   if (!user) {
     return (
-      <Routes>
-        <Route path="/login" element={<AuthPage mode="login" />} />
-        <Route path="/registro" element={<AuthPage mode="register" />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
-      </Routes>
+      <Suspense fallback={<div className="auth-wrap muted">Cargando…</div>}>
+        <Routes>
+          <Route path="/login" element={<AuthPage mode="login" />} />
+          <Route path="/registro" element={<AuthPage mode="register" />} />
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </Suspense>
     );
   }
 
   return (
     <Layout>
-      <Routes>
-        <Route path="/" element={<DashboardPage />} />
-        <Route path="/transacciones" element={<TransactionsPage />} />
-        <Route path="/recurrentes" element={<RecurringPage />} />
-        <Route path="/presupuestos" element={<BudgetsPage />} />
-        <Route path="/categorias" element={<CategoriesPage />} />
-        <Route path="/reportes" element={<ReportsPage />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <Suspense fallback={<p className="muted">Cargando…</p>}>
+        <Routes>
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/transacciones" element={<TransactionsPage />} />
+          <Route path="/recurrentes" element={<RecurringPage />} />
+          <Route path="/presupuestos" element={<BudgetsPage />} />
+          <Route path="/categorias" element={<CategoriesPage />} />
+          <Route path="/reportes" element={<ReportsPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
     </Layout>
   );
 }

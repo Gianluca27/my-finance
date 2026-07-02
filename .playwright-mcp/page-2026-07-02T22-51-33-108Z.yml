@@ -1,0 +1,14 @@
+- generic [ref=e4]:
+  - heading "MyFinance." [level=1] [ref=e5]
+  - paragraph [ref=e6]: Iniciá sesión para continuar
+  - generic [ref=e7]:
+    - text: Email
+    - textbox "Email" [ref=e8]
+  - generic [ref=e9]:
+    - text: Contraseña
+    - textbox "Contraseña" [ref=e10]
+  - button "Iniciar sesión" [ref=e11] [cursor=pointer]
+  - paragraph [ref=e12]:
+    - text: ¿No tenés cuenta?
+    - link "Registrate" [ref=e13] [cursor=pointer]:
+      - /url: /registro

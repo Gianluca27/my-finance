@@ -1,4 +1,4 @@
-import bcrypt from 'bcryptjs';
+import bcrypt from 'bcrypt';
 import { Router } from 'express';
 import { z } from 'zod';
 import { serialize } from '../lib/serialize';

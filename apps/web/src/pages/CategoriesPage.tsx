@@ -1,9 +1,9 @@
 import type { Category, TransactionType } from '@myfinance/shared';
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { api } from '../api';
+import { invalidate, useCached } from '../cache';
 
 export function CategoriesPage() {
-  const [categories, setCategories] = useState<Category[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [name, setName] = useState('');
@@ -12,13 +12,9 @@ export function CategoriesPage() {
   const [icon, setIcon] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(() => {
-    api.listCategories().then(setCategories).catch((err) => setError(err.message));
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
+  const { data: categories, error: loadError, refresh } = useCached<Category[]>('categories', () =>
+    api.listCategories(),
+  );
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -28,7 +24,8 @@ export function CategoriesPage() {
       await api.createCategory({ name, type, color, icon: icon || null });
       setName('');
       setIcon('');
-      load();
+      invalidate('categories');
+      refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error inesperado');
     } finally {
@@ -45,7 +42,9 @@ export function CategoriesPage() {
       return;
     try {
       await api.deleteCategory(category.id);
-      load();
+      // Borrar una categoría toca transacciones, presupuestos y recurrentes: limpiar todo.
+      invalidate();
+      refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error inesperado');
     }
@@ -58,7 +57,7 @@ export function CategoriesPage() {
     <>
       <h1 className="page-title">Categorías</h1>
       <p className="page-subtitle">Personalizá cómo clasificás tus movimientos</p>
-      {error && <div className="error-banner">{error}</div>}
+      {(error ?? loadError) && <div className="error-banner">{error ?? loadError}</div>}
 
       <form className="card" onSubmit={onSubmit} style={{ marginBottom: 16 }}>
         <h3>Nueva categoría</h3>

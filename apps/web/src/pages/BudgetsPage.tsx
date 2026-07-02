@@ -1,10 +1,9 @@
 import type { BudgetStatus, Category } from '@myfinance/shared';
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { api, formatMoney } from '../api';
+import { invalidate, useCached } from '../cache';
 
 export function BudgetsPage() {
-  const [budgets, setBudgets] = useState<BudgetStatus[] | null>(null);
-  const [categories, setCategories] = useState<Category[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const [categoryId, setCategoryId] = useState('');
@@ -12,17 +11,11 @@ export function BudgetsPage() {
   const [threshold, setThreshold] = useState('80');
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(() => {
-    api.listBudgets().then(setBudgets).catch((err) => setError(err.message));
-  }, []);
-
-  useEffect(() => {
-    load();
-    api
-      .listCategories()
-      .then((cats) => setCategories(cats.filter((c) => c.type === 'EXPENSE')))
-      .catch(() => {});
-  }, [load]);
+  const { data: budgets, error: loadError, refresh } = useCached<BudgetStatus[]>('budgets', () =>
+    api.listBudgets(),
+  );
+  const { data: categoriesData } = useCached<Category[]>('categories', () => api.listCategories());
+  const categories = (categoriesData ?? []).filter((c) => c.type === 'EXPENSE');
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -36,7 +29,8 @@ export function BudgetsPage() {
       });
       setCategoryId('');
       setAmount('');
-      load();
+      invalidate('budgets');
+      refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error inesperado');
     } finally {
@@ -48,7 +42,8 @@ export function BudgetsPage() {
     if (!confirm('¿Eliminar este presupuesto?')) return;
     try {
       await api.deleteBudget(id);
-      load();
+      invalidate('budgets');
+      refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error inesperado');
     }
@@ -60,7 +55,7 @@ export function BudgetsPage() {
       <p className="page-subtitle">
         Límites mensuales por categoría con alerta al superar el umbral
       </p>
-      {error && <div className="error-banner">{error}</div>}
+      {(error ?? loadError) && <div className="error-banner">{error ?? loadError}</div>}
 
       <form className="card" onSubmit={onSubmit} style={{ marginBottom: 16 }}>
         <h3>Definir presupuesto</h3>

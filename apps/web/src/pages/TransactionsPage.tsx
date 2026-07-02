@@ -1,12 +1,11 @@
 import type { Category, Paginated, Transaction, TransactionType } from '@myfinance/shared';
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { api, formatDate, formatMoney } from '../api';
+import { invalidate, useCached } from '../cache';
 
 const PAGE_SIZE = 20;
 
 export function TransactionsPage() {
-  const [data, setData] = useState<Paginated<Transaction> | null>(null);
-  const [categories, setCategories] = useState<Category[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [filterType, setFilterType] = useState<'' | TransactionType>('');
@@ -22,27 +21,27 @@ export function TransactionsPage() {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(() => {
-    api
-      .listTransactions({
-        page,
-        pageSize: PAGE_SIZE,
-        type: filterType || undefined,
-        categoryId: filterCategory || undefined,
-        from: filterFrom || undefined,
-        to: filterTo || undefined,
-      })
-      .then(setData)
-      .catch((err) => setError(err.message));
-  }, [page, filterType, filterCategory, filterFrom, filterTo]);
+  const listKey = `transactions:${JSON.stringify([page, filterType, filterCategory, filterFrom, filterTo])}`;
+  const { data, error: loadError, refresh } = useCached<Paginated<Transaction>>(listKey, () =>
+    api.listTransactions({
+      page,
+      pageSize: PAGE_SIZE,
+      type: filterType || undefined,
+      categoryId: filterCategory || undefined,
+      from: filterFrom || undefined,
+      to: filterTo || undefined,
+    }),
+  );
+  const { data: categoriesData } = useCached<Category[]>('categories', () => api.listCategories());
+  const categories = categoriesData ?? [];
 
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  useEffect(() => {
-    api.listCategories().then(setCategories).catch(() => {});
-  }, []);
+  /** Un movimiento nuevo/borrado cambia listados, resumen y presupuestos. */
+  function invalidateAfterMutation() {
+    invalidate('transactions');
+    invalidate('dashboard');
+    invalidate('budgets');
+    refresh();
+  }
 
   const formCategories = categories.filter((c) => c.type === formType);
 
@@ -60,7 +59,7 @@ export function TransactionsPage() {
       });
       setAmount('');
       setNote('');
-      load();
+      invalidateAfterMutation();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error inesperado');
     } finally {
@@ -72,7 +71,7 @@ export function TransactionsPage() {
     if (!confirm('¿Eliminar este movimiento?')) return;
     try {
       await api.deleteTransaction(id);
-      load();
+      invalidateAfterMutation();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error inesperado');
     }
@@ -84,7 +83,7 @@ export function TransactionsPage() {
     <>
       <h1 className="page-title">Movimientos</h1>
       <p className="page-subtitle">Registrá tus ingresos y gastos</p>
-      {error && <div className="error-banner">{error}</div>}
+      {(error ?? loadError) && <div className="error-banner">{error ?? loadError}</div>}
 
       <form className="card" onSubmit={onSubmit} style={{ marginBottom: 16 }}>
         <h3>Nuevo movimiento</h3>

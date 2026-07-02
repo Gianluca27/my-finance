@@ -17,30 +17,52 @@ router.get(
       : currentMonth();
     const { start, end } = monthRange(month);
 
-    // Balance histórico (todos los ingresos - todos los gastos)
-    const totals = await prisma.transaction.groupBy({
-      by: ['type'],
-      where: { userId },
-      _sum: { amount: true },
-    });
+    const months = Array.from({ length: 6 }, (_, i) => shiftMonth(month, i - 5));
+    const rangeStart = monthRange(months[0]).start;
+    const rangeEnd = monthRange(months[months.length - 1]).end;
+    const today = startOfTodayUTC();
+    const horizon = new Date(today);
+    horizon.setUTCDate(horizon.getUTCDate() + 14);
+
+    const [totals, monthTotals, byCategory, monthlyRows, upcomingPayments] = await Promise.all([
+      // Balance histórico (todos los ingresos - todos los gastos)
+      prisma.transaction.groupBy({
+        by: ['type'],
+        where: { userId },
+        _sum: { amount: true },
+      }),
+      // Totales del mes seleccionado
+      prisma.transaction.groupBy({
+        by: ['type'],
+        where: { userId, date: { gte: start, lt: end } },
+        _sum: { amount: true },
+      }),
+      // Gastos por categoría del mes
+      prisma.transaction.groupBy({
+        by: ['categoryId'],
+        where: { userId, type: 'EXPENSE', date: { gte: start, lt: end } },
+        _sum: { amount: true },
+      }),
+      // Comparativa de los últimos 6 meses, agregada en la base
+      prisma.$queryRaw<Array<{ month: string; type: string; total: number }>>`
+        SELECT to_char("date", 'YYYY-MM') AS month, "type"::text AS type, SUM("amount")::float8 AS total
+        FROM "Transaction"
+        WHERE "userId" = ${userId} AND "date" >= ${rangeStart} AND "date" < ${rangeEnd}
+        GROUP BY 1, 2
+      `,
+      // Próximos pagos (14 días)
+      prisma.recurringExpense.findMany({
+        where: { userId, active: true, nextDueDate: { gte: today, lte: horizon } },
+        include: { category: true },
+        orderBy: { nextDueDate: 'asc' },
+      }),
+    ]);
+
     const totalIncome = totals.find((t) => t.type === 'INCOME')?._sum.amount?.toNumber() ?? 0;
     const totalExpense = totals.find((t) => t.type === 'EXPENSE')?._sum.amount?.toNumber() ?? 0;
-
-    // Totales del mes seleccionado
-    const monthTotals = await prisma.transaction.groupBy({
-      by: ['type'],
-      where: { userId, date: { gte: start, lt: end } },
-      _sum: { amount: true },
-    });
     const monthIncome = monthTotals.find((t) => t.type === 'INCOME')?._sum.amount?.toNumber() ?? 0;
     const monthExpense = monthTotals.find((t) => t.type === 'EXPENSE')?._sum.amount?.toNumber() ?? 0;
 
-    // Gastos por categoría del mes
-    const byCategory = await prisma.transaction.groupBy({
-      by: ['categoryId'],
-      where: { userId, type: 'EXPENSE', date: { gte: start, lt: end } },
-      _sum: { amount: true },
-    });
     const categoryIds = byCategory.map((row) => row.categoryId).filter((id): id is string => id !== null);
     const categories = await prisma.category.findMany({ where: { id: { in: categoryIds } } });
     const categoryMap = new Map(categories.map((c) => [c.id, c]));
@@ -56,35 +78,20 @@ router.get(
       })
       .sort((a, b) => b.total - a.total);
 
-    // Comparativa de los últimos 6 meses (incluido el seleccionado)
-    const months = Array.from({ length: 6 }, (_, i) => shiftMonth(month, i - 5));
-    const rangeStart = monthRange(months[0]).start;
-    const rangeEnd = monthRange(months[months.length - 1]).end;
-    const inRange = await prisma.transaction.findMany({
-      where: { userId, date: { gte: rangeStart, lt: rangeEnd } },
-      select: { type: true, amount: true, date: true },
-    });
+    const totalsByMonth = new Map<string, { income: number; expense: number }>();
+    for (const row of monthlyRows) {
+      const entry = totalsByMonth.get(row.month) ?? { income: 0, expense: 0 };
+      if (row.type === 'INCOME') entry.income = row.total;
+      else entry.expense = row.total;
+      totalsByMonth.set(row.month, entry);
+    }
     const monthlyComparison = months.map((m) => {
-      const { start: mStart, end: mEnd } = monthRange(m);
-      let income = 0;
-      let expense = 0;
-      for (const tx of inRange) {
-        if (tx.date >= mStart && tx.date < mEnd) {
-          if (tx.type === 'INCOME') income += tx.amount.toNumber();
-          else expense += tx.amount.toNumber();
-        }
-      }
-      return { month: m, income: Math.round(income * 100) / 100, expense: Math.round(expense * 100) / 100 };
-    });
-
-    // Próximos pagos (14 días)
-    const today = startOfTodayUTC();
-    const horizon = new Date(today);
-    horizon.setUTCDate(horizon.getUTCDate() + 14);
-    const upcomingPayments = await prisma.recurringExpense.findMany({
-      where: { userId, active: true, nextDueDate: { gte: today, lte: horizon } },
-      include: { category: true },
-      orderBy: { nextDueDate: 'asc' },
+      const entry = totalsByMonth.get(m);
+      return {
+        month: m,
+        income: Math.round((entry?.income ?? 0) * 100) / 100,
+        expense: Math.round((entry?.expense ?? 0) * 100) / 100,
+      };
     });
 
     res.json({

@@ -1,5 +1,5 @@
 import type { DashboardData } from '@myfinance/shared';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import {
   Bar,
   BarChart,
@@ -13,6 +13,7 @@ import {
   YAxis,
 } from 'recharts';
 import { api, formatDate, formatMoney } from '../api';
+import { useCached } from '../cache';
 
 /** Lee los tokens de color del tema activo (claro/oscuro) para pasarlos a Recharts. */
 function useThemeTokens() {
@@ -48,15 +49,10 @@ function shortMonthLabel(month: string): string {
 }
 
 export function DashboardPage() {
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data, error } = useCached<DashboardData>('dashboard', () => api.dashboard());
   const tokens = useThemeTokens();
 
-  useEffect(() => {
-    api.dashboard().then(setData).catch((err) => setError(err.message));
-  }, []);
-
-  if (error) return <div className="error-banner">{error}</div>;
+  if (error && !data) return <div className="error-banner">{error}</div>;
   if (!data) return <p className="muted">Cargando resumen…</p>;
 
   const comparison = data.monthlyComparison.map((m) => ({

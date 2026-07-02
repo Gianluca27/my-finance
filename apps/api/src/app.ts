@@ -1,3 +1,4 @@
+import compression from 'compression';
 import cors from 'cors';
 import express from 'express';
 import { config } from './config';
@@ -13,6 +14,7 @@ import transactionsRouter from './routes/transactions';
 
 export function createApp() {
   const app = express();
+  app.use(compression());
   app.use(cors({ origin: config.corsOrigin }));
   app.use(express.json());
 

@@ -5,10 +5,25 @@ import App from './App';
 import { AuthProvider } from './auth';
 import '@fontsource-variable/bricolage-grotesque';
 import '@fontsource-variable/instrument-sans';
-import '@fontsource/ibm-plex-mono/400.css';
-import '@fontsource/ibm-plex-mono/500.css';
-import '@fontsource/ibm-plex-mono/600.css';
+// Solo subsets latinos: la UI está en español, no hace falta cirílico/vietnamita.
+import '@fontsource/ibm-plex-mono/latin-400.css';
+import '@fontsource/ibm-plex-mono/latin-500.css';
+import '@fontsource/ibm-plex-mono/latin-600.css';
+import '@fontsource/ibm-plex-mono/latin-ext-400.css';
+import '@fontsource/ibm-plex-mono/latin-ext-500.css';
+import '@fontsource/ibm-plex-mono/latin-ext-600.css';
 import './styles.css';
+
+// En producción el API vive en otro origen (Railway): abrir la conexión
+// (DNS + TLS) apenas carga la página, antes del primer fetch.
+const apiUrl = import.meta.env.VITE_API_URL;
+if (apiUrl) {
+  const link = document.createElement('link');
+  link.rel = 'preconnect';
+  link.href = new URL(apiUrl).origin;
+  link.crossOrigin = 'anonymous';
+  document.head.appendChild(link);
+}
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

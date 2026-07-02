@@ -1,0 +1,124 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
+
+enum Frequency {
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  emailAlerts  Boolean  @default(true)
+  pushAlerts   Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  categories        Category[]
+  transactions      Transaction[]
+  recurringExpenses RecurringExpense[]
+  budgets           Budget[]
+  fcmTokens         FcmToken[]
+}
+
+model FcmToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  platform  String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Category {
+  id        String          @id @default(cuid())
+  name      String
+  color     String          @default("#6366f1")
+  icon      String?
+  type      TransactionType
+  userId    String
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime        @default(now())
+
+  transactions      Transaction[]
+  recurringExpenses RecurringExpense[]
+  budgets           Budget[]
+
+  @@unique([userId, name, type])
+  @@index([userId])
+}
+
+model Transaction {
+  id         String          @id @default(cuid())
+  type       TransactionType
+  amount     Decimal         @db.Decimal(12, 2)
+  date       DateTime
+  note       String?
+  userId     String
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoryId String?
+  category   Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  @@index([userId, date])
+  @@index([userId, categoryId])
+}
+
+model RecurringExpense {
+  id                 String    @id @default(cuid())
+  name               String
+  amount             Decimal   @db.Decimal(12, 2)
+  frequency          Frequency
+  /// 1-31 para mensual/anual, 0-6 para semanal (0 = domingo)
+  dueDay             Int
+  /// 1-12, solo para frecuencia anual
+  dueMonth           Int?
+  reminderDaysBefore Int       @default(3)
+  active             Boolean   @default(true)
+  nextDueDate        DateTime
+  /// Vencimiento para el cual ya se envió recordatorio (evita duplicados)
+  lastRemindedFor    DateTime?
+  userId             String
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoryId         String?
+  category           Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([active, nextDueDate])
+}
+
+model Budget {
+  id             String   @id @default(cuid())
+  amount         Decimal  @db.Decimal(12, 2)
+  /// Porcentaje (0-100) de uso que dispara la alerta
+  alertThreshold Int      @default(80)
+  /// Último mes (YYYY-MM) en que se envió alerta, evita duplicados
+  lastAlertMonth String?
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoryId     String
+  category       Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([userId, categoryId])
+  @@index([userId])
+}

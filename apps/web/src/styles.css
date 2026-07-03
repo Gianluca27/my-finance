@@ -1,44 +1,97 @@
 /* ============================================================
-   MyFinance — "Libro Mayor"
-   Modern account book: ledger-paper green page, ink for income
-   ("in the black"), ledger red for debits ("in the red"),
-   every amount in monospace tabular figures.
+   MyFinance — design tokens
+   Dark-first oklch palette, Schibsted Grotesk + IBM Plex Mono.
+   Legacy --page/--ink/--rule/etc. names are aliased to the new
+   tokens below so pages not yet migrated to the new component
+   classes keep rendering (not visually broken) until their own
+   redesign phase lands; remove the alias block once every page
+   has been migrated off the old class names.
    ============================================================ */
 
 :root {
-  --page: #eaefe6; /* ledger columnar paper */
-  --sheet: #f7f9f3; /* paper sheet (cards) */
-  --field: #fdfefb; /* inputs */
-  --ink: #1c2620; /* text + income + positive */
-  --ink-soft: #44514a;
-  --ink-mut: #6b7a6f;
-  --rule: #c9d6c4; /* pale ruled line */
-  --rule-strong: #a9bca3;
-  --accent: #2e6b4f; /* bottle green — interactive only */
-  --debit: #a8402f; /* ledger red — expenses, negatives, danger */
-  --warn: #8a6117; /* amber ink — near budget threshold */
-  --shadow: 0 1px 2px rgba(28, 38, 32, 0.06);
+  --bg: oklch(0.155 0.008 250);
+  --bg-2: oklch(0.185 0.008 250);
+  --surface: oklch(0.205 0.009 250);
+  --surface-2: oklch(0.245 0.010 250);
+  --border: oklch(0.30 0.010 250);
+  --border-2: oklch(0.40 0.012 250);
+  --text: oklch(0.965 0.004 250);
+  --text-2: oklch(0.75 0.008 250);
+  --text-3: oklch(0.58 0.010 250);
+  --accent: oklch(0.83 0.15 158);
+  --accent-ink: oklch(0.22 0.05 158);
+  --accent-weak: oklch(0.83 0.15 158 / 0.13);
+  --pos: oklch(0.83 0.15 158);
+  --neg: oklch(0.72 0.15 25);
+  --neg-weak: oklch(0.72 0.15 25 / 0.13);
+  --warn: oklch(0.82 0.13 78);
+  --font: 'Schibsted Grotesk', system-ui, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', monospace;
+  --r: 16px;
+  --r-sm: 10px;
+  --pad: 22px;
+  --shadow: 0 1px 0 rgba(255, 255, 255, 0.02) inset, 0 8px 24px -12px rgba(0, 0, 0, 0.6);
 
-  --font-display: 'Bricolage Grotesque Variable', 'Bricolage Grotesque', system-ui, sans-serif;
-  --font-body: 'Instrument Sans Variable', 'Instrument Sans', system-ui, sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', monospace;
+  /* legacy aliases — drop once every page is migrated (see header note) */
+  --page: var(--bg);
+  --sheet: var(--surface);
+  --field: var(--surface-2);
+  --ink: var(--text);
+  --ink-soft: var(--text-2);
+  --ink-mut: var(--text-3);
+  --rule: var(--border);
+  --rule-strong: var(--border-2);
+  --debit: var(--neg);
+  --font-display: var(--font);
+  --font-body: var(--font);
+  --font-mono: var(--mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    /* banker's lamp */
-    --page: #10150f;
-    --sheet: #171e15;
-    --field: #121812;
-    --ink: #e6ecdf;
-    --ink-soft: #b7c4b2;
-    --ink-mut: #8b9a86;
-    --rule: #2a3427;
-    --rule-strong: #3c4a38;
-    --accent: #7fb392;
-    --debit: #d96a55;
-    --warn: #cfa050;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border-2);
+  border-radius: 8px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+@keyframes mfrise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes mffade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes mfpop {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes mfgrow {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
   }
 }
 

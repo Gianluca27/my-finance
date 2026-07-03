@@ -3,8 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { AuthProvider } from './auth';
-import '@fontsource-variable/bricolage-grotesque';
-import '@fontsource-variable/instrument-sans';
+import '@fontsource-variable/schibsted-grotesk';
 // Solo subsets latinos: la UI está en español, no hace falta cirílico/vietnamita.
 import '@fontsource/ibm-plex-mono/latin-400.css';
 import '@fontsource/ibm-plex-mono/latin-500.css';

@@ -1,5 +1,5 @@
 import type { BudgetStatus, CategorySummary, DashboardData } from '@myfinance/shared';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, formatMoney } from '../api';
 import { useCached } from '../cache';
@@ -21,6 +21,15 @@ function shortMonthLabel(month: string): string {
     month: 'short',
     timeZone: 'UTC',
   });
+}
+
+function hoverMonthLabel(month: string): string {
+  const [y, m] = month.split('-').map(Number);
+  const label = new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('es-AR', {
+    month: 'long',
+    timeZone: 'UTC',
+  });
+  return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
 function monthLabel(month: string): string {
@@ -64,6 +73,7 @@ function budgetBarColor(status: BudgetStatus): string {
 export function DashboardPage() {
   const { data, error } = useCached<DashboardData>('dashboard', () => api.dashboard());
   const { data: budgets } = useCached<BudgetStatus[]>('budgets', () => api.listBudgets());
+  const [hoverMonth, setHoverMonth] = useState<string | null>(null);
 
   const top = useMemo(() => (data ? topCategories(data.expensesByCategory) : []), [data]);
   const donutSegments = useMemo(() => {
@@ -258,15 +268,22 @@ export function DashboardPage() {
           <div className="mf-bars">
             {data.monthlyComparison.map((m) => (
               <div className="mf-bar-col" key={m.month}>
-                <div className="mf-bar-pair">
+                <div
+                  className="mf-bar-pair"
+                  onMouseEnter={() => setHoverMonth(m.month)}
+                  onMouseLeave={() => setHoverMonth(null)}
+                >
+                  {hoverMonth === m.month && (
+                    <div className="mf-bar-tooltip">
+                      {hoverMonthLabel(m.month)}: Ingresos: {formatMoney(m.income)}. Gastos: {formatMoney(m.expense)}.
+                    </div>
+                  )}
                   <div
                     className="mf-bar mf-bar-income"
-                    title={formatMoney(m.income)}
                     style={{ height: `${Math.max(2, (m.income / maxBar) * 100)}%` }}
                   />
                   <div
                     className="mf-bar mf-bar-expense"
-                    title={formatMoney(m.expense)}
                     style={{ height: `${Math.max(2, (m.expense / maxBar) * 100)}%` }}
                   />
                 </div>

@@ -1412,12 +1412,42 @@ td.num {
 }
 
 .mf-bar-pair {
+  position: relative;
   flex: 1;
   width: 100%;
   display: flex;
   align-items: flex-end;
   justify-content: center;
   gap: 5px;
+}
+
+.mf-bar-tooltip {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  color: var(--text);
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  box-shadow: var(--shadow);
+  pointer-events: none;
+  z-index: 10;
+}
+
+.mf-bar-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--border-2);
 }
 
 .mf-bar {

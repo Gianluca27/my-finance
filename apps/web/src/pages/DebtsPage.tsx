@@ -2,15 +2,25 @@ import type { Category, Debt, DebtDirection } from '@myfinance/shared';
 import { useState, type FormEvent } from 'react';
 import { api, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
+import { IcoTrash } from '../components/icons';
 
 const DIRECTION_LABEL: Record<DebtDirection, string> = {
   I_OWE: 'Debés',
   OWED_TO_ME: 'Te deben',
 };
 
+const AVATAR_PALETTE = ['#f59e0b', '#ef4444', '#22c55e', '#a855f7', '#3b82f6', '#ec4899', '#14b8a6'];
+
+function avatarColor(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  return AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
+}
+
 export function DebtsPage() {
   const [error, setError] = useState<string | null>(null);
   const [showSettled, setShowSettled] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
 
   const [direction, setDirection] = useState<DebtDirection>('I_OWE');
   const [counterparty, setCounterparty] = useState('');
@@ -54,6 +64,7 @@ export function DebtsPage() {
       setDescription('');
       setTotalAmount('');
       setCategoryId('');
+      setFormOpen(false);
       invalidateAfterMutation();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error inesperado');
@@ -98,44 +109,59 @@ export function DebtsPage() {
 
   const activeDebts = (debts ?? []).filter((d) => !d.settledAt);
   const settledDebts = (debts ?? []).filter((d) => d.settledAt);
+  const oweDebts = activeDebts.filter((d) => d.direction === 'I_OWE');
+  const owedDebts = activeDebts.filter((d) => d.direction === 'OWED_TO_ME');
+
+  const totalIOwe = oweDebts.reduce((sum, d) => sum + d.remainingBalance, 0);
+  const totalOwedToMe = owedDebts.reduce((sum, d) => sum + d.remainingBalance, 0);
+  const netBalance = totalOwedToMe - totalIOwe;
 
   function renderDebtCard(debt: Debt) {
     const paid = debt.totalAmount - debt.remainingBalance;
     const percentPaid = debt.totalAmount > 0 ? Math.min(100, Math.round((paid / debt.totalAmount) * 100)) : 100;
+    const color = avatarColor(debt.counterparty);
+    const barModifier = debt.direction === 'I_OWE' ? 'owe' : 'owed';
     return (
-      <div className="card" key={debt.id}>
-        <div className="list-row" style={{ borderBottom: 'none', paddingTop: 0 }}>
-          <span className="cat-chip" style={{ fontSize: 15, fontWeight: 600 }}>
-            {debt.category && <span className="cat-dot" style={{ background: debt.category.color }} />}
-            {debt.counterparty}
-          </span>
+      <div className="card mf-debt-card" key={debt.id}>
+        <div className="mf-debt-head">
+          <div className="mf-debt-avatar" style={{ background: color }}>
+            {debt.counterparty.slice(0, 1).toUpperCase()}
+          </div>
+          <div className="mf-debt-titles">
+            <div className="mf-debt-name">{debt.counterparty}</div>
+            <div className="mf-debt-desc">{debt.description || DIRECTION_LABEL[debt.direction]}</div>
+          </div>
           {!debt.settledAt && (
-            <button className="danger" onClick={() => onDelete(debt.id)}>
-              Eliminar
+            <div className="mf-debt-amounts">
+              <div className="mf-debt-remaining">{formatMoney(debt.remainingBalance)}</div>
+              <div className="mf-debt-total">de {formatMoney(debt.totalAmount)}</div>
+            </div>
+          )}
+          {!debt.settledAt && (
+            <button
+              type="button"
+              className="mf-icon-btn"
+              aria-label="Eliminar deuda"
+              onClick={() => onDelete(debt.id)}
+            >
+              <IcoTrash size={14} />
             </button>
           )}
         </div>
-        <p className="muted" style={{ margin: '2px 0 8px' }}>
-          {DIRECTION_LABEL[debt.direction]}
-          {debt.description ? ` · ${debt.description}` : ''}
-        </p>
-        {!debt.settledAt && (
-          <div className="meter" style={{ margin: '8px 0' }}>
-            <div className="meter-fill" style={{ width: `${percentPaid}%` }} />
+
+        {debt.settledAt ? (
+          <p className="muted mono" style={{ margin: '10px 0 0' }}>
+            Saldada · {formatMoney(debt.totalAmount)}
+          </p>
+        ) : (
+          <div className="mf-progress" style={{ marginTop: 12 }}>
+            <div className={`mf-progress-fill ${barModifier}`} style={{ width: `${percentPaid}%` }} />
           </div>
         )}
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-          <span className="muted mono">
-            {debt.settledAt
-              ? `Saldada · ${formatMoney(debt.totalAmount)}`
-              : `Pagado ${formatMoney(paid)} / ${formatMoney(debt.totalAmount)}`}
-          </span>
-          {!debt.settledAt && <span className="legend-value">{formatMoney(debt.remainingBalance)} restante</span>}
-        </div>
 
         {!debt.settledAt &&
           (payingId === debt.id ? (
-            <div className="form-row" style={{ marginTop: 8 }}>
+            <div className="form-row" style={{ marginTop: 10 }}>
               <label className="field">
                 Monto
                 <input
@@ -156,11 +182,9 @@ export function DebtsPage() {
               </button>
             </div>
           ) : (
-            <div className="row-actions" style={{ marginTop: 8 }}>
-              <button className="secondary" onClick={() => onStartPay(debt)}>
-                Registrar pago
-              </button>
-            </div>
+            <button type="button" className="mf-debt-pay" onClick={() => onStartPay(debt)}>
+              Registrar pago
+            </button>
           ))}
       </div>
     );
@@ -168,76 +192,57 @@ export function DebtsPage() {
 
   return (
     <>
-      <h1 className="page-title">Deudas</h1>
-      <p className="page-subtitle">Plata que debés o que te deben, sin interés ni cronograma</p>
       {(error ?? loadError) && <div className="error-banner">{error ?? loadError}</div>}
 
-      <form className="card" onSubmit={onSubmit} style={{ marginBottom: 16 }}>
-        <h3>Nueva deuda</h3>
-        <div className="form-row">
-          <label className="field">
-            Dirección
-            <select
-              value={direction}
-              onChange={(e) => {
-                setDirection(e.target.value as DebtDirection);
-                setCategoryId('');
-              }}
-            >
-              <option value="I_OWE">Yo debo</option>
-              <option value="OWED_TO_ME">Me deben</option>
-            </select>
-          </label>
-          <label className="field">
-            Persona/entidad
-            <input
-              value={counterparty}
-              onChange={(e) => setCounterparty(e.target.value)}
-              required
-              maxLength={100}
-              placeholder="Ej: Juan, tarjeta…"
-            />
-          </label>
-          <label className="field">
-            Monto total
-            <input
-              type="number"
-              min="0.01"
-              step="0.01"
-              value={totalAmount}
-              onChange={(e) => setTotalAmount(e.target.value)}
-              required
-            />
-          </label>
-          <label className="field">
-            Categoría
-            <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-              <option value="">Sin categoría</option>
-              {formCategories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.icon ? `${c.icon} ` : ''}
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field" style={{ flex: 2 }}>
-            Descripción
-            <input value={description} onChange={(e) => setDescription(e.target.value)} maxLength={500} />
-          </label>
-          <button disabled={busy}>{busy ? 'Guardando…' : 'Agregar deuda'}</button>
+      <div className="mf-grid-3" style={{ marginBottom: 16 }}>
+        <div className="card">
+          <div className="mf-eyebrow">Debo</div>
+          <div className="mf-hero-balance" style={{ fontSize: 32, color: 'var(--neg)' }}>
+            {formatMoney(totalIOwe)}
+          </div>
         </div>
-      </form>
-
-      <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
-        {!debts ? (
-          <p className="muted">Cargando…</p>
-        ) : activeDebts.length === 0 ? (
-          <p className="muted">No hay deudas activas.</p>
-        ) : (
-          activeDebts.map(renderDebtCard)
-        )}
+        <div className="card">
+          <div className="mf-eyebrow">Me deben</div>
+          <div className="mf-hero-balance" style={{ fontSize: 32, color: 'var(--pos)' }}>
+            {formatMoney(totalOwedToMe)}
+          </div>
+        </div>
+        <div className="card">
+          <div className="mf-eyebrow">Balance neto</div>
+          <div
+            className="mf-hero-balance"
+            style={{ fontSize: 32, color: netBalance < 0 ? 'var(--neg)' : 'var(--pos)' }}
+          >
+            {netBalance < 0 ? '−' : ''}
+            {formatMoney(Math.abs(netBalance))}
+          </div>
+        </div>
       </div>
+
+      {!debts ? (
+        <p className="muted">Cargando…</p>
+      ) : activeDebts.length === 0 ? (
+        <p className="muted">No hay deudas activas.</p>
+      ) : (
+        <div className="mf-grid-2">
+          <div>
+            <div className="mf-eyebrow" style={{ marginBottom: 12 }}>
+              Debo
+            </div>
+            <div className="mf-debt-col">
+              {oweDebts.length === 0 ? <p className="muted">Nada pendiente.</p> : oweDebts.map(renderDebtCard)}
+            </div>
+          </div>
+          <div>
+            <div className="mf-eyebrow" style={{ marginBottom: 12 }}>
+              Me deben
+            </div>
+            <div className="mf-debt-col">
+              {owedDebts.length === 0 ? <p className="muted">Nada pendiente.</p> : owedDebts.map(renderDebtCard)}
+            </div>
+          </div>
+        </div>
+      )}
 
       {settledDebts.length > 0 && (
         <div className="card" style={{ marginTop: 16 }}>
@@ -254,6 +259,69 @@ export function DebtsPage() {
           )}
         </div>
       )}
+
+      <div className="card" style={{ marginTop: 16 }}>
+        <button type="button" className="mf-recur-toggle-form" onClick={() => setFormOpen((v) => !v)}>
+          {formOpen ? '− Cancelar' : '+ Nueva deuda'}
+        </button>
+        {formOpen && (
+          <form onSubmit={onSubmit} style={{ marginTop: 16 }}>
+            <div className="form-row">
+              <label className="field">
+                Dirección
+                <select
+                  value={direction}
+                  onChange={(e) => {
+                    setDirection(e.target.value as DebtDirection);
+                    setCategoryId('');
+                  }}
+                >
+                  <option value="I_OWE">Yo debo</option>
+                  <option value="OWED_TO_ME">Me deben</option>
+                </select>
+              </label>
+              <label className="field">
+                Persona/entidad
+                <input
+                  value={counterparty}
+                  onChange={(e) => setCounterparty(e.target.value)}
+                  required
+                  maxLength={100}
+                  placeholder="Ej: Juan, tarjeta…"
+                />
+              </label>
+              <label className="field">
+                Monto total
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={totalAmount}
+                  onChange={(e) => setTotalAmount(e.target.value)}
+                  required
+                />
+              </label>
+              <label className="field">
+                Categoría
+                <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+                  <option value="">Sin categoría</option>
+                  {formCategories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.icon ? `${c.icon} ` : ''}
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field" style={{ flex: 2 }}>
+                Descripción
+                <input value={description} onChange={(e) => setDescription(e.target.value)} maxLength={500} />
+              </label>
+              <button disabled={busy}>{busy ? 'Guardando…' : 'Agregar deuda'}</button>
+            </div>
+          </form>
+        )}
+      </div>
     </>
   );
 }

@@ -27,12 +27,12 @@ export function SettingsPage() {
 
   return (
     <>
-      <h1 className="page-title">Preferencias</h1>
-      <p className="page-subtitle">Alertas y datos de tu cuenta</p>
       {error && <div className="error-banner">{error}</div>}
 
       <div className="card" style={{ marginBottom: 16 }}>
-        <h3>Alertas</h3>
+        <div className="mf-eyebrow" style={{ marginBottom: 4 }}>
+          Alertas
+        </div>
         <div className="settings-row">
           <div>
             <div className="settings-row-title">Alertas por email</div>
@@ -68,7 +68,9 @@ export function SettingsPage() {
       </div>
 
       <div className="card">
-        <h3>Cuenta</h3>
+        <div className="mf-eyebrow" style={{ marginBottom: 4 }}>
+          Cuenta
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div className="mf-avatar">{initials}</div>
           <div style={{ flex: 1 }}>

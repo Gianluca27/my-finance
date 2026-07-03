@@ -10,3 +10,5 @@ coverage/
 apps/api/prisma/migrations/dev.db*
 .turbo/
 web-build/
+.playwright-mcp
+docs

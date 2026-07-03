@@ -23,6 +23,7 @@ export interface Category {
   icon: string | null;
   type: TransactionType;
   createdAt: string;
+  transactionCount: number;
 }
 
 export interface Transaction {

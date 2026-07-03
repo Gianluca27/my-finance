@@ -1,19 +1,31 @@
 import type { Category, Paginated, Transaction, TransactionType } from '@myfinance/shared';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { api, formatDate, formatMoney } from '../api';
+import { api, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
+import { IcoSearch, IcoTrash } from '../components/icons';
 
 const PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 350;
+const MONTHS_SHORT = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+
+function formatRowDate(iso: string): string {
+  const d = new Date(iso);
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${day} ${MONTHS_SHORT[d.getUTCMonth()]}`;
+}
+
+const TYPE_TABS: { value: '' | TransactionType; label: string }[] = [
+  { value: '', label: 'Todos' },
+  { value: 'INCOME', label: 'Ingresos' },
+  { value: 'EXPENSE', label: 'Gastos' },
+];
 
 export function TransactionsPage() {
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [filterType, setFilterType] = useState<'' | TransactionType>('');
   const [filterCategory, setFilterCategory] = useState('');
-  const [filterFrom, setFilterFrom] = useState('');
-  const [filterTo, setFilterTo] = useState('');
   const [searchParams] = useSearchParams();
   const initialQuery = searchParams.get('q') ?? '';
   const [searchInput, setSearchInput] = useState(initialQuery);
@@ -27,14 +39,6 @@ export function TransactionsPage() {
     return () => clearTimeout(handle);
   }, [searchInput]);
 
-  // Formulario de alta
-  const [formType, setFormType] = useState<TransactionType>('EXPENSE');
-  const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [categoryId, setCategoryId] = useState('');
-  const [note, setNote] = useState('');
-  const [busy, setBusy] = useState(false);
-
   // Edición inline
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editType, setEditType] = useState<TransactionType>('EXPENSE');
@@ -44,15 +48,13 @@ export function TransactionsPage() {
   const [editNote, setEditNote] = useState('');
   const [editBusy, setEditBusy] = useState(false);
 
-  const listKey = `transactions:${JSON.stringify([page, filterType, filterCategory, filterFrom, filterTo, search])}`;
+  const listKey = `transactions:${JSON.stringify([page, filterType, filterCategory, search])}`;
   const { data, error: loadError, refresh } = useCached<Paginated<Transaction>>(listKey, () =>
     api.listTransactions({
       page,
       pageSize: PAGE_SIZE,
       type: filterType || undefined,
       categoryId: filterCategory || undefined,
-      from: filterFrom || undefined,
-      to: filterTo || undefined,
       search: search || undefined,
     }),
   );
@@ -65,30 +67,6 @@ export function TransactionsPage() {
     invalidate('dashboard');
     invalidate('budgets');
     refresh();
-  }
-
-  const formCategories = categories.filter((c) => c.type === formType);
-
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setBusy(true);
-    try {
-      await api.createTransaction({
-        type: formType,
-        amount: Number(amount),
-        date,
-        note: note || null,
-        categoryId: categoryId || null,
-      });
-      setAmount('');
-      setNote('');
-      invalidateAfterMutation();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error inesperado');
-    } finally {
-      setBusy(false);
-    }
   }
 
   async function onDelete(id: string) {
@@ -136,80 +114,31 @@ export function TransactionsPage() {
   }
 
   const editCategories = categories.filter((c) => c.type === editType);
-
   const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
 
   return (
     <>
-      <h1 className="page-title">Movimientos</h1>
-      <p className="page-subtitle">Registrá tus ingresos y gastos</p>
       {(error ?? loadError) && <div className="error-banner">{error ?? loadError}</div>}
 
-      <form className="card" onSubmit={onSubmit} style={{ marginBottom: 16 }}>
-        <h3>Nuevo movimiento</h3>
-        <div className="form-row">
-          <label className="field">
-            Tipo
-            <select
-              value={formType}
-              onChange={(e) => {
-                setFormType(e.target.value as TransactionType);
-                setCategoryId('');
-              }}
-            >
-              <option value="EXPENSE">Gasto</option>
-              <option value="INCOME">Ingreso</option>
-            </select>
-          </label>
-          <label className="field">
-            Monto
-            <input
-              type="number"
-              min="0.01"
-              step="0.01"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              required
-            />
-          </label>
-          <label className="field">
-            Fecha
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
-          </label>
-          <label className="field">
-            Categoría
-            <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-              <option value="">Sin categoría</option>
-              {formCategories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.icon ? `${c.icon} ` : ''}
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field" style={{ flex: 2 }}>
-            Nota
-            <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} />
-          </label>
-          <button disabled={busy}>{busy ? 'Guardando…' : 'Agregar movimiento'}</button>
-        </div>
-      </form>
-
-      <div className="card">
-        <div className="toolbar">
+      <div className="card mf-tx-card">
+        <div className="mf-tx-toolbar">
+          <div className="mf-seg mf-tx-typeseg">
+            {TYPE_TABS.map((t) => (
+              <button
+                key={t.value || 'all'}
+                type="button"
+                className={filterType === t.value ? 'on neutral' : ''}
+                onClick={() => {
+                  setFilterType(t.value);
+                  setPage(1);
+                }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
           <select
-            value={filterType}
-            onChange={(e) => {
-              setFilterType(e.target.value as '' | TransactionType);
-              setPage(1);
-            }}
-          >
-            <option value="">Todos los tipos</option>
-            <option value="INCOME">Ingresos</option>
-            <option value="EXPENSE">Gastos</option>
-          </select>
-          <select
+            className="mf-select"
             value={filterCategory}
             onChange={(e) => {
               setFilterCategory(e.target.value);
@@ -223,51 +152,39 @@ export function TransactionsPage() {
               </option>
             ))}
           </select>
-          <input
-            type="date"
-            value={filterFrom}
-            onChange={(e) => {
-              setFilterFrom(e.target.value);
-              setPage(1);
-            }}
-            title="Desde"
-          />
-          <input
-            type="date"
-            value={filterTo}
-            onChange={(e) => {
-              setFilterTo(e.target.value);
-              setPage(1);
-            }}
-            title="Hasta"
-          />
-          <input
-            type="text"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Buscar por nota o monto…"
-            style={{ flex: 1, minWidth: 160 }}
-          />
+          <label className="mf-tx-search">
+            <IcoSearch />
+            <input
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Buscar por nota o monto…"
+            />
+          </label>
+          <div className="mf-tx-count">{data ? `${data.total} movimientos` : ''}</div>
         </div>
 
         {!data ? (
-          <p className="muted">Cargando…</p>
+          <p className="muted" style={{ padding: '0 20px 20px' }}>
+            Cargando…
+          </p>
         ) : data.items.length === 0 ? (
-          <p className="muted">No hay movimientos con esos filtros. Probá ampliar las fechas.</p>
+          <p className="muted" style={{ padding: '0 20px 20px' }}>
+            No hay movimientos con esos filtros.
+          </p>
         ) : (
-          <table className="tx-table">
+          <table className="mf-tx-table">
             <colgroup>
-              <col style={{ width: '18%' }} />
-              <col style={{ width: '16%' }} />
-              <col style={{ width: '21%' }} />
-              <col style={{ width: '21%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '34%' }} />
+              <col style={{ width: '22%' }} />
               <col style={{ width: '24%' }} />
+              <col style={{ width: '10%' }} />
             </colgroup>
             <thead>
               <tr>
                 <th>Fecha</th>
+                <th>Detalle</th>
                 <th>Categoría</th>
-                <th>Nota</th>
                 <th className="num">Monto</th>
                 <th />
               </tr>
@@ -277,17 +194,13 @@ export function TransactionsPage() {
                 editingId === tx.id ? (
                   <tr key={tx.id}>
                     <td>
-                      <input
-                        type="date"
-                        value={editDate}
-                        onChange={(e) => setEditDate(e.target.value)}
-                      />
+                      <input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} />
                     </td>
                     <td>
-                      <select
-                        value={editCategoryId}
-                        onChange={(e) => setEditCategoryId(e.target.value)}
-                      >
+                      <input value={editNote} onChange={(e) => setEditNote(e.target.value)} maxLength={500} />
+                    </td>
+                    <td>
+                      <select value={editCategoryId} onChange={(e) => setEditCategoryId(e.target.value)}>
                         <option value="">Sin categoría</option>
                         {editCategories.map((c) => (
                           <option key={c.id} value={c.id}>
@@ -296,13 +209,6 @@ export function TransactionsPage() {
                           </option>
                         ))}
                       </select>
-                    </td>
-                    <td>
-                      <input
-                        value={editNote}
-                        onChange={(e) => setEditNote(e.target.value)}
-                        maxLength={500}
-                      />
                     </td>
                     <td className="num">
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -339,31 +245,33 @@ export function TransactionsPage() {
                     </td>
                   </tr>
                 ) : (
-                  <tr key={tx.id}>
-                    <td className="mono">{formatDate(tx.date)}</td>
+                  <tr key={tx.id} className="mf-tx-row" onClick={() => onStartEdit(tx)}>
+                    <td className="mf-tx-date">{formatRowDate(tx.date)}</td>
+                    <td className="mf-tx-detail">{tx.note || '—'}</td>
                     <td>
                       <span className="cat-chip">
-                        <span
-                          className="cat-dot"
-                          style={{ background: tx.category?.color ?? '#9ca3af' }}
-                        />
+                        <span className="cat-dot" style={{ background: tx.category?.color ?? '#9ca3af' }} />
                         {tx.category?.name ?? 'Sin categoría'}
                       </span>
                     </td>
-                    <td className="muted">{tx.note}</td>
-                    <td className={`num ${tx.type === 'INCOME' ? 'amount-income' : 'amount-expense'}`}>
-                      {tx.type === 'INCOME' ? '+' : '−'}
+                    <td
+                      className={`num mf-tx-amount ${tx.type === 'INCOME' ? 'income' : 'expense'}`}
+                    >
+                      {tx.type === 'INCOME' ? '+ ' : '− '}
                       {formatMoney(tx.amount)}
                     </td>
                     <td className="num">
-                      <div className="row-actions">
-                        <button className="ghost" onClick={() => onStartEdit(tx)}>
-                          Editar
-                        </button>
-                        <button className="danger" onClick={() => onDelete(tx.id)}>
-                          Eliminar
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        className="mf-icon-btn"
+                        aria-label="Eliminar movimiento"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDelete(tx.id);
+                        }}
+                      >
+                        <IcoTrash size={16} />
+                      </button>
                     </td>
                   </tr>
                 ),
@@ -372,20 +280,30 @@ export function TransactionsPage() {
           </table>
         )}
 
-        <div className="pagination">
-          <button className="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>
-            ← Anterior
-          </button>
+        <div className="mf-tx-pagination">
           <span>
             Página {page} de {totalPages}
           </span>
-          <button
-            className="secondary"
-            disabled={page >= totalPages}
-            onClick={() => setPage(page + 1)}
-          >
-            Siguiente →
-          </button>
+          <div className="mf-tx-pagebtns">
+            <button
+              type="button"
+              className="mf-pagebtn"
+              disabled={page <= 1}
+              aria-label="Página anterior"
+              onClick={() => setPage(page - 1)}
+            >
+              ←
+            </button>
+            <button
+              type="button"
+              className="mf-pagebtn"
+              disabled={page >= totalPages}
+              aria-label="Página siguiente"
+              onClick={() => setPage(page + 1)}
+            >
+              →
+            </button>
+          </div>
         </div>
       </div>
     </>

@@ -24,8 +24,10 @@ router.get(
     const categories = await prisma.category.findMany({
       where: { userId: req.auth!.userId },
       orderBy: [{ type: 'asc' }, { name: 'asc' }],
+      include: { _count: { select: { transactions: true } } },
     });
-    res.json(serialize(categories));
+    const withCount = categories.map(({ _count, ...c }) => ({ ...c, transactionCount: _count.transactions }));
+    res.json(serialize(withCount));
   }),
 );
 
@@ -42,7 +44,7 @@ router.post(
     const category = await prisma.category.create({
       data: { ...input, userId: req.auth!.userId },
     });
-    res.status(201).json(serialize(category));
+    res.status(201).json(serialize({ ...category, transactionCount: 0 }));
   }),
 );
 
@@ -54,8 +56,13 @@ router.put(
       where: { id: req.params.id, userId: req.auth!.userId },
     });
     if (!existing) throw new HttpError(404, 'Categoría no encontrada');
-    const category = await prisma.category.update({ where: { id: existing.id }, data: input });
-    res.json(serialize(category));
+    const category = await prisma.category.update({
+      where: { id: existing.id },
+      data: input,
+      include: { _count: { select: { transactions: true } } },
+    });
+    const { _count, ...rest } = category;
+    res.json(serialize({ ...rest, transactionCount: _count.transactions }));
   }),
 );
 

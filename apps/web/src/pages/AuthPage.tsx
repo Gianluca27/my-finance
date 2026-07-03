@@ -63,7 +63,6 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
             </div>
           </div>
         </div>
-        <div className="mf-authhero-demo">Demo: demo@myfinance.app / demo1234</div>
       </div>
 
       <div className="mf-authform-wrap">

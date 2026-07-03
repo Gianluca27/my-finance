@@ -1928,16 +1928,6 @@ td.num {
   margin: 14px 4px;
 }
 
-.mf-recur-toggle-form {
-  background: none;
-  border: none;
-  color: var(--accent);
-  font-size: 14px;
-  font-weight: 600;
-  padding: 0;
-  cursor: pointer;
-}
-
 /* ---------- Presupuestos ---------- */
 .mf-budget-head {
   display: flex;

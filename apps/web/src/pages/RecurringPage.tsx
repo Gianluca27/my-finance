@@ -2,7 +2,8 @@ import type { Category, Frequency, RecurringExpense } from '@myfinance/shared';
 import { useState, type FormEvent } from 'react';
 import { api, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
-import { IcoPause, IcoPlay, IcoTrash } from '../components/icons';
+import { IcoPause, IcoPlay, IcoPlus, IcoTrash } from '../components/icons';
+import { Modal } from '../components/Modal';
 
 const WEEKDAYS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
 const MONTHS_SHORT = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
@@ -186,104 +187,106 @@ export function RecurringPage() {
       </p>
 
       <div className="card">
-        <button type="button" className="mf-recur-toggle-form" onClick={() => setFormOpen((v) => !v)}>
-          {formOpen ? '− Cancelar' : '+ Nuevo gasto fijo'}
+        <button type="button" className="mf-add-btn" onClick={() => setFormOpen(true)}>
+          <IcoPlus />
+          <span className="mf-add-label">Nuevo</span>
         </button>
-        {formOpen && (
-          <form onSubmit={onSubmit} style={{ marginTop: 16 }}>
-            <div className="form-row">
-              <label className="field" style={{ flex: 2 }}>
-                Nombre
-                <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                  maxLength={100}
-                  placeholder="Ej: Netflix, Alquiler…"
-                />
-              </label>
-              <label className="field">
-                Monto
-                <input
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  required
-                />
-              </label>
-              <label className="field">
-                Frecuencia
-                <select value={frequency} onChange={(e) => setFrequency(e.target.value as Frequency)}>
-                  <option value="MONTHLY">Mensual</option>
-                  <option value="WEEKLY">Semanal</option>
-                  <option value="YEARLY">Anual</option>
-                </select>
-              </label>
-              {frequency === 'WEEKLY' ? (
-                <label className="field">
-                  Día de la semana
-                  <select value={dueDay} onChange={(e) => setDueDay(e.target.value)}>
-                    {WEEKDAYS.map((d, i) => (
-                      <option key={d} value={i}>
-                        {d}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : (
-                <label className="field">
-                  Día de vencimiento
-                  <input
-                    type="number"
-                    min="1"
-                    max="31"
-                    value={dueDay}
-                    onChange={(e) => setDueDay(e.target.value)}
-                    required
-                  />
-                </label>
-              )}
-              {frequency === 'YEARLY' && (
-                <label className="field">
-                  Mes
-                  <select value={dueMonth} onChange={(e) => setDueMonth(e.target.value)}>
-                    {MONTHS.map((m, i) => (
-                      <option key={m} value={i + 1}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-              <label className="field">
-                Recordar (días antes)
-                <input
-                  type="number"
-                  min="0"
-                  max="30"
-                  value={reminderDays}
-                  onChange={(e) => setReminderDays(e.target.value)}
-                />
-              </label>
-              <label className="field">
-                Categoría
-                <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-                  <option value="">Sin categoría</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.icon ? `${c.icon} ` : ''}
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button disabled={busy}>{busy ? 'Guardando…' : 'Agregar'}</button>
-            </div>
-          </form>
-        )}
       </div>
+
+      <Modal open={formOpen} onClose={() => setFormOpen(false)} title="Nuevo gasto fijo">
+        <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {error && <div className="error-banner">{error}</div>}
+          <label className="field">
+            Nombre
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              maxLength={100}
+              placeholder="Ej: Netflix, Alquiler…"
+              autoFocus
+            />
+          </label>
+          <label className="field">
+            Monto
+            <input
+              type="number"
+              min="0.01"
+              step="0.01"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              required
+            />
+          </label>
+          <label className="field">
+            Frecuencia
+            <select value={frequency} onChange={(e) => setFrequency(e.target.value as Frequency)}>
+              <option value="MONTHLY">Mensual</option>
+              <option value="WEEKLY">Semanal</option>
+              <option value="YEARLY">Anual</option>
+            </select>
+          </label>
+          {frequency === 'WEEKLY' ? (
+            <label className="field">
+              Día de la semana
+              <select value={dueDay} onChange={(e) => setDueDay(e.target.value)}>
+                {WEEKDAYS.map((d, i) => (
+                  <option key={d} value={i}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <label className="field">
+              Día de vencimiento
+              <input
+                type="number"
+                min="1"
+                max="31"
+                value={dueDay}
+                onChange={(e) => setDueDay(e.target.value)}
+                required
+              />
+            </label>
+          )}
+          {frequency === 'YEARLY' && (
+            <label className="field">
+              Mes
+              <select value={dueMonth} onChange={(e) => setDueMonth(e.target.value)}>
+                {MONTHS.map((m, i) => (
+                  <option key={m} value={i + 1}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label className="field">
+            Recordar (días antes)
+            <input
+              type="number"
+              min="0"
+              max="30"
+              value={reminderDays}
+              onChange={(e) => setReminderDays(e.target.value)}
+            />
+          </label>
+          <label className="field">
+            Categoría
+            <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+              <option value="">Sin categoría</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.icon ? `${c.icon} ` : ''}
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button disabled={busy}>{busy ? 'Guardando…' : 'Agregar'}</button>
+        </form>
+      </Modal>
     </>
   );
 }

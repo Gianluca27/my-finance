@@ -2,7 +2,8 @@ import type { Category, Debt, DebtDirection } from '@myfinance/shared';
 import { useState, type FormEvent } from 'react';
 import { api, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
-import { IcoTrash } from '../components/icons';
+import { IcoPlus, IcoTrash } from '../components/icons';
+import { Modal } from '../components/Modal';
 
 const DIRECTION_LABEL: Record<DebtDirection, string> = {
   I_OWE: 'Debés',
@@ -261,67 +262,69 @@ export function DebtsPage() {
       )}
 
       <div className="card" style={{ marginTop: 16 }}>
-        <button type="button" className="mf-recur-toggle-form" onClick={() => setFormOpen((v) => !v)}>
-          {formOpen ? '− Cancelar' : '+ Nueva deuda'}
+        <button type="button" className="mf-add-btn" onClick={() => setFormOpen(true)}>
+          <IcoPlus />
+          <span className="mf-add-label">Nueva</span>
         </button>
-        {formOpen && (
-          <form onSubmit={onSubmit} style={{ marginTop: 16 }}>
-            <div className="form-row">
-              <label className="field">
-                Dirección
-                <select
-                  value={direction}
-                  onChange={(e) => {
-                    setDirection(e.target.value as DebtDirection);
-                    setCategoryId('');
-                  }}
-                >
-                  <option value="I_OWE">Yo debo</option>
-                  <option value="OWED_TO_ME">Me deben</option>
-                </select>
-              </label>
-              <label className="field">
-                Persona/entidad
-                <input
-                  value={counterparty}
-                  onChange={(e) => setCounterparty(e.target.value)}
-                  required
-                  maxLength={100}
-                  placeholder="Ej: Juan, tarjeta…"
-                />
-              </label>
-              <label className="field">
-                Monto total
-                <input
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  value={totalAmount}
-                  onChange={(e) => setTotalAmount(e.target.value)}
-                  required
-                />
-              </label>
-              <label className="field">
-                Categoría
-                <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-                  <option value="">Sin categoría</option>
-                  {formCategories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.icon ? `${c.icon} ` : ''}
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field" style={{ flex: 2 }}>
-                Descripción
-                <input value={description} onChange={(e) => setDescription(e.target.value)} maxLength={500} />
-              </label>
-              <button disabled={busy}>{busy ? 'Guardando…' : 'Agregar deuda'}</button>
-            </div>
-          </form>
-        )}
       </div>
+
+      <Modal open={formOpen} onClose={() => setFormOpen(false)} title="Nueva deuda">
+        <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {error && <div className="error-banner">{error}</div>}
+          <label className="field">
+            Dirección
+            <select
+              value={direction}
+              onChange={(e) => {
+                setDirection(e.target.value as DebtDirection);
+                setCategoryId('');
+              }}
+            >
+              <option value="I_OWE">Yo debo</option>
+              <option value="OWED_TO_ME">Me deben</option>
+            </select>
+          </label>
+          <label className="field">
+            Persona/entidad
+            <input
+              value={counterparty}
+              onChange={(e) => setCounterparty(e.target.value)}
+              required
+              maxLength={100}
+              placeholder="Ej: Juan, tarjeta…"
+              autoFocus
+            />
+          </label>
+          <label className="field">
+            Monto total
+            <input
+              type="number"
+              min="0.01"
+              step="0.01"
+              value={totalAmount}
+              onChange={(e) => setTotalAmount(e.target.value)}
+              required
+            />
+          </label>
+          <label className="field">
+            Categoría
+            <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+              <option value="">Sin categoría</option>
+              {formCategories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.icon ? `${c.icon} ` : ''}
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            Descripción
+            <input value={description} onChange={(e) => setDescription(e.target.value)} maxLength={500} />
+          </label>
+          <button disabled={busy}>{busy ? 'Guardando…' : 'Agregar deuda'}</button>
+        </form>
+      </Modal>
     </>
   );
 }

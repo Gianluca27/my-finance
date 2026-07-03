@@ -2,7 +2,8 @@ import type { BudgetStatus, Category } from '@myfinance/shared';
 import { useState, type FormEvent } from 'react';
 import { api, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
-import { IcoTrash } from '../components/icons';
+import { IcoPlus, IcoTrash } from '../components/icons';
+import { Modal } from '../components/Modal';
 
 export function BudgetsPage() {
   const [error, setError] = useState<string | null>(null);
@@ -125,54 +126,55 @@ export function BudgetsPage() {
       )}
 
       <div className="card" style={{ marginTop: 16 }}>
-        <button type="button" className="mf-recur-toggle-form" onClick={() => setFormOpen((v) => !v)}>
-          {formOpen ? '− Cancelar' : '+ Nuevo presupuesto'}
+        <button type="button" className="mf-add-btn" onClick={() => setFormOpen(true)}>
+          <IcoPlus />
+          <span className="mf-add-label">Nuevo</span>
         </button>
-        {formOpen && (
-          <form onSubmit={onSubmit} style={{ marginTop: 16 }}>
-            <div className="form-row">
-              <label className="field">
-                Categoría
-                <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} required>
-                  <option value="">Elegir…</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.icon ? `${c.icon} ` : ''}
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                Límite mensual
-                <input
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  required
-                />
-              </label>
-              <label className="field">
-                Umbral de alerta (%)
-                <input
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={threshold}
-                  onChange={(e) => setThreshold(e.target.value)}
-                  required
-                />
-              </label>
-              <button disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</button>
-            </div>
-            <p className="muted" style={{ marginTop: 8 }}>
-              Si la categoría ya tiene presupuesto, se actualiza.
-            </p>
-          </form>
-        )}
       </div>
+
+      <Modal open={formOpen} onClose={() => setFormOpen(false)} title="Nuevo presupuesto">
+        <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {error && <div className="error-banner">{error}</div>}
+          <label className="field">
+            Categoría
+            <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} required autoFocus>
+              <option value="">Elegir…</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.icon ? `${c.icon} ` : ''}
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            Límite mensual
+            <input
+              type="number"
+              min="0.01"
+              step="0.01"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              required
+            />
+          </label>
+          <label className="field">
+            Umbral de alerta (%)
+            <input
+              type="number"
+              min="1"
+              max="100"
+              value={threshold}
+              onChange={(e) => setThreshold(e.target.value)}
+              required
+            />
+          </label>
+          <p className="muted" style={{ margin: 0 }}>
+            Si la categoría ya tiene presupuesto, se actualiza.
+          </p>
+          <button disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</button>
+        </form>
+      </Modal>
     </>
   );
 }

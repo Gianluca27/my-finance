@@ -2,7 +2,8 @@ import type { Category, TransactionType } from '@myfinance/shared';
 import { useState, type FormEvent } from 'react';
 import { api } from '../api';
 import { invalidate, useCached } from '../cache';
-import { IcoTrash } from '../components/icons';
+import { IcoPlus, IcoTrash } from '../components/icons';
+import { Modal } from '../components/Modal';
 
 export function CategoriesPage() {
   const [error, setError] = useState<string | null>(null);
@@ -97,41 +98,37 @@ export function CategoriesPage() {
       {renderGrid(expenseCategories, 'Sin categorías de gasto.')}
 
       <div className="card" style={{ marginTop: 24 }}>
-        <button type="button" className="mf-recur-toggle-form" onClick={() => setFormOpen((v) => !v)}>
-          {formOpen ? '− Cancelar' : '+ Nueva categoría'}
+        <button type="button" className="mf-add-btn" onClick={() => setFormOpen(true)}>
+          <IcoPlus />
+          <span className="mf-add-label">Nueva</span>
         </button>
-        {formOpen && (
-          <form onSubmit={onSubmit} style={{ marginTop: 16 }}>
-            <div className="form-row">
-              <label className="field" style={{ flex: 2 }}>
-                Nombre
-                <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={50} />
-              </label>
-              <label className="field">
-                Tipo
-                <select value={type} onChange={(e) => setType(e.target.value as TransactionType)}>
-                  <option value="EXPENSE">Gasto</option>
-                  <option value="INCOME">Ingreso</option>
-                </select>
-              </label>
-              <label className="field">
-                Color
-                <input type="color" value={color} onChange={(e) => setColor(e.target.value)} />
-              </label>
-              <label className="field">
-                Emoji (opcional)
-                <input
-                  value={icon}
-                  onChange={(e) => setIcon(e.target.value)}
-                  maxLength={4}
-                  placeholder="🛒"
-                />
-              </label>
-              <button disabled={busy}>{busy ? 'Guardando…' : 'Agregar'}</button>
-            </div>
-          </form>
-        )}
       </div>
+
+      <Modal open={formOpen} onClose={() => setFormOpen(false)} title="Nueva categoría">
+        <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {error && <div className="error-banner">{error}</div>}
+          <label className="field">
+            Nombre
+            <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={50} autoFocus />
+          </label>
+          <label className="field">
+            Tipo
+            <select value={type} onChange={(e) => setType(e.target.value as TransactionType)}>
+              <option value="EXPENSE">Gasto</option>
+              <option value="INCOME">Ingreso</option>
+            </select>
+          </label>
+          <label className="field">
+            Color
+            <input type="color" value={color} onChange={(e) => setColor(e.target.value)} />
+          </label>
+          <label className="field">
+            Emoji (opcional)
+            <input value={icon} onChange={(e) => setIcon(e.target.value)} maxLength={4} placeholder="🛒" />
+          </label>
+          <button disabled={busy}>{busy ? 'Guardando…' : 'Agregar'}</button>
+        </form>
+      </Modal>
     </>
   );
 }

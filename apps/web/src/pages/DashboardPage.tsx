@@ -191,7 +191,7 @@ export function DashboardPage() {
         </div>
       </div>
 
-      <div className="mf-grid-2">
+      <div className="mf-grid-donut">
         <div className="card">
           <div className="mf-eyebrow" style={{ marginBottom: 16 }}>
             Gastos por categoría

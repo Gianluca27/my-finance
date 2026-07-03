@@ -2,9 +2,11 @@ import type { Category, TransactionType } from '@myfinance/shared';
 import { useState, type FormEvent } from 'react';
 import { api } from '../api';
 import { invalidate, useCached } from '../cache';
+import { IcoTrash } from '../components/icons';
 
 export function CategoriesPage() {
   const [error, setError] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
 
   const [name, setName] = useState('');
   const [type, setType] = useState<TransactionType>('EXPENSE');
@@ -24,6 +26,7 @@ export function CategoriesPage() {
       await api.createCategory({ name, type, color, icon: icon || null });
       setName('');
       setIcon('');
+      setFormOpen(false);
       invalidate('categories');
       refresh();
     } catch (err) {
@@ -53,80 +56,81 @@ export function CategoriesPage() {
   const expenseCategories = categories?.filter((c) => c.type === 'EXPENSE') ?? [];
   const incomeCategories = categories?.filter((c) => c.type === 'INCOME') ?? [];
 
+  function renderGrid(list: Category[], emptyText: string) {
+    if (categories && list.length === 0) return <p className="muted">{emptyText}</p>;
+    return (
+      <div className="mf-cat-grid">
+        {list.map((c) => (
+          <div className="card mf-cat-card" key={c.id}>
+            <span className="mf-cat-dot" style={{ background: c.color }} />
+            <button
+              type="button"
+              className="mf-cat-delete"
+              aria-label={`Eliminar categoría ${c.name}`}
+              onClick={() => onDelete(c)}
+            >
+              <IcoTrash size={13} />
+            </button>
+            <div className="mf-cat-icon" style={{ background: `${c.color}26` }}>
+              {c.icon || '🏷️'}
+            </div>
+            <div className="mf-cat-name">{c.name}</div>
+            <div className="mf-cat-count">{c.transactionCount} movimientos</div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <>
-      <h1 className="page-title">Categorías</h1>
-      <p className="page-subtitle">Personalizá cómo clasificás tus movimientos</p>
       {(error ?? loadError) && <div className="error-banner">{error ?? loadError}</div>}
 
-      <form className="card" onSubmit={onSubmit} style={{ marginBottom: 16 }}>
-        <h3>Nueva categoría</h3>
-        <div className="form-row">
-          <label className="field" style={{ flex: 2 }}>
-            Nombre
-            <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={50} />
-          </label>
-          <label className="field">
-            Tipo
-            <select value={type} onChange={(e) => setType(e.target.value as TransactionType)}>
-              <option value="EXPENSE">Gasto</option>
-              <option value="INCOME">Ingreso</option>
-            </select>
-          </label>
-          <label className="field">
-            Color
-            <input type="color" value={color} onChange={(e) => setColor(e.target.value)} />
-          </label>
-          <label className="field">
-            Emoji (opcional)
-            <input
-              value={icon}
-              onChange={(e) => setIcon(e.target.value)}
-              maxLength={4}
-              placeholder="🛒"
-            />
-          </label>
-          <button disabled={busy}>{busy ? 'Guardando…' : 'Agregar'}</button>
-        </div>
-      </form>
+      <div className="mf-eyebrow" style={{ marginBottom: 12 }}>
+        Ingresos
+      </div>
+      {renderGrid(incomeCategories, 'Sin categorías de ingreso.')}
 
-      <div className="grid two-col">
-        <div className="card">
-          <h3>Gastos</h3>
-          {expenseCategories.map((c) => (
-            <div className="list-row" key={c.id}>
-              <span className="cat-chip" style={{ fontSize: 14 }}>
-                <span className="cat-dot" style={{ background: c.color }} />
-                {c.icon ? `${c.icon} ` : ''}
-                {c.name}
-              </span>
-              <button className="danger" onClick={() => onDelete(c)}>
-                Eliminar
-              </button>
+      <div className="mf-eyebrow" style={{ margin: '24px 0 12px' }}>
+        Gastos
+      </div>
+      {renderGrid(expenseCategories, 'Sin categorías de gasto.')}
+
+      <div className="card" style={{ marginTop: 24 }}>
+        <button type="button" className="mf-recur-toggle-form" onClick={() => setFormOpen((v) => !v)}>
+          {formOpen ? '− Cancelar' : '+ Nueva categoría'}
+        </button>
+        {formOpen && (
+          <form onSubmit={onSubmit} style={{ marginTop: 16 }}>
+            <div className="form-row">
+              <label className="field" style={{ flex: 2 }}>
+                Nombre
+                <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={50} />
+              </label>
+              <label className="field">
+                Tipo
+                <select value={type} onChange={(e) => setType(e.target.value as TransactionType)}>
+                  <option value="EXPENSE">Gasto</option>
+                  <option value="INCOME">Ingreso</option>
+                </select>
+              </label>
+              <label className="field">
+                Color
+                <input type="color" value={color} onChange={(e) => setColor(e.target.value)} />
+              </label>
+              <label className="field">
+                Emoji (opcional)
+                <input
+                  value={icon}
+                  onChange={(e) => setIcon(e.target.value)}
+                  maxLength={4}
+                  placeholder="🛒"
+                />
+              </label>
+              <button disabled={busy}>{busy ? 'Guardando…' : 'Agregar'}</button>
             </div>
-          ))}
-          {categories && expenseCategories.length === 0 && (
-            <p className="muted">Sin categorías de gasto.</p>
-          )}
-        </div>
-        <div className="card">
-          <h3>Ingresos</h3>
-          {incomeCategories.map((c) => (
-            <div className="list-row" key={c.id}>
-              <span className="cat-chip" style={{ fontSize: 14 }}>
-                <span className="cat-dot" style={{ background: c.color }} />
-                {c.icon ? `${c.icon} ` : ''}
-                {c.name}
-              </span>
-              <button className="danger" onClick={() => onDelete(c)}>
-                Eliminar
-              </button>
-            </div>
-          ))}
-          {categories && incomeCategories.length === 0 && (
-            <p className="muted">Sin categorías de ingreso.</p>
-          )}
-        </div>
+          </form>
+        )}
       </div>
     </>
   );

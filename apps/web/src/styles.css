@@ -219,7 +219,7 @@ a:hover {
 .card {
   background: var(--sheet);
   border: 1px solid var(--rule);
-  border-radius: 4px;
+  border-radius: var(--r);
   padding: 20px;
   box-shadow: var(--shadow);
   overflow-x: auto;
@@ -321,7 +321,7 @@ textarea {
   font: inherit;
   padding: 8px 10px;
   border: 1px solid var(--rule-strong);
-  border-radius: 4px;
+  border-radius: var(--r-sm);
   background: var(--field);
   color: var(--ink);
 }
@@ -351,7 +351,7 @@ button {
   font-weight: 600;
   font-size: 14px;
   padding: 8px 16px;
-  border-radius: 4px;
+  border-radius: var(--r-sm);
   border: 1px solid var(--ink);
   background: var(--ink);
   color: var(--page);
@@ -419,7 +419,7 @@ button:disabled {
   color: var(--debit);
   border: 1px solid color-mix(in srgb, var(--debit) 35%, transparent);
   padding: 10px 14px;
-  border-radius: 4px;
+  border-radius: var(--r-sm);
   margin-bottom: 14px;
   font-size: 14px;
 }
@@ -1165,9 +1165,28 @@ td.num {
   gap: 20px;
 }
 
+.mf-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+.mf-grid-donut {
+  display: grid;
+  grid-template-columns: 4fr 5fr;
+  gap: 20px;
+}
+
 @media (max-width: 1000px) {
   .mf-grid-hero,
-  .mf-grid-2 {
+  .mf-grid-2,
+  .mf-grid-donut {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .mf-grid-3 {
     grid-template-columns: 1fr;
   }
 }
@@ -1233,6 +1252,10 @@ td.num {
   margin-top: 22px;
   padding-top: 18px;
   border-top: 1px solid var(--border);
+}
+
+.mf-hero-stats > div {
+  min-width: 0;
 }
 
 .mf-stat-label {
@@ -1614,4 +1637,605 @@ td.num {
   .mf-authhero {
     display: none;
   }
+}
+
+/* ---------- Movimientos ---------- */
+.mf-seg button.on.neutral {
+  background: var(--text);
+  color: var(--bg);
+}
+
+.mf-select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background: var(--surface)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238a919c' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    no-repeat right 14px center;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 10px 34px 10px 14px;
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.mf-tx-card {
+  padding: 0;
+}
+
+.mf-tx-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 20px;
+}
+
+.mf-tx-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 9px 14px;
+  color: var(--text-3);
+  flex: 1;
+  min-width: 200px;
+  max-width: 320px;
+}
+
+.mf-tx-search input {
+  border: none;
+  background: none;
+  padding: 0;
+  flex: 1;
+  color: var(--text);
+}
+
+.mf-tx-search input:focus {
+  outline: none;
+}
+
+.mf-tx-count {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+.mf-tx-table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.mf-tx-table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.mf-tx-table th.num {
+  text-align: right;
+}
+
+.mf-tx-table td {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+  vertical-align: middle;
+}
+
+.mf-tx-table tr:last-child td {
+  border-bottom: none;
+}
+
+.mf-tx-table td.num {
+  text-align: right;
+}
+
+.mf-tx-row {
+  cursor: pointer;
+}
+
+.mf-tx-row:hover {
+  background: var(--bg-2);
+}
+
+.mf-tx-date {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+.mf-tx-detail {
+  font-weight: 600;
+}
+
+.mf-tx-amount {
+  font-family: var(--mono);
+  font-weight: 700;
+}
+
+.mf-tx-amount.income {
+  color: var(--pos);
+}
+
+.mf-tx-amount.expense {
+  color: var(--text);
+}
+
+.mf-tx-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 20px;
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+.mf-tx-pagebtns {
+  display: flex;
+  gap: 8px;
+}
+
+.mf-pagebtn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  cursor: pointer;
+  padding: 0;
+  font-size: 14px;
+}
+
+.mf-pagebtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ---------- Gastos fijos ---------- */
+.mf-recur-total-card {
+  margin-bottom: 16px;
+}
+
+.mf-recur-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.mf-recur-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.mf-recur-row:last-child {
+  border-bottom: none;
+}
+
+.mf-recur-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.mf-recur-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.mf-recur-name {
+  font-weight: 700;
+}
+
+.mf-recur-meta {
+  font-size: 13px;
+  color: var(--text-3);
+  margin-top: 2px;
+}
+
+.mf-recur-badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.mf-recur-badge.urgent {
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+  color: var(--warn);
+}
+
+.mf-recur-amount {
+  font-family: var(--mono);
+  font-weight: 700;
+  min-width: 90px;
+  text-align: right;
+}
+
+.mf-recur-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mf-recur-pay {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 13px;
+  padding: 8px 16px;
+  border-radius: var(--r-sm);
+}
+
+.mf-recur-pay:hover {
+  border-color: var(--border-2);
+}
+
+@media (max-width: 640px) {
+  .mf-recur-row {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+
+  .mf-recur-info {
+    flex: 1 1 100%;
+    order: 1;
+  }
+
+  .mf-recur-badge {
+    order: 2;
+  }
+
+  .mf-recur-amount {
+    order: 3;
+    margin-left: auto;
+    text-align: left;
+  }
+
+  .mf-recur-actions {
+    order: 4;
+  }
+}
+
+.mf-recur-footnote {
+  font-size: 13px;
+  color: var(--text-3);
+  margin: 14px 4px;
+}
+
+.mf-recur-toggle-form {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* ---------- Presupuestos ---------- */
+.mf-budget-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.mf-budget-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.mf-budget-titles {
+  flex: 1;
+  min-width: 0;
+}
+
+.mf-budget-name {
+  font-weight: 700;
+}
+
+.mf-budget-status {
+  font-size: 13px;
+  color: var(--text-3);
+  margin-top: 2px;
+}
+
+.mf-budget-status.near {
+  color: var(--warn);
+}
+
+.mf-budget-status.over {
+  color: var(--neg);
+}
+
+.mf-budget-pct {
+  font-size: 20px;
+  font-weight: 700;
+  font-family: var(--mono);
+}
+
+.mf-progress-fill.near {
+  background: var(--warn);
+}
+
+.mf-progress-fill.over {
+  background: var(--neg);
+}
+
+.mf-budget-foot {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  margin-top: 10px;
+}
+
+/* ---------- Deudas ---------- */
+.mf-debt-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.mf-debt-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mf-debt-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: #0b0d10;
+  flex-shrink: 0;
+}
+
+.mf-debt-titles {
+  flex: 1;
+  min-width: 0;
+}
+
+.mf-debt-name {
+  font-weight: 700;
+}
+
+.mf-debt-desc {
+  font-size: 13px;
+  color: var(--text-3);
+  margin-top: 2px;
+}
+
+.mf-debt-amounts {
+  text-align: right;
+}
+
+.mf-debt-remaining {
+  font-family: var(--mono);
+  font-weight: 700;
+}
+
+.mf-debt-total {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-top: 2px;
+}
+
+.mf-progress-fill.owe {
+  background: var(--neg);
+}
+
+.mf-progress-fill.owed {
+  background: var(--pos);
+}
+
+.mf-debt-pay {
+  width: 100%;
+  margin-top: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 14px;
+  padding: 10px;
+  border-radius: var(--r-sm);
+}
+
+.mf-debt-pay:hover {
+  border-color: var(--border-2);
+}
+
+/* ---------- Categorías ---------- */
+.mf-cat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 16px;
+}
+
+.mf-cat-card {
+  position: relative;
+  padding: 16px;
+}
+
+.mf-cat-dot {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  transition: opacity 0.15s ease;
+}
+
+.mf-cat-delete {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: var(--surface-2);
+  color: var(--text-2);
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.mf-cat-card:hover .mf-cat-dot {
+  opacity: 0;
+}
+
+.mf-cat-card:hover .mf-cat-delete {
+  opacity: 1;
+}
+
+.mf-cat-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  margin-bottom: 10px;
+}
+
+.mf-cat-name {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.mf-cat-count {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-top: 2px;
+}
+
+/* ---------- Reportes ---------- */
+.mf-report-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.mf-report-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.mf-report-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mf-report-icon.csv {
+  background: var(--accent-weak);
+  color: var(--pos);
+}
+
+.mf-report-icon.pdf {
+  background: var(--neg-weak);
+  color: var(--neg);
+}
+
+.mf-report-title {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.mf-report-desc {
+  font-size: 13px;
+  color: var(--text-3);
+  margin: 0 0 16px;
+}
+
+.mf-report-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.mf-report-range input {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 480px) {
+  .mf-report-range {
+    flex-wrap: wrap;
+  }
+
+  .mf-report-range input {
+    flex: 1 1 100%;
+  }
+}
+
+.mf-report-btn {
+  padding: 12px;
+  border-radius: var(--r-sm);
+  font-size: 14px;
+  font-weight: 700;
+  margin-top: auto;
+}
+
+.mf-report-btn.primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border: none;
+}
+
+.mf-report-btn.secondary {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.mf-report-footnote {
+  font-size: 13px;
+  color: var(--text-3);
+  margin-top: 16px;
 }

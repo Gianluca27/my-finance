@@ -45,7 +45,8 @@ export function formatMoney(value: number): string {
   return value.toLocaleString('es-AR', {
     style: 'currency',
     currency: 'ARS',
-    maximumFractionDigits: 2,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
   });
 }
 

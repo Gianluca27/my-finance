@@ -2,6 +2,7 @@ import type { BudgetStatus, Category } from '@myfinance/shared';
 import { useState, type FormEvent } from 'react';
 import { api, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
+import { IcoTrash } from '../components/icons';
 
 export function BudgetsPage() {
   const [error, setError] = useState<string | null>(null);
@@ -10,12 +11,17 @@ export function BudgetsPage() {
   const [amount, setAmount] = useState('');
   const [threshold, setThreshold] = useState('80');
   const [busy, setBusy] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
 
   const { data: budgets, error: loadError, refresh } = useCached<BudgetStatus[]>('budgets', () =>
     api.listBudgets(),
   );
   const { data: categoriesData } = useCached<Category[]>('categories', () => api.listCategories());
   const categories = (categoriesData ?? []).filter((c) => c.type === 'EXPENSE');
+
+  const totalBudgeted = (budgets ?? []).reduce((sum, b) => sum + b.amount, 0);
+  const totalSpent = (budgets ?? []).reduce((sum, b) => sum + b.spent, 0);
+  const monthLabel = new Date().toLocaleDateString('es-AR', { month: 'long' });
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -29,6 +35,7 @@ export function BudgetsPage() {
       });
       setCategoryId('');
       setAmount('');
+      setFormOpen(false);
       invalidate('budgets');
       refresh();
     } catch (err) {
@@ -51,101 +58,119 @@ export function BudgetsPage() {
 
   return (
     <>
-      <h1 className="page-title">Presupuestos</h1>
-      <p className="page-subtitle">
-        Límites mensuales por categoría con alerta al superar el umbral
-      </p>
       {(error ?? loadError) && <div className="error-banner">{error ?? loadError}</div>}
 
-      <form className="card" onSubmit={onSubmit} style={{ marginBottom: 16 }}>
-        <h3>Definir presupuesto</h3>
-        <div className="form-row">
-          <label className="field">
-            Categoría
-            <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} required>
-              <option value="">Elegir…</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.icon ? `${c.icon} ` : ''}
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            Límite mensual
-            <input
-              type="number"
-              min="0.01"
-              step="0.01"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              required
-            />
-          </label>
-          <label className="field">
-            Umbral de alerta (%)
-            <input
-              type="number"
-              min="1"
-              max="100"
-              value={threshold}
-              onChange={(e) => setThreshold(e.target.value)}
-              required
-            />
-          </label>
-          <button disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</button>
+      <div className="mf-grid-2" style={{ marginBottom: 16 }}>
+        <div className="card">
+          <div className="mf-eyebrow">Presupuestado</div>
+          <div className="mf-hero-balance" style={{ fontSize: 32 }}>
+            {formatMoney(totalBudgeted)}
+          </div>
         </div>
-        <p className="muted" style={{ marginTop: 8 }}>
-          Si la categoría ya tiene presupuesto, se actualiza.
-        </p>
-      </form>
+        <div className="card">
+          <div className="mf-eyebrow">Gastado en {monthLabel}</div>
+          <div className="mf-hero-balance" style={{ fontSize: 32, color: 'var(--neg)' }}>
+            {formatMoney(totalSpent)}
+          </div>
+        </div>
+      </div>
 
-      <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
-        {!budgets ? (
-          <p className="muted">Cargando…</p>
-        ) : budgets.length === 0 ? (
-          <p className="muted">Todavía no definiste presupuestos.</p>
-        ) : (
-          budgets.map((budget) => {
+      {!budgets ? (
+        <p className="muted">Cargando…</p>
+      ) : budgets.length === 0 ? (
+        <p className="muted">Todavía no definiste presupuestos.</p>
+      ) : (
+        <div className="mf-grid-2">
+          {budgets.map((budget) => {
             const over = budget.percentUsed >= 100;
             const near = !over && budget.percentUsed >= budget.alertThreshold;
+            const status = over ? 'Superado' : near ? 'Cerca del límite' : 'En camino';
+            const color = budget.category.color;
             return (
-              <div className="card" key={budget.id}>
-                <div className="list-row" style={{ borderBottom: 'none', paddingTop: 0 }}>
-                  <span className="cat-chip" style={{ fontSize: 15, fontWeight: 600 }}>
-                    <span className="cat-dot" style={{ background: budget.category.color }} />
-                    {budget.category.name}
-                  </span>
-                  <button className="danger" onClick={() => onDelete(budget.id)}>
-                    Eliminar
+              <div className="card mf-budget-card" key={budget.id}>
+                <div className="mf-budget-head">
+                  <div className="mf-budget-icon" style={{ background: `${color}26` }}>
+                    {budget.category.icon ?? '💰'}
+                  </div>
+                  <div className="mf-budget-titles">
+                    <div className="mf-budget-name">{budget.category.name}</div>
+                    <div className={`mf-budget-status ${over ? 'over' : near ? 'near' : ''}`}>{status}</div>
+                  </div>
+                  <div className="mf-budget-pct">{budget.percentUsed}%</div>
+                  <button
+                    type="button"
+                    className="mf-icon-btn"
+                    aria-label="Eliminar presupuesto"
+                    onClick={() => onDelete(budget.id)}
+                  >
+                    <IcoTrash size={15} />
                   </button>
                 </div>
-                <div className="meter" style={{ margin: '8px 0' }}>
+                <div className="mf-progress">
                   <div
-                    className={`meter-fill ${over ? 'over' : near ? 'near' : ''}`}
+                    className={`mf-progress-fill ${over ? 'over' : near ? 'near' : ''}`}
                     style={{ width: `${Math.min(100, budget.percentUsed)}%` }}
                   />
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                  <span className="muted mono">
-                    {formatMoney(budget.spent)} / {formatMoney(budget.amount)}
+                <div className="mf-budget-foot">
+                  <span className="mono muted">
+                    {formatMoney(budget.spent)} de {formatMoney(budget.amount)}
                   </span>
-                  <span className="legend-value">{budget.percentUsed}%</span>
+                  <span className="muted">Quedan {formatMoney(Math.max(0, budget.amount - budget.spent))}</span>
                 </div>
-                {over && (
-                  <p className="status-note over" style={{ margin: '8px 0 0' }}>
-                    Presupuesto superado
-                  </p>
-                )}
-                {near && (
-                  <p className="status-note near" style={{ margin: '8px 0 0' }}>
-                    Cerca del límite (umbral {budget.alertThreshold}%)
-                  </p>
-                )}
               </div>
             );
-          })
+          })}
+        </div>
+      )}
+
+      <div className="card" style={{ marginTop: 16 }}>
+        <button type="button" className="mf-recur-toggle-form" onClick={() => setFormOpen((v) => !v)}>
+          {formOpen ? '− Cancelar' : '+ Nuevo presupuesto'}
+        </button>
+        {formOpen && (
+          <form onSubmit={onSubmit} style={{ marginTop: 16 }}>
+            <div className="form-row">
+              <label className="field">
+                Categoría
+                <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} required>
+                  <option value="">Elegir…</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.icon ? `${c.icon} ` : ''}
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                Límite mensual
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  required
+                />
+              </label>
+              <label className="field">
+                Umbral de alerta (%)
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={threshold}
+                  onChange={(e) => setThreshold(e.target.value)}
+                  required
+                />
+              </label>
+              <button disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</button>
+            </div>
+            <p className="muted" style={{ marginTop: 8 }}>
+              Si la categoría ya tiene presupuesto, se actualiza.
+            </p>
+          </form>
         )}
       </div>
     </>

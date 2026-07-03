@@ -64,6 +64,18 @@ export function IcoSettings(p: IconProps) {
   );
 }
 
+export const IcoPause = (p: IconProps) => (
+  <PathIcon {...p} paths={[{ d: 'M7 4v12M13 4v12', w: 2.2 }]} />
+);
+export const IcoPlay = (p: IconProps) => <PathIcon {...p} paths={[{ d: 'M6 4l10 6-10 6z', w: 1.7 }]} />;
+
+export const IcoTrash = (p: IconProps) => (
+  <PathIcon
+    {...p}
+    paths={[{ d: 'M4 6h12M8 6V4.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1V6M6 6l.7 9.2a1 1 0 0 0 1 .8h4.6a1 1 0 0 0 1-.8L14 6' }]}
+  />
+);
+
 export function IcoSearch(p: IconProps) {
   const sz = p.size ?? 16;
   return (

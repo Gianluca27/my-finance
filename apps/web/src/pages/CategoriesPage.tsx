@@ -97,12 +97,10 @@ export function CategoriesPage() {
       </div>
       {renderGrid(expenseCategories, 'Sin categorías de gasto.')}
 
-      <div className="card" style={{ marginTop: 24 }}>
-        <button type="button" className="mf-add-btn" onClick={() => setFormOpen(true)}>
-          <IcoPlus />
-          <span className="mf-add-label">Nueva</span>
-        </button>
-      </div>
+      <button type="button" className="mf-add-btn" style={{ marginTop: 24 }} onClick={() => setFormOpen(true)}>
+        <IcoPlus />
+        <span className="mf-add-label">Nueva Categoría</span>
+      </button>
 
       <Modal open={formOpen} onClose={() => setFormOpen(false)} title="Nueva categoría">
         <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

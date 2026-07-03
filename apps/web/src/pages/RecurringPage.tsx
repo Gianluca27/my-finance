@@ -186,12 +186,10 @@ export function RecurringPage() {
         recordatorio por push y email según tus preferencias.
       </p>
 
-      <div className="card">
-        <button type="button" className="mf-add-btn" onClick={() => setFormOpen(true)}>
-          <IcoPlus />
-          <span className="mf-add-label">Nuevo</span>
-        </button>
-      </div>
+      <button type="button" className="mf-add-btn" onClick={() => setFormOpen(true)}>
+        <IcoPlus />
+        <span className="mf-add-label">Nuevo Gasto Fijo</span>
+      </button>
 
       <Modal open={formOpen} onClose={() => setFormOpen(false)} title="Nuevo gasto fijo">
         <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

@@ -125,12 +125,10 @@ export function BudgetsPage() {
         </div>
       )}
 
-      <div className="card" style={{ marginTop: 16 }}>
-        <button type="button" className="mf-add-btn" onClick={() => setFormOpen(true)}>
-          <IcoPlus />
-          <span className="mf-add-label">Nuevo</span>
-        </button>
-      </div>
+      <button type="button" className="mf-add-btn" style={{ marginTop: 16 }} onClick={() => setFormOpen(true)}>
+        <IcoPlus />
+        <span className="mf-add-label">Nuevo Presupuesto</span>
+      </button>
 
       <Modal open={formOpen} onClose={() => setFormOpen(false)} title="Nuevo presupuesto">
         <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

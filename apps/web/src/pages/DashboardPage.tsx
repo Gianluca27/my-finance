@@ -1,33 +1,26 @@
-import type { DashboardData } from '@myfinance/shared';
+import type { BudgetStatus, CategorySummary, DashboardData } from '@myfinance/shared';
 import { useMemo } from 'react';
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
-import { api, formatDate, formatMoney } from '../api';
+import { Link } from 'react-router-dom';
+import { api, formatMoney } from '../api';
 import { useCached } from '../cache';
 
-/** Lee los tokens de color del tema activo (claro/oscuro) para pasarlos a Recharts. */
-function useThemeTokens() {
-  return useMemo(() => {
-    const style = getComputedStyle(document.documentElement);
-    const token = (name: string) => style.getPropertyValue(name).trim();
-    return {
-      ink: token('--ink'),
-      debit: token('--debit'),
-      rule: token('--rule'),
-      muted: token('--ink-mut'),
-      sheet: token('--sheet'),
-    };
-  }, []);
+const DONUT_R = 54;
+const DONUT_C = 2 * Math.PI * DONUT_R;
+const OTHER_COLOR = '#5a6472';
+
+function formatMoneyShort(n: number): string {
+  const v = Math.abs(n);
+  if (v >= 1_000_000) return `$ ${(v / 1_000_000).toFixed(1).replace('.', ',')}M`;
+  if (v >= 1000) return `$ ${Math.round(v / 1000)}k`;
+  return `$ ${Math.round(v)}`;
+}
+
+function shortMonthLabel(month: string): string {
+  const [y, m] = month.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('es-AR', {
+    month: 'short',
+    timeZone: 'UTC',
+  });
 }
 
 function monthLabel(month: string): string {
@@ -39,123 +32,207 @@ function monthLabel(month: string): string {
   });
 }
 
-function shortMonthLabel(month: string): string {
-  const [y, m] = month.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('es-AR', {
-    month: 'short',
-    year: '2-digit',
-    timeZone: 'UTC',
-  });
+function dueInfo(nextDueDate: string): { label: string; color: string } {
+  const daysLeft = Math.round((new Date(nextDueDate).getTime() - Date.now()) / 86_400_000);
+  if (daysLeft < 0) return { label: 'Vencido', color: 'var(--neg)' };
+  if (daysLeft === 0) return { label: 'Vence hoy', color: 'var(--warn)' };
+  if (daysLeft <= 3) return { label: `En ${daysLeft} día${daysLeft > 1 ? 's' : ''}`, color: 'var(--warn)' };
+  return { label: `En ${daysLeft} días`, color: 'var(--text-3)' };
+}
+
+function topCategories(cats: CategorySummary[]): CategorySummary[] {
+  const sorted = [...cats].sort((a, b) => b.total - a.total);
+  const top = sorted.slice(0, 5);
+  const rest = sorted.slice(5);
+  if (rest.length) {
+    top.push({
+      categoryId: 'rest',
+      categoryName: 'Otros',
+      color: OTHER_COLOR,
+      total: rest.reduce((sum, c) => sum + c.total, 0),
+    });
+  }
+  return top;
+}
+
+function budgetBarColor(status: BudgetStatus): string {
+  if (status.percentUsed >= 100) return 'var(--neg)';
+  if (status.percentUsed >= status.alertThreshold) return 'var(--warn)';
+  return 'var(--accent)';
 }
 
 export function DashboardPage() {
   const { data, error } = useCached<DashboardData>('dashboard', () => api.dashboard());
-  const tokens = useThemeTokens();
+  const { data: budgets } = useCached<BudgetStatus[]>('budgets', () => api.listBudgets());
+
+  const top = useMemo(() => (data ? topCategories(data.expensesByCategory) : []), [data]);
+  const donutSegments = useMemo(() => {
+    if (!data || data.monthExpense <= 0) return [];
+    let cumulative = 0;
+    return top.map((c) => {
+      const fraction = c.total / data.monthExpense;
+      const dash = fraction * DONUT_C;
+      const segment = { color: c.color, dash: `${dash} ${DONUT_C - dash}`, offset: -cumulative };
+      cumulative += dash;
+      return segment;
+    });
+  }, [data, top]);
+
+  const miniBudgets = useMemo(() => {
+    if (!budgets) return [];
+    return [...budgets].sort((a, b) => b.percentUsed - a.percentUsed).slice(0, 4);
+  }, [budgets]);
 
   if (error && !data) return <div className="error-banner">{error}</div>;
   if (!data) return <p className="muted">Cargando resumen…</p>;
 
-  const comparison = data.monthlyComparison.map((m) => ({
-    ...m,
-    label: shortMonthLabel(m.month),
-  }));
-  const totalExpenses = data.expensesByCategory.reduce((sum, c) => sum + c.total, 0);
-  const monthResult = data.monthIncome - data.monthExpense;
+  const savingsRate =
+    data.monthIncome > 0 ? Math.round(((data.monthIncome - data.monthExpense) / data.monthIncome) * 100) : 0;
 
-  const tooltipStyle = {
-    background: tokens.sheet,
-    border: `1px solid ${tokens.rule}`,
-    borderRadius: 4,
-    fontSize: 13,
-    fontFamily: "'IBM Plex Mono', monospace",
-  };
+  const now = new Date();
+  const dayOfMonth = now.getDate();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const monthProgressPct = Math.round((dayOfMonth / daysInMonth) * 100);
+  const projected = data.insights.projectedMonthTotal;
+  const expenseOfProjectedPct =
+    projected && projected > 0 ? Math.round((data.monthExpense / projected) * 100) : null;
+
+  const prevTotal = data.insights.previousMonthComparison?.total ?? null;
+  const balDelta = prevTotal ? prevTotal.current - prevTotal.previous : null;
+  const deltaUp = (balDelta ?? 0) > 0;
+
+  const maxBar = Math.max(1, ...data.monthlyComparison.map((m) => Math.max(m.income, m.expense)));
 
   return (
-    <>
-      <header className="ledger-hero">
-        <p className="eyebrow">Estado de cuenta · {monthLabel(data.month)}</p>
-        <p className={`hero-balance ${data.balance < 0 ? 'negative' : ''}`}>
-          {formatMoney(data.balance)}
-        </p>
-        <p className="hero-sub">Saldo total acumulado</p>
-        <dl className="ledger-lines">
-          <div className="ledger-line">
-            <dt>Ingresos del mes</dt>
-            <span className="leader" aria-hidden="true" />
-            <dd>+{formatMoney(data.monthIncome)}</dd>
+    <div className="mf-dashboard">
+      <div className="mf-grid-hero">
+        <div className="mf-hero-card">
+          <div className="mf-hero-glow" />
+          <div className="mf-hero-body">
+            <div className="mf-eyebrow">Balance total</div>
+            <div className="mf-hero-balance">{formatMoney(data.balance)}</div>
+            {prevTotal && balDelta !== null && (
+              <div className="mf-hero-delta">
+                <span
+                  className="mf-delta-badge"
+                  style={{
+                    background: deltaUp ? 'var(--neg-weak)' : 'var(--accent-weak)',
+                    color: deltaUp ? 'var(--neg)' : 'var(--pos)',
+                  }}
+                >
+                  {deltaUp ? '▲' : '▼'} {formatMoney(Math.abs(balDelta))}
+                </span>
+                <span>vs. mes anterior</span>
+              </div>
+            )}
+            <div className="mf-hero-stats">
+              <div>
+                <div className="mf-stat-label">Ingresos · {monthLabel(data.month)}</div>
+                <div className="mf-stat-value" style={{ color: 'var(--pos)' }}>
+                  {formatMoney(data.monthIncome)}
+                </div>
+              </div>
+              <div>
+                <div className="mf-stat-label">Gastos · {monthLabel(data.month)}</div>
+                <div className="mf-stat-value" style={{ color: 'var(--neg)' }}>
+                  {formatMoney(data.monthExpense)}
+                </div>
+              </div>
+              <div>
+                <div className="mf-stat-label">Tasa de ahorro</div>
+                <div className="mf-stat-value">{savingsRate}%</div>
+              </div>
+            </div>
           </div>
-          <div className="ledger-line">
-            <dt>Gastos del mes</dt>
-            <span className="leader" aria-hidden="true" />
-            <dd className="debit">−{formatMoney(data.monthExpense)}</dd>
-          </div>
-          <div className="ledger-line">
-            <dt>Resultado del mes</dt>
-            <span className="leader" aria-hidden="true" />
-            <dd className={monthResult < 0 ? 'debit' : ''}>
-              {monthResult < 0 ? '−' : ''}
-              {formatMoney(Math.abs(monthResult))}
-            </dd>
-          </div>
-        </dl>
-      </header>
+        </div>
 
-      <div className="card" style={{ marginBottom: 16 }}>
-        <h3>Deudas</h3>
-        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-          <span>
-            Debés <strong className="amount-expense">{formatMoney(data.debtsSummary.totalIOwe)}</strong>
-          </span>
-          <span>
-            Te deben <strong className="amount-income">{formatMoney(data.debtsSummary.totalOwedToMe)}</strong>
-          </span>
+        <div className="card mf-insight-card">
+          <div className="mf-eyebrow">Proyección del mes</div>
+          {projected === null ? (
+            <p className="muted">Necesitás más historial para proyectar.</p>
+          ) : (
+            <>
+              <div className="mf-projection-row">
+                <div className="mf-hero-balance" style={{ fontSize: 26 }}>
+                  {formatMoney(projected)}
+                </div>
+                <div className="muted">gasto estimado</div>
+              </div>
+              <div className="mf-progress">
+                <div className="mf-progress-fill" style={{ width: `${monthProgressPct}%` }} />
+              </div>
+              <div className="muted" style={{ fontSize: 12.5 }}>
+                Día {dayOfMonth} de {daysInMonth}
+                {expenseOfProjectedPct !== null &&
+                  ` · llevás gastado el ${expenseOfProjectedPct}% de la proyección`}
+              </div>
+            </>
+          )}
+          <div className="mf-anomaly-list">
+            {data.insights.anomalies.length === 0 ? (
+              <div className="mf-anomaly-row mf-anomaly-ok">
+                <span>✅</span>
+                <span style={{ flex: 1 }}>
+                  <strong>Todo en orden</strong> — tus gastos siguen tu patrón habitual
+                </span>
+              </div>
+            ) : (
+              data.insights.anomalies.map((a) => (
+                <div className="mf-anomaly-row" key={a.categoryId}>
+                  <span>⚠</span>
+                  <span style={{ flex: 1 }}>
+                    <strong>{a.name}</strong> está por encima de tu promedio
+                  </span>
+                  <span className="mf-anomaly-pct">+{a.percentOfAvg - 100}%</span>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="grid two-col" style={{ marginBottom: 16 }}>
+      <div className="mf-grid-2">
         <div className="card">
-          <h3>Gastos por categoría</h3>
+          <div className="mf-eyebrow" style={{ marginBottom: 16 }}>
+            Gastos por categoría
+          </div>
           {data.expensesByCategory.length === 0 ? (
             <p className="muted">
               Todavía no hay gastos este mes. Registrá el primero desde Movimientos.
             </p>
           ) : (
-            <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-              <ResponsiveContainer width={200} height={200}>
-                <PieChart>
-                  <Pie
-                    data={data.expensesByCategory}
-                    dataKey="total"
-                    nameKey="categoryName"
-                    innerRadius={55}
-                    outerRadius={90}
-                    paddingAngle={2}
-                    stroke={tokens.sheet}
-                    strokeWidth={2}
-                  >
-                    {data.expensesByCategory.map((entry) => (
-                      <Cell key={entry.categoryId ?? 'none'} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    formatter={(value: number) => formatMoney(value)}
-                    contentStyle={tooltipStyle}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="chart-legend" style={{ flex: 1, minWidth: 180 }}>
-                {data.expensesByCategory.map((entry) => (
-                  <div className="legend-row" key={entry.categoryId ?? 'none'}>
-                    <span className="legend-name">
-                      <span className="cat-dot" style={{ background: entry.color }} />
-                      {entry.categoryName}
-                    </span>
-                    <span className="legend-value">
-                      {formatMoney(entry.total)}
-                      <span className="muted">
-                        {' '}
-                        · {totalExpenses > 0 ? Math.round((entry.total / totalExpenses) * 100) : 0}%
-                      </span>
+            <div className="mf-donut-row">
+              <div className="mf-donut-wrap">
+                <svg width={132} height={132} viewBox="0 0 132 132" style={{ transform: 'rotate(-90deg)' }}>
+                  <circle cx={66} cy={66} r={DONUT_R} fill="none" stroke="var(--surface-2)" strokeWidth={16} />
+                  {donutSegments.map((seg, i) => (
+                    <circle
+                      key={i}
+                      cx={66}
+                      cy={66}
+                      r={DONUT_R}
+                      fill="none"
+                      stroke={seg.color}
+                      strokeWidth={16}
+                      strokeDasharray={seg.dash}
+                      strokeDashoffset={seg.offset}
+                    />
+                  ))}
+                </svg>
+                <div className="mf-donut-center">
+                  <div className="mf-donut-total">{formatMoneyShort(data.monthExpense)}</div>
+                  <div className="muted" style={{ fontSize: 10.5 }}>
+                    total
+                  </div>
+                </div>
+              </div>
+              <div className="mf-legend">
+                {top.map((c) => (
+                  <div className="mf-legend-row" key={c.categoryId ?? 'none'}>
+                    <span className="mf-legend-dot" style={{ background: c.color }} />
+                    <span className="mf-legend-name">{c.categoryName}</span>
+                    <span className="mono">
+                      {data.monthExpense > 0 ? Math.round((c.total / data.monthExpense) * 100) : 0}%
                     </span>
                   </div>
                 ))}
@@ -165,155 +242,135 @@ export function DashboardPage() {
         </div>
 
         <div className="card">
-          <div className="card-head">
-            <h3>Mes a mes</h3>
+          <div className="mf-card-head">
+            <div className="mf-eyebrow">Ingresos vs. gastos · {data.monthlyComparison.length} meses</div>
             <div className="chip-legend">
               <span className="chip">
-                <span className="chip-swatch" style={{ background: tokens.ink }} />
+                <span className="chip-swatch" style={{ background: 'var(--pos)' }} />
                 Ingresos
               </span>
               <span className="chip">
-                <span className="chip-swatch" style={{ background: tokens.debit }} />
+                <span className="chip-swatch" style={{ background: 'var(--neg)' }} />
                 Gastos
               </span>
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={comparison} barGap={2}>
-              <CartesianGrid vertical={false} stroke={tokens.rule} />
-              <XAxis
-                dataKey="label"
-                tick={{ fill: tokens.muted, fontSize: 12 }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis
-                tick={{ fill: tokens.muted, fontSize: 12 }}
-                axisLine={false}
-                tickLine={false}
-                width={70}
-                tickFormatter={(v: number) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v))}
-              />
-              <Tooltip
-                formatter={(value: number, name: string) => [
-                  formatMoney(value),
-                  name === 'income' ? 'Ingresos' : 'Gastos',
-                ]}
-                labelFormatter={(label) => `Mes: ${label}`}
-                contentStyle={tooltipStyle}
-                cursor={{ fill: tokens.rule, fillOpacity: 0.35 }}
-              />
-              <Bar dataKey="income" fill={tokens.ink} radius={[2, 2, 0, 0]} maxBarSize={28} />
-              <Bar dataKey="expense" fill={tokens.debit} radius={[2, 2, 0, 0]} maxBarSize={28} />
-            </BarChart>
-          </ResponsiveContainer>
+          <div className="mf-bars">
+            {data.monthlyComparison.map((m) => (
+              <div className="mf-bar-col" key={m.month}>
+                <div className="mf-bar-pair">
+                  <div
+                    className="mf-bar mf-bar-income"
+                    title={formatMoney(m.income)}
+                    style={{ height: `${Math.max(2, (m.income / maxBar) * 100)}%` }}
+                  />
+                  <div
+                    className="mf-bar mf-bar-expense"
+                    title={formatMoney(m.expense)}
+                    style={{ height: `${Math.max(2, (m.expense / maxBar) * 100)}%` }}
+                  />
+                </div>
+                <div
+                  className="mf-bar-label"
+                  style={{
+                    color: m.month === data.month ? 'var(--text)' : 'var(--text-3)',
+                    fontWeight: m.month === data.month ? 700 : 500,
+                  }}
+                >
+                  {shortMonthLabel(m.month)}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
-      <div className="grid three-col" style={{ marginBottom: 16 }}>
+      <div className="mf-grid-2">
         <div className="card">
-          <h3>Proyección fin de mes</h3>
-          {data.insights.projectedMonthTotal === null ? (
-            <p className="muted">Necesitás más historial para proyectar.</p>
+          <div className="mf-card-head" style={{ marginBottom: 14 }}>
+            <div className="mf-eyebrow">Próximos pagos</div>
+            <Link to="/recurrentes" className="mf-link">
+              Ver todos →
+            </Link>
+          </div>
+          {data.upcomingPayments.length === 0 ? (
+            <p className="muted">No hay vencimientos en los próximos 14 días.</p>
           ) : (
-            <>
-              <p className="hero-balance" style={{ fontSize: 28 }}>
-                {formatMoney(data.insights.projectedMonthTotal)}
-              </p>
-              <p className="hero-sub">Si seguís gastando al mismo ritmo este mes</p>
-            </>
-          )}
-        </div>
-
-        <div className="card">
-          <h3>Vs. mes anterior</h3>
-          {data.insights.previousMonthComparison === null ? (
-            <p className="muted">Sin datos del mes anterior.</p>
-          ) : (
-            <>
-              <p>
-                {formatMoney(data.insights.previousMonthComparison.total.current)}{' '}
-                <span className="muted">
-                  ({data.insights.previousMonthComparison.total.deltaPercent > 0 ? '+' : ''}
-                  {data.insights.previousMonthComparison.total.deltaPercent}% vs{' '}
-                  {formatMoney(data.insights.previousMonthComparison.total.previous)})
-                </span>
-              </p>
-              {data.insights.previousMonthComparison.byCategory.length > 0 && (
-                <div className="chart-legend">
-                  {data.insights.previousMonthComparison.byCategory.slice(0, 5).map((c) => (
-                    <div className="legend-row" key={c.categoryId}>
-                      <span className="legend-name">{c.name}</span>
-                      <span className="legend-value">
-                        {formatMoney(c.current)}{' '}
-                        <span className="muted">
-                          ({c.deltaPercent > 0 ? '+' : ''}
-                          {c.deltaPercent}%)
-                        </span>
-                      </span>
+            <div>
+              {data.upcomingPayments.slice(0, 5).map((p) => {
+                const due = dueInfo(p.nextDueDate);
+                return (
+                  <div className="mf-list-row" key={p.id}>
+                    <div className="mf-list-icon">{p.category?.icon ?? '💳'}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="mf-list-title">{p.name}</div>
+                      <div style={{ fontSize: 12, color: due.color }}>{due.label}</div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-
-        <div className="card">
-          <h3>Alertas</h3>
-          {data.insights.anomalies.length === 0 ? (
-            <p className="muted">Todo normal este mes.</p>
-          ) : (
-            <div className="chart-legend">
-              {data.insights.anomalies.map((a) => (
-                <div className="legend-row" key={a.categoryId}>
-                  <span className="legend-name">{a.name}</span>
-                  <span className="legend-value">
-                    <span className="debit">{formatMoney(a.currentAmount)}</span>{' '}
-                    <span className="muted">({a.percentOfAvg}% del promedio)</span>
-                  </span>
-                </div>
-              ))}
+                    <div className="mono" style={{ fontWeight: 600 }}>
+                      {formatMoney(p.amount)}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
-      </div>
 
-      <div className="card">
-        <h3>Próximos pagos (14 días)</h3>
-        {data.upcomingPayments.length === 0 ? (
-          <p className="muted">No hay vencimientos en los próximos 14 días.</p>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Nombre</th>
-                <th>Categoría</th>
-                <th>Vence</th>
-                <th className="num">Monto</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.upcomingPayments.map((item) => (
-                <tr key={item.id}>
-                  <td>{item.name}</td>
-                  <td>
-                    <span className="cat-chip">
-                      <span
-                        className="cat-dot"
-                        style={{ background: item.category?.color ?? '#9ca3af' }}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div className="card">
+            <div className="mf-card-head" style={{ marginBottom: 14 }}>
+              <div className="mf-eyebrow">Presupuestos del mes</div>
+              <Link to="/presupuestos" className="mf-link">
+                Gestionar →
+              </Link>
+            </div>
+            {miniBudgets.length === 0 ? (
+              <p className="muted">Todavía no configuraste presupuestos.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {miniBudgets.map((b) => (
+                  <div key={b.id}>
+                    <div className="mf-mini-budget-head">
+                      <span>
+                        <span className="mf-legend-dot" style={{ background: b.category.color }} />
+                        {b.category.name}
+                      </span>
+                      <span className="mono">
+                        {formatMoney(b.spent)} / {formatMoney(b.amount)}
+                      </span>
+                    </div>
+                    <div className="meter">
+                      <div
+                        className="meter-fill"
+                        style={{ width: `${Math.min(100, b.percentUsed)}%`, background: budgetBarColor(b) }}
                       />
-                      {item.category?.name ?? 'Sin categoría'}
-                    </span>
-                  </td>
-                  <td className="mono">{formatDate(item.nextDueDate)}</td>
-                  <td className="num amount-expense">{formatMoney(item.amount)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="card mf-debt-strip">
+            <div style={{ flex: 1 }}>
+              <div className="mf-eyebrow">Debo</div>
+              <div className="mf-hero-balance" style={{ fontSize: 20, color: 'var(--neg)' }}>
+                {formatMoney(data.debtsSummary.totalIOwe)}
+              </div>
+            </div>
+            <div className="mf-debt-divider" />
+            <div style={{ flex: 1 }}>
+              <div className="mf-eyebrow">Me deben</div>
+              <div className="mf-hero-balance" style={{ fontSize: 20, color: 'var(--pos)' }}>
+                {formatMoney(data.debtsSummary.totalOwedToMe)}
+              </div>
+            </div>
+            <Link to="/deudas" className="mf-link" style={{ alignSelf: 'center' }}>
+              Ver →
+            </Link>
+          </div>
+        </div>
       </div>
-    </>
+    </div>
   );
 }

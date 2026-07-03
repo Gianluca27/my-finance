@@ -1,5 +1,6 @@
 import type { Category, Paginated, Transaction, TransactionType } from '@myfinance/shared';
 import { useEffect, useState, type FormEvent } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api, formatDate, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
 
@@ -13,8 +14,10 @@ export function TransactionsPage() {
   const [filterCategory, setFilterCategory] = useState('');
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo, setFilterTo] = useState('');
-  const [searchInput, setSearchInput] = useState('');
-  const [search, setSearch] = useState('');
+  const [searchParams] = useSearchParams();
+  const initialQuery = searchParams.get('q') ?? '';
+  const [searchInput, setSearchInput] = useState(initialQuery);
+  const [search, setSearch] = useState(initialQuery);
 
   useEffect(() => {
     const handle = setTimeout(() => {

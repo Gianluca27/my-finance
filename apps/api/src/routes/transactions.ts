@@ -23,6 +23,7 @@ const filtersSchema = z.object({
   to: z.coerce.date().optional(),
   type: z.enum(['INCOME', 'EXPENSE']).optional(),
   categoryId: z.string().optional(),
+  search: z.string().optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
@@ -37,6 +38,13 @@ router.get(
   '/',
   asyncHandler(async (req, res) => {
     const filters = filtersSchema.parse(req.query);
+    const searchTerm = filters.search?.trim();
+    const searchOr: Prisma.TransactionWhereInput[] = [];
+    if (searchTerm) {
+      searchOr.push({ note: { contains: searchTerm, mode: 'insensitive' } });
+      const parsedAmount = Number(searchTerm);
+      if (Number.isFinite(parsedAmount)) searchOr.push({ amount: parsedAmount });
+    }
     const where: Prisma.TransactionWhereInput = {
       userId: req.auth!.userId,
       ...(filters.type ? { type: filters.type } : {}),
@@ -44,6 +52,7 @@ router.get(
       ...(filters.from || filters.to
         ? { date: { ...(filters.from ? { gte: filters.from } : {}), ...(filters.to ? { lte: filters.to } : {}) } }
         : {}),
+      ...(searchOr.length ? { OR: searchOr } : {}),
     };
     const [items, total] = await Promise.all([
       prisma.transaction.findMany({

@@ -70,6 +70,12 @@ export function monthRange(month: string): { start: Date; end: Date } {
   };
 }
 
+/** Cantidad de días de un mes "YYYY-MM". */
+export function monthLength(month: string): number {
+  const [y, m] = month.split('-').map(Number);
+  return daysInMonth(y, m - 1);
+}
+
 export function currentMonth(): string {
   const now = new Date();
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;

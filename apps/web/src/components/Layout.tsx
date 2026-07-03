@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { to: '/transacciones', label: 'Movimientos' },
   { to: '/recurrentes', label: 'Gastos fijos' },
   { to: '/presupuestos', label: 'Presupuestos' },
+  { to: '/deudas', label: 'Deudas' },
   { to: '/categorias', label: 'Categorías' },
   { to: '/reportes', label: 'Reportes' },
 ];

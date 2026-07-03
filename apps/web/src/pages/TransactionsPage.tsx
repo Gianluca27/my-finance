@@ -1,9 +1,10 @@
 import type { Category, Paginated, Transaction, TransactionType } from '@myfinance/shared';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { api, formatDate, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
 
 const PAGE_SIZE = 20;
+const SEARCH_DEBOUNCE_MS = 350;
 
 export function TransactionsPage() {
   const [error, setError] = useState<string | null>(null);
@@ -12,6 +13,16 @@ export function TransactionsPage() {
   const [filterCategory, setFilterCategory] = useState('');
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo, setFilterTo] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      setSearch(searchInput.trim());
+      setPage(1);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(handle);
+  }, [searchInput]);
 
   // Formulario de alta
   const [formType, setFormType] = useState<TransactionType>('EXPENSE');
@@ -30,7 +41,7 @@ export function TransactionsPage() {
   const [editNote, setEditNote] = useState('');
   const [editBusy, setEditBusy] = useState(false);
 
-  const listKey = `transactions:${JSON.stringify([page, filterType, filterCategory, filterFrom, filterTo])}`;
+  const listKey = `transactions:${JSON.stringify([page, filterType, filterCategory, filterFrom, filterTo, search])}`;
   const { data, error: loadError, refresh } = useCached<Paginated<Transaction>>(listKey, () =>
     api.listTransactions({
       page,
@@ -39,6 +50,7 @@ export function TransactionsPage() {
       categoryId: filterCategory || undefined,
       from: filterFrom || undefined,
       to: filterTo || undefined,
+      search: search || undefined,
     }),
   );
   const { data: categoriesData } = useCached<Category[]>('categories', () => api.listCategories());
@@ -226,6 +238,13 @@ export function TransactionsPage() {
             }}
             title="Hasta"
           />
+          <input
+            type="text"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Buscar por nota o monto…"
+            style={{ flex: 1, minWidth: 160 }}
+          />
         </div>
 
         {!data ? (
@@ -233,7 +252,14 @@ export function TransactionsPage() {
         ) : data.items.length === 0 ? (
           <p className="muted">No hay movimientos con esos filtros. Probá ampliar las fechas.</p>
         ) : (
-          <table>
+          <table className="tx-table">
+            <colgroup>
+              <col style={{ width: '18%' }} />
+              <col style={{ width: '16%' }} />
+              <col style={{ width: '21%' }} />
+              <col style={{ width: '21%' }} />
+              <col style={{ width: '24%' }} />
+            </colgroup>
             <thead>
               <tr>
                 <th>Fecha</th>
@@ -276,7 +302,7 @@ export function TransactionsPage() {
                       />
                     </td>
                     <td className="num">
-                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         <select
                           value={editType}
                           onChange={(e) => {
@@ -294,7 +320,6 @@ export function TransactionsPage() {
                           step="0.01"
                           value={editAmount}
                           onChange={(e) => setEditAmount(e.target.value)}
-                          style={{ width: 90 }}
                           required
                         />
                       </div>

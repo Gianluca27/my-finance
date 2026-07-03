@@ -6,6 +6,9 @@ import type {
   Category,
   CategoryInput,
   DashboardData,
+  Debt,
+  DebtInput,
+  DebtUpdateInput,
   Paginated,
   RecurringExpense,
   RecurringExpenseInput,
@@ -144,6 +147,26 @@ export class ApiClient {
   }
   deleteBudget(id: string) {
     return this.request<void>('DELETE', `/api/budgets/${id}`);
+  }
+
+  // --- Deudas ---
+  listDebts() {
+    return this.request<Debt[]>('GET', '/api/debts');
+  }
+  createDebt(input: DebtInput) {
+    return this.request<Debt>('POST', '/api/debts', input);
+  }
+  updateDebt(id: string, input: DebtUpdateInput) {
+    return this.request<Debt>('PUT', `/api/debts/${id}`, input);
+  }
+  deleteDebt(id: string) {
+    return this.request<void>('DELETE', `/api/debts/${id}`);
+  }
+  /** Registra un pago parcial: crea la Transaction (EXPENSE o INCOME según dirección) vinculada. */
+  payDebt(id: string, amount: number) {
+    return this.request<{ transaction: Transaction; debt: Debt }>('POST', `/api/debts/${id}/payments`, {
+      amount,
+    });
   }
 
   // --- Dashboard ---

@@ -9,6 +9,7 @@ const AuthPage = lazy(() => import('./pages/AuthPage').then((m) => ({ default: m
 const BudgetsPage = lazy(() => import('./pages/BudgetsPage').then((m) => ({ default: m.BudgetsPage })));
 const CategoriesPage = lazy(() => import('./pages/CategoriesPage').then((m) => ({ default: m.CategoriesPage })));
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })));
+const DebtsPage = lazy(() => import('./pages/DebtsPage').then((m) => ({ default: m.DebtsPage })));
 const RecurringPage = lazy(() => import('./pages/RecurringPage').then((m) => ({ default: m.RecurringPage })));
 const ReportsPage = lazy(() => import('./pages/ReportsPage').then((m) => ({ default: m.ReportsPage })));
 const TransactionsPage = lazy(() => import('./pages/TransactionsPage').then((m) => ({ default: m.TransactionsPage })));
@@ -40,6 +41,7 @@ export default function App() {
           <Route path="/transacciones" element={<TransactionsPage />} />
           <Route path="/recurrentes" element={<RecurringPage />} />
           <Route path="/presupuestos" element={<BudgetsPage />} />
+          <Route path="/deudas" element={<DebtsPage />} />
           <Route path="/categorias" element={<CategoriesPage />} />
           <Route path="/reportes" element={<ReportsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

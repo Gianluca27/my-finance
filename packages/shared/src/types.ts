@@ -1,5 +1,6 @@
 export type TransactionType = 'INCOME' | 'EXPENSE';
 export type Frequency = 'WEEKLY' | 'MONTHLY' | 'YEARLY';
+export type DebtDirection = 'I_OWE' | 'OWED_TO_ME';
 
 export interface User {
   id: string;
@@ -32,6 +33,7 @@ export interface Transaction {
   note: string | null;
   categoryId: string | null;
   category: Category | null;
+  debtId: string | null;
   createdAt: string;
 }
 
@@ -68,6 +70,20 @@ export interface BudgetStatus extends Budget {
   month: string;
 }
 
+export interface Debt {
+  id: string;
+  direction: DebtDirection;
+  counterparty: string;
+  description: string | null;
+  totalAmount: number;
+  /** Calculado: totalAmount - suma de pagos vinculados. No se persiste. */
+  remainingBalance: number;
+  settledAt: string | null;
+  categoryId: string | null;
+  category: Category | null;
+  createdAt: string;
+}
+
 export interface CategorySummary {
   categoryId: string | null;
   categoryName: string;
@@ -81,6 +97,39 @@ export interface MonthlySummary {
   expense: number;
 }
 
+export interface PreviousMonthDelta {
+  current: number;
+  previous: number;
+  deltaPercent: number;
+}
+
+export interface CategoryAnomaly {
+  categoryId: string;
+  name: string;
+  currentAmount: number;
+  avgAmount: number;
+  percentOfAvg: number;
+}
+
+export interface DashboardInsights {
+  /** Gasto acumulado del mes / días transcurridos * días del mes. `null` si falta historial. */
+  projectedMonthTotal: number | null;
+  /** Gasto alineado por día vs el mismo rango del mes anterior. `null` si no hay datos del mes anterior. */
+  previousMonthComparison: {
+    total: PreviousMonthDelta;
+    byCategory: Array<PreviousMonthDelta & { categoryId: string; name: string }>;
+  } | null;
+  /** Categorías con gasto > 1.5x su promedio de los últimos 3 meses completos. */
+  anomalies: CategoryAnomaly[];
+}
+
+export interface DebtsSummary {
+  /** Suma de remainingBalance de deudas activas (no saldadas) con direction I_OWE. */
+  totalIOwe: number;
+  /** Suma de remainingBalance de deudas activas (no saldadas) con direction OWED_TO_ME. */
+  totalOwedToMe: number;
+}
+
 export interface DashboardData {
   balance: number;
   month: string;
@@ -89,6 +138,8 @@ export interface DashboardData {
   expensesByCategory: CategorySummary[];
   monthlyComparison: MonthlySummary[];
   upcomingPayments: RecurringExpense[];
+  insights: DashboardInsights;
+  debtsSummary: DebtsSummary;
 }
 
 export interface Paginated<T> {
@@ -103,6 +154,8 @@ export interface TransactionFilters {
   to?: string;
   type?: TransactionType;
   categoryId?: string;
+  /** Texto libre: matchea nota (substring) o monto (exacto, si el texto parsea como número). */
+  search?: string;
   page?: number;
   pageSize?: number;
 }
@@ -138,3 +191,14 @@ export interface BudgetInput {
   amount: number;
   alertThreshold?: number;
 }
+
+export interface DebtInput {
+  direction: DebtDirection;
+  counterparty: string;
+  description?: string | null;
+  totalAmount: number;
+  categoryId?: string | null;
+}
+
+/** Edición: no permite cambiar `direction` (ver spec de deudas). */
+export type DebtUpdateInput = Partial<Omit<DebtInput, 'direction'>>;

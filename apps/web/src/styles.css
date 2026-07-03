@@ -280,6 +280,10 @@ a:hover {
   grid-template-columns: 1fr 1fr;
 }
 
+.three-col {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
 /* ---------- Chart bits ---------- */
 .chip-legend {
   display: flex;
@@ -608,7 +612,19 @@ td.num {
 .row-actions {
   display: flex;
   gap: 8px;
-  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.tx-table {
+  table-layout: fixed;
+}
+
+.tx-table td input,
+.tx-table td select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .toolbar {
@@ -705,7 +721,8 @@ td.num {
     padding: 20px 16px 48px;
   }
 
-  .two-col {
+  .two-col,
+  .three-col {
     grid-template-columns: 1fr;
   }
 

@@ -100,6 +100,18 @@ export function DashboardPage() {
         </dl>
       </header>
 
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h3>Deudas</h3>
+        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+          <span>
+            Debés <strong className="amount-expense">{formatMoney(data.debtsSummary.totalIOwe)}</strong>
+          </span>
+          <span>
+            Te deben <strong className="amount-income">{formatMoney(data.debtsSummary.totalOwedToMe)}</strong>
+          </span>
+        </div>
+      </div>
+
       <div className="grid two-col" style={{ marginBottom: 16 }}>
         <div className="card">
           <h3>Gastos por categoría</h3>
@@ -195,6 +207,75 @@ export function DashboardPage() {
               <Bar dataKey="expense" fill={tokens.debit} radius={[2, 2, 0, 0]} maxBarSize={28} />
             </BarChart>
           </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="grid three-col" style={{ marginBottom: 16 }}>
+        <div className="card">
+          <h3>Proyección fin de mes</h3>
+          {data.insights.projectedMonthTotal === null ? (
+            <p className="muted">Necesitás más historial para proyectar.</p>
+          ) : (
+            <>
+              <p className="hero-balance" style={{ fontSize: 28 }}>
+                {formatMoney(data.insights.projectedMonthTotal)}
+              </p>
+              <p className="hero-sub">Si seguís gastando al mismo ritmo este mes</p>
+            </>
+          )}
+        </div>
+
+        <div className="card">
+          <h3>Vs. mes anterior</h3>
+          {data.insights.previousMonthComparison === null ? (
+            <p className="muted">Sin datos del mes anterior.</p>
+          ) : (
+            <>
+              <p>
+                {formatMoney(data.insights.previousMonthComparison.total.current)}{' '}
+                <span className="muted">
+                  ({data.insights.previousMonthComparison.total.deltaPercent > 0 ? '+' : ''}
+                  {data.insights.previousMonthComparison.total.deltaPercent}% vs{' '}
+                  {formatMoney(data.insights.previousMonthComparison.total.previous)})
+                </span>
+              </p>
+              {data.insights.previousMonthComparison.byCategory.length > 0 && (
+                <div className="chart-legend">
+                  {data.insights.previousMonthComparison.byCategory.slice(0, 5).map((c) => (
+                    <div className="legend-row" key={c.categoryId}>
+                      <span className="legend-name">{c.name}</span>
+                      <span className="legend-value">
+                        {formatMoney(c.current)}{' '}
+                        <span className="muted">
+                          ({c.deltaPercent > 0 ? '+' : ''}
+                          {c.deltaPercent}%)
+                        </span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="card">
+          <h3>Alertas</h3>
+          {data.insights.anomalies.length === 0 ? (
+            <p className="muted">Todo normal este mes.</p>
+          ) : (
+            <div className="chart-legend">
+              {data.insights.anomalies.map((a) => (
+                <div className="legend-row" key={a.categoryId}>
+                  <span className="legend-name">{a.name}</span>
+                  <span className="legend-value">
+                    <span className="debit">{formatMoney(a.currentAmount)}</span>{' '}
+                    <span className="muted">({a.percentOfAvg}% del promedio)</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
+import { LogoMark } from '../components/icons';
 
 export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const { login, register } = useAuth();
@@ -26,58 +27,92 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
     }
   }
 
+  const title = mode === 'login' ? 'Bienvenido de nuevo' : 'Creá tu cuenta';
+  const subtitle =
+    mode === 'login' ? 'Ingresá para ver tu panel financiero.' : 'Empezá a organizar tus finanzas hoy.';
+  const cta = mode === 'login' ? 'Ingresar' : 'Crear cuenta';
+
   return (
-    <div className="auth-wrap">
-      <form className="card auth-card" onSubmit={onSubmit}>
-        <h1>
-          MyFinance<span className="brand-dot">.</span>
-        </h1>
-        <p className="muted">
-          {mode === 'login' ? 'Iniciá sesión para continuar' : 'Creá tu cuenta gratis'}
-        </p>
-        {error && <div className="error-banner">{error}</div>}
-        {mode === 'register' && (
-          <label className="field">
-            Nombre
-            <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={100} />
-          </label>
-        )}
-        <label className="field">
-          Email
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            autoComplete="email"
-          />
-        </label>
-        <label className="field">
-          Contraseña
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            minLength={mode === 'register' ? 8 : 1}
-            autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-          />
-        </label>
-        <button disabled={busy}>
-          {busy ? 'Procesando…' : mode === 'login' ? 'Iniciar sesión' : 'Crear cuenta'}
-        </button>
-        <p className="muted">
-          {mode === 'login' ? (
-            <>
-              ¿No tenés cuenta? <Link to="/registro">Registrate</Link>
-            </>
-          ) : (
-            <>
-              ¿Ya tenés cuenta? <Link to="/login">Iniciá sesión</Link>
-            </>
+    <div className="mf-authgrid">
+      <div className="mf-authhero">
+        <div className="mf-authhero-glow" />
+        <div className="mf-authhero-brand">
+          <span className="mf-brand-mark" style={{ width: 34, height: 34 }}>
+            <LogoMark size={19} />
+          </span>
+          <span className="mf-brand-name">MyFinance</span>
+        </div>
+        <div className="mf-authhero-copy">
+          <h2>Tus finanzas, con claridad y precisión.</h2>
+          <p>
+            Balance, presupuestos, gastos fijos y deudas en un solo lugar. Sin ruido, sin banca
+            conectada — solo control.
+          </p>
+          <div className="mf-authhero-stats">
+            <div>
+              <div className="mf-authhero-stat-value">7</div>
+              <div className="mf-authhero-stat-label">módulos</div>
+            </div>
+            <div>
+              <div className="mf-authhero-stat-value">CSV·PDF</div>
+              <div className="mf-authhero-stat-label">exportables</div>
+            </div>
+            <div>
+              <div className="mf-authhero-stat-value">2</div>
+              <div className="mf-authhero-stat-label">alertas</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mf-authform-wrap">
+        <form className="mf-authform" onSubmit={onSubmit}>
+          <h1>{title}</h1>
+          <p className="muted">{subtitle}</p>
+          {error && <div className="error-banner">{error}</div>}
+          {mode === 'register' && (
+            <label className="field">
+              Nombre
+              <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={100} />
+            </label>
           )}
-        </p>
-      </form>
+          <label className="field">
+            Email
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              autoComplete="email"
+            />
+          </label>
+          <label className="field">
+            Contraseña
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={mode === 'register' ? 8 : 1}
+              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+            />
+          </label>
+          <button className="mf-auth-cta" disabled={busy}>
+            {busy ? 'Procesando…' : cta}
+          </button>
+          <p className="mf-authform-switch">
+            {mode === 'login' ? (
+              <>
+                ¿No tenés cuenta? <Link to="/registro">Registrate</Link>
+              </>
+            ) : (
+              <>
+                ¿Ya tenés cuenta? <Link to="/login">Ingresá</Link>
+              </>
+            )}
+          </p>
+        </form>
+      </div>
     </div>
   );
 }

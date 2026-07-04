@@ -40,6 +40,9 @@ export const IcoDebt = (p: IconProps) => (
 export const IcoTag = (p: IconProps) => (
   <PathIcon {...p} paths={[{ d: 'M4 4h6l6 6-6 6-6-6z' }, { d: 'M7.5 7.5h.01', w: 2.2 }]} />
 );
+export const IcoWallet = (p: IconProps) => (
+  <PathIcon {...p} paths={[{ d: 'M3 6.5A1.5 1.5 0 0 1 4.5 5H15v3M3 6.5V15a1.5 1.5 0 0 0 1.5 1.5H16V8H4.5A1.5 1.5 0 0 1 3 6.5Z' }, { d: 'M13.5 11.5h.01', w: 2 }]} />
+);
 export const IcoClip = (p: IconProps) => (
   <PathIcon {...p} paths={[{ d: 'M14 7.5l-5.5 5.5a2.5 2.5 0 0 1-3.5-3.5l6-6a3.5 3.5 0 0 1 5 5l-6 6' }]} />
 );

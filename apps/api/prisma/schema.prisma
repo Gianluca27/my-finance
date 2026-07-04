@@ -25,6 +25,13 @@ enum DebtDirection {
   OWED_TO_ME
 }
 
+enum AccountType {
+  CASH
+  BANK
+  CARD
+  OTHER
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -42,6 +49,8 @@ model User {
   debts             Debt[]
   goals             Goal[]
   categoryRules     CategoryRule[]
+  accounts          Account[]
+  transfers         Transfer[]
 }
 
 model FcmToken {
@@ -85,6 +94,8 @@ model Transaction {
   user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   categoryId String?
   category   Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  accountId  String
+  account    Account         @relation(fields: [accountId], references: [id], onDelete: Restrict)
   debtId     String?
   debt       Debt?           @relation(fields: [debtId], references: [id], onDelete: SetNull)
   goalId     String?
@@ -97,6 +108,7 @@ model Transaction {
 
   @@index([userId, date])
   @@index([userId, categoryId])
+  @@index([userId, accountId])
   @@index([debtId])
   @@index([goalId])
 }
@@ -207,4 +219,46 @@ model Goal {
   contributions Transaction[]
 
   @@index([userId])
+}
+
+model Account {
+  id             String      @id @default(cuid())
+  name           String
+  type           AccountType @default(BANK)
+  /// Saldo inicial de la cuenta al momento de crearla; parte del balance calculado.
+  initialBalance Decimal     @db.Decimal(12, 2) @default(0)
+  color          String      @default("#6366f1")
+  icon           String?
+  /// Cuenta usada por defecto cuando un movimiento no especifica cuenta. Una por usuario.
+  isDefault      Boolean     @default(false)
+  archivedAt     DateTime?
+  userId         String
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  transactions  Transaction[]
+  transfersFrom Transfer[]    @relation("TransferFrom")
+  transfersTo   Transfer[]    @relation("TransferTo")
+
+  @@index([userId])
+}
+
+/// Movimiento de dinero entre dos cuentas del usuario. No cuenta como ingreso ni gasto.
+model Transfer {
+  id            String   @id @default(cuid())
+  amount        Decimal  @db.Decimal(12, 2)
+  date          DateTime
+  note          String?
+  fromAccountId String
+  fromAccount   Account  @relation("TransferFrom", fields: [fromAccountId], references: [id], onDelete: Restrict)
+  toAccountId   String
+  toAccount     Account  @relation("TransferTo", fields: [toAccountId], references: [id], onDelete: Restrict)
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+
+  @@index([userId])
+  @@index([fromAccountId])
+  @@index([toAccountId])
 }

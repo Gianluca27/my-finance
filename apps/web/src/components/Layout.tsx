@@ -19,11 +19,13 @@ import {
   IcoSettings,
   IcoTag,
   IcoTarget,
+  IcoWallet,
   LogoMark,
 } from './icons';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Resumen', icon: IcoGrid },
+  { to: '/cuentas', label: 'Cuentas', icon: IcoWallet },
   { to: '/transacciones', label: 'Movimientos', icon: IcoList },
   { to: '/recurrentes', label: 'Gastos fijos', icon: IcoRepeat, badge: true },
   { to: '/presupuestos', label: 'Presupuestos', icon: IcoMeter },
@@ -43,6 +45,7 @@ const BOTTOM_ITEMS = [
 
 const TITLES: Record<string, [string, string]> = {
   '/': ['Panel', 'Resumen'],
+  '/cuentas': ['Dinero', 'Cuentas'],
   '/transacciones': ['Registro', 'Movimientos'],
   '/recurrentes': ['Automático', 'Gastos fijos'],
   '/presupuestos': ['Control', 'Presupuestos'],

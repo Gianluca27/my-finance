@@ -1,4 +1,4 @@
-import type { Category, Paginated, Transaction, TransactionType } from '@myfinance/shared';
+import type { Account, Category, Paginated, Transaction, TransactionType } from '@myfinance/shared';
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, formatMoney } from '../api';
@@ -49,6 +49,7 @@ export function TransactionsPage() {
   const [page, setPage] = useState(1);
   const [filterType, setFilterType] = useState<'' | TransactionType>('');
   const [filterCategory, setFilterCategory] = useState('');
+  const [filterAccount, setFilterAccount] = useState('');
   const [searchParams] = useSearchParams();
   const initialQuery = searchParams.get('q') ?? '';
   const [searchInput, setSearchInput] = useState(initialQuery);
@@ -75,21 +76,26 @@ export function TransactionsPage() {
   const [editAmount, setEditAmount] = useState('');
   const [editDate, setEditDate] = useState('');
   const [editCategoryId, setEditCategoryId] = useState('');
+  const [editAccountId, setEditAccountId] = useState('');
   const [editNote, setEditNote] = useState('');
   const [editBusy, setEditBusy] = useState(false);
 
-  const listKey = `transactions:${JSON.stringify([page, filterType, filterCategory, search])}`;
+  const listKey = `transactions:${JSON.stringify([page, filterType, filterCategory, filterAccount, search])}`;
   const { data, error: loadError, refresh } = useCached<Paginated<Transaction>>(listKey, () =>
     api.listTransactions({
       page,
       pageSize: PAGE_SIZE,
       type: filterType || undefined,
       categoryId: filterCategory || undefined,
+      accountId: filterAccount || undefined,
       search: search || undefined,
     }),
   );
   const { data: categoriesData } = useCached<Category[]>('categories', () => api.listCategories());
   const categories = categoriesData ?? [];
+  const { data: accountsData } = useCached<Account[]>('accounts', () => api.listAccounts());
+  const accounts = accountsData ?? [];
+  const accountName = (id: string) => accounts.find((a) => a.id === id)?.name ?? '';
 
   /** Un movimiento nuevo/borrado cambia listados, resumen y presupuestos. */
   function invalidateAfterMutation() {
@@ -167,6 +173,7 @@ export function TransactionsPage() {
     setEditAmount(String(tx.amount));
     setEditDate(tx.date.slice(0, 10));
     setEditCategoryId(tx.categoryId ?? '');
+    setEditAccountId(tx.accountId);
     setEditNote(tx.note ?? '');
     setError(null);
   }
@@ -185,6 +192,7 @@ export function TransactionsPage() {
         date: editDate,
         note: editNote || null,
         categoryId: editCategoryId || null,
+        accountId: editAccountId || undefined,
       });
       setEditingId(null);
       invalidateAfterMutation();
@@ -257,6 +265,23 @@ export function TransactionsPage() {
               </option>
             ))}
           </select>
+          {accounts.length > 0 && (
+            <select
+              className="mf-select"
+              value={filterAccount}
+              onChange={(e) => {
+                setFilterAccount(e.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="">Todas las cuentas</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          )}
           <label className="mf-tx-search">
             <IcoSearch />
             <input
@@ -305,15 +330,26 @@ export function TransactionsPage() {
                       <input value={editNote} onChange={(e) => setEditNote(e.target.value)} maxLength={500} />
                     </td>
                     <td>
-                      <select value={editCategoryId} onChange={(e) => setEditCategoryId(e.target.value)}>
-                        <option value="">Sin categoría</option>
-                        {editCategories.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.icon ? `${c.icon} ` : ''}
-                            {c.name}
-                          </option>
-                        ))}
-                      </select>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <select value={editCategoryId} onChange={(e) => setEditCategoryId(e.target.value)}>
+                          <option value="">Sin categoría</option>
+                          {editCategories.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.icon ? `${c.icon} ` : ''}
+                              {c.name}
+                            </option>
+                          ))}
+                        </select>
+                        {accounts.length > 0 && (
+                          <select value={editAccountId} onChange={(e) => setEditAccountId(e.target.value)}>
+                            {accounts.map((a) => (
+                              <option key={a.id} value={a.id}>
+                                {a.name}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
                     </td>
                     <td className="num">
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -352,7 +388,12 @@ export function TransactionsPage() {
                 ) : (
                   <tr key={tx.id} className="mf-tx-row" onClick={() => onStartEdit(tx)}>
                     <td className="mf-tx-date">{formatRowDate(tx.date)}</td>
-                    <td className="mf-tx-detail">{tx.note || '—'}</td>
+                    <td className="mf-tx-detail">
+                      {tx.note || '—'}
+                      {accounts.length > 1 && accountName(tx.accountId) && (
+                        <div className="muted" style={{ fontSize: 11.5 }}>{accountName(tx.accountId)}</div>
+                      )}
+                    </td>
                     <td>
                       <span className="cat-chip">
                         <span className="cat-dot" style={{ background: tx.category?.color ?? '#9ca3af' }} />

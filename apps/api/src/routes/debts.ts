@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { getDefaultAccountId } from '../lib/accounts';
 import { serialize } from '../lib/serialize';
 import { requireAuth } from '../middleware/auth';
 import { asyncHandler, HttpError } from '../middleware/error';
@@ -122,6 +123,7 @@ router.post(
 
     const type = existing.direction === 'I_OWE' ? 'EXPENSE' : 'INCOME';
     const newRemaining = round2(remainingBalance - amount);
+    const accountId = await getDefaultAccountId(req.auth!.userId);
 
     const [transaction, debt] = await prisma.$transaction([
       prisma.transaction.create({
@@ -131,6 +133,7 @@ router.post(
           date: new Date(),
           note: `Pago de deuda: ${existing.counterparty}`,
           categoryId: existing.categoryId,
+          accountId,
           debtId: existing.id,
           userId: req.auth!.userId,
         },

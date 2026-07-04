@@ -276,11 +276,16 @@ router.get(
 
     // --- Disponible para gastar (Safe-to-spend) ---
     // Balance real menos gastos fijos activos que todavía vencen antes de fin del mes seleccionado.
-    const committedAgg = await prisma.recurringExpense.aggregate({
-      where: { userId, active: true, type: 'EXPENSE', nextDueDate: { gte: today, lt: end } },
-      _sum: { amount: true },
-    });
-    const balance = round2(totalIncome - totalExpense);
+    const [committedAgg, initialBalancesAgg] = await Promise.all([
+      prisma.recurringExpense.aggregate({
+        where: { userId, active: true, type: 'EXPENSE', nextDueDate: { gte: today, lt: end } },
+        _sum: { amount: true },
+      }),
+      prisma.account.aggregate({ where: { userId }, _sum: { initialBalance: true } }),
+    ]);
+    // Patrimonio neto = saldos iniciales + ingresos - gastos (las transferencias se cancelan globalmente).
+    const initialBalances = initialBalancesAgg._sum.initialBalance?.toNumber() ?? 0;
+    const balance = round2(initialBalances + totalIncome - totalExpense);
     const committedExpenses = round2(committedAgg._sum.amount?.toNumber() ?? 0);
     const safeToSpend = {
       balance,

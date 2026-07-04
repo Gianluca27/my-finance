@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { getDefaultAccountId } from '../lib/accounts';
 import { serialize } from '../lib/serialize';
 import { requireAuth } from '../middleware/auth';
 import { asyncHandler, HttpError } from '../middleware/error';
@@ -108,6 +109,7 @@ router.post(
     const newSaved = round2(savedSoFar + amount);
     const target = existing.targetAmount.toNumber();
     const justAchieved = !existing.achievedAt && newSaved >= target;
+    const accountId = await getDefaultAccountId(req.auth!.userId);
 
     const [transaction, goal] = await prisma.$transaction([
       prisma.transaction.create({
@@ -116,6 +118,7 @@ router.post(
           amount,
           date: new Date(),
           note: `Aporte a meta: ${existing.name}`,
+          accountId,
           goalId: existing.id,
           userId: req.auth!.userId,
         },

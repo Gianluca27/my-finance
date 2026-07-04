@@ -57,6 +57,7 @@ router.post(
         passwordHash,
         name: input.name,
         categories: { create: DEFAULT_CATEGORIES },
+        accounts: { create: { name: 'Efectivo', type: 'CASH', isDefault: true } },
       },
     });
     const token = signToken({ userId: user.id, email: user.email });

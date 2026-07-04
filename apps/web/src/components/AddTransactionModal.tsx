@@ -1,5 +1,5 @@
-import type { Category, TransactionType } from '@myfinance/shared';
-import { useState, type FormEvent } from 'react';
+import type { Account, Category, TransactionType } from '@myfinance/shared';
+import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import { invalidate, useCached } from '../cache';
 import { Modal } from './Modal';
@@ -8,6 +8,7 @@ export function AddTransactionModal({ open, onClose }: { open: boolean; onClose:
   const [type, setType] = useState<TransactionType>('EXPENSE');
   const [amount, setAmount] = useState('');
   const [categoryId, setCategoryId] = useState('');
+  const [accountId, setAccountId] = useState('');
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -15,11 +16,19 @@ export function AddTransactionModal({ open, onClose }: { open: boolean; onClose:
 
   const { data: categoriesData } = useCached<Category[]>('categories', () => api.listCategories());
   const categories = (categoriesData ?? []).filter((c) => c.type === type);
+  const { data: accountsData } = useCached<Account[]>('accounts', () => api.listAccounts());
+  const accounts = accountsData ?? [];
+
+  // Preseleccionar la cuenta por defecto cuando cargan las cuentas.
+  useEffect(() => {
+    if (!accountId && accounts.length) setAccountId(accounts.find((a) => a.isDefault)?.id ?? accounts[0].id);
+  }, [accountsData, accountId, accounts]);
 
   function reset() {
     setType('EXPENSE');
     setAmount('');
     setCategoryId('');
+    setAccountId(accounts.find((a) => a.isDefault)?.id ?? accounts[0]?.id ?? '');
     setDate(new Date().toISOString().slice(0, 10));
     setNote('');
     setError(null);
@@ -45,6 +54,7 @@ export function AddTransactionModal({ open, onClose }: { open: boolean; onClose:
         date,
         note: note || null,
         categoryId: categoryId || null,
+        accountId: accountId || null,
       });
       invalidate('transactions');
       invalidate('dashboard');
@@ -110,6 +120,19 @@ export function AddTransactionModal({ open, onClose }: { open: boolean; onClose:
             ))}
           </select>
         </label>
+        {accounts.length > 0 && (
+          <label className="field">
+            Cuenta
+            <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.icon ? `${a.icon} ` : ''}
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className="field">
           Fecha
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />

@@ -1,6 +1,7 @@
 export type TransactionType = 'INCOME' | 'EXPENSE';
 export type Frequency = 'WEEKLY' | 'MONTHLY' | 'YEARLY';
 export type DebtDirection = 'I_OWE' | 'OWED_TO_ME';
+export type AccountType = 'CASH' | 'BANK' | 'CARD' | 'OTHER';
 
 export interface User {
   id: string;
@@ -34,6 +35,7 @@ export interface Transaction {
   note: string | null;
   categoryId: string | null;
   category: Category | null;
+  accountId: string;
   debtId: string | null;
   goalId: string | null;
   /** MIME del recibo adjunto, o null si no tiene. Los bytes se sirven aparte. */
@@ -170,6 +172,7 @@ export interface TransactionFilters {
   to?: string;
   type?: TransactionType;
   categoryId?: string;
+  accountId?: string;
   /** Texto libre: matchea nota (substring) o monto (exacto, si el texto parsea como número). */
   search?: string;
   page?: number;
@@ -182,6 +185,61 @@ export interface TransactionInput {
   date: string;
   note?: string | null;
   categoryId?: string | null;
+  /** Cuenta destino. Si se omite, la API usa la cuenta por defecto. */
+  accountId?: string | null;
+}
+
+export interface Account {
+  id: string;
+  name: string;
+  type: AccountType;
+  initialBalance: number;
+  color: string;
+  icon: string | null;
+  isDefault: boolean;
+  archivedAt: string | null;
+  /** Calculado: inicial + ingresos - gastos + transferencias netas. No se persiste. */
+  balance: number;
+  createdAt: string;
+}
+
+export interface AccountInput {
+  name: string;
+  type?: AccountType;
+  initialBalance?: number;
+  color?: string;
+  icon?: string | null;
+  isDefault?: boolean;
+}
+
+export type AccountUpdateInput = Partial<AccountInput>;
+
+export interface TransferAccountRef {
+  id: string;
+  name: string;
+  color: string;
+  icon: string | null;
+  type: AccountType;
+}
+
+export interface Transfer {
+  id: string;
+  amount: number;
+  date: string;
+  note: string | null;
+  fromAccountId: string;
+  fromAccount: TransferAccountRef;
+  toAccountId: string;
+  toAccount: TransferAccountRef;
+  createdAt: string;
+}
+
+export interface TransferInput {
+  fromAccountId: string;
+  toAccountId: string;
+  amount: number;
+  date?: string;
+  note?: string | null;
 }
 
 export interface CategoryInput {

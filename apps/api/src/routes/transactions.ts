@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import { Router } from 'express';
 import { z } from 'zod';
+import { resolveAccountId } from '../lib/accounts';
 import { loadRules, matchRule } from '../lib/categoryRules';
 import { serialize } from '../lib/serialize';
 import { requireAuth } from '../middleware/auth';
@@ -17,6 +18,7 @@ const transactionSchema = z.object({
   date: z.coerce.date(),
   note: z.string().max(500).nullable().optional(),
   categoryId: z.string().nullable().optional(),
+  accountId: z.string().nullable().optional(),
 });
 
 const filtersSchema = z.object({
@@ -24,6 +26,7 @@ const filtersSchema = z.object({
   to: z.coerce.date().optional(),
   type: z.enum(['INCOME', 'EXPENSE']).optional(),
   categoryId: z.string().optional(),
+  accountId: z.string().optional(),
   search: z.string().optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
@@ -50,6 +53,7 @@ router.get(
       userId: req.auth!.userId,
       ...(filters.type ? { type: filters.type } : {}),
       ...(filters.categoryId ? { categoryId: filters.categoryId } : {}),
+      ...(filters.accountId ? { accountId: filters.accountId } : {}),
       ...(filters.from || filters.to
         ? { date: { ...(filters.from ? { gte: filters.from } : {}), ...(filters.to ? { lte: filters.to } : {}) } }
         : {}),
@@ -74,6 +78,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const input = transactionSchema.parse(req.body);
     await assertCategoryOwned(req.auth!.userId, input.categoryId);
+    const accountId = await resolveAccountId(req.auth!.userId, input.accountId);
     // Si no se eligió categoría, intentar autocategorizar por reglas sobre la nota.
     let categoryId = input.categoryId ?? null;
     if (!categoryId) {
@@ -81,7 +86,7 @@ router.post(
       categoryId = matchRule(rules, input.note, input.type);
     }
     const transaction = await prisma.transaction.create({
-      data: { ...input, categoryId, userId: req.auth!.userId },
+      data: { ...input, categoryId, accountId, userId: req.auth!.userId },
       include: { category: true },
     });
     if (transaction.type === 'EXPENSE') {
@@ -103,9 +108,15 @@ router.put(
     });
     if (!existing) throw new HttpError(404, 'Transacción no encontrada');
     if (input.categoryId !== undefined) await assertCategoryOwned(req.auth!.userId, input.categoryId);
+    // accountId es obligatorio: si viene en la edición, validar propiedad (nunca null).
+    const { accountId: rawAccountId, ...rest } = input;
+    const data: Prisma.TransactionUncheckedUpdateInput = { ...rest };
+    if (rawAccountId !== undefined) {
+      data.accountId = await resolveAccountId(req.auth!.userId, rawAccountId);
+    }
     const transaction = await prisma.transaction.update({
       where: { id: existing.id },
-      data: input,
+      data,
       include: { category: true },
     });
     if (transaction.type === 'EXPENSE') {
@@ -191,7 +202,10 @@ router.delete(
   }),
 );
 
-const importSchema = z.object({ csv: z.string().min(1).max(2_000_000) });
+const importSchema = z.object({
+  csv: z.string().min(1).max(2_000_000),
+  accountId: z.string().nullable().optional(),
+});
 
 /** Parsea una línea CSV (comillas dobles, comas y comillas escapadas ""). */
 function parseCsvLine(line: string): string[] {
@@ -232,8 +246,9 @@ function parseCsvLine(line: string): string[] {
 router.post(
   '/import',
   asyncHandler(async (req, res) => {
-    const { csv } = importSchema.parse(req.body);
+    const { csv, accountId: requestedAccountId } = importSchema.parse(req.body);
     const userId = req.auth!.userId;
+    const accountId = await resolveAccountId(userId, requestedAccountId);
 
     const categories = await prisma.category.findMany({ where: { userId } });
     const categoryByKey = new Map(categories.map((c) => [`${c.type}:${c.name.trim().toLowerCase()}`, c.id]));
@@ -289,6 +304,7 @@ router.post(
         date,
         note: notaStr ? notaStr.slice(0, 500) : null,
         categoryId,
+        accountId,
       });
     });
 

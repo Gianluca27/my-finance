@@ -3,6 +3,7 @@ import cors from 'cors';
 import express from 'express';
 import { config } from './config';
 import { errorHandler } from './middleware/error';
+import accountsRouter from './routes/accounts';
 import authRouter from './routes/auth';
 import budgetsRouter from './routes/budgets';
 import categoriesRouter from './routes/categories';
@@ -14,6 +15,7 @@ import recurringRouter from './routes/recurring';
 import reportsRouter from './routes/reports';
 import rulesRouter from './routes/rules';
 import transactionsRouter from './routes/transactions';
+import transfersRouter from './routes/transfers';
 
 export function createApp() {
   const app = express();
@@ -25,9 +27,11 @@ export function createApp() {
   app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 
   app.use('/api/auth', authRouter);
+  app.use('/api/accounts', accountsRouter);
   app.use('/api/categories', categoriesRouter);
   app.use('/api/rules', rulesRouter);
   app.use('/api/transactions', transactionsRouter);
+  app.use('/api/transfers', transfersRouter);
   app.use('/api/recurring', recurringRouter);
   app.use('/api/budgets', budgetsRouter);
   app.use('/api/debts', debtsRouter);

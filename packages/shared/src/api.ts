@@ -1,4 +1,7 @@
 import type {
+  Account,
+  AccountInput,
+  AccountUpdateInput,
   AuthResponse,
   Budget,
   BudgetInput,
@@ -21,6 +24,8 @@ import type {
   Transaction,
   TransactionFilters,
   TransactionInput,
+  Transfer,
+  TransferInput,
   User,
 } from './types';
 
@@ -88,6 +93,31 @@ export class ApiClient {
   }
   registerFcmToken(token: string, platform?: string) {
     return this.request<{ ok: true }>('POST', '/api/notifications/fcm-token', { token, platform });
+  }
+
+  // --- Cuentas ---
+  listAccounts() {
+    return this.request<Account[]>('GET', '/api/accounts');
+  }
+  createAccount(input: AccountInput) {
+    return this.request<Account>('POST', '/api/accounts', input);
+  }
+  updateAccount(id: string, input: AccountUpdateInput) {
+    return this.request<Account>('PUT', `/api/accounts/${id}`, input);
+  }
+  deleteAccount(id: string) {
+    return this.request<void>('DELETE', `/api/accounts/${id}`);
+  }
+
+  // --- Transferencias entre cuentas ---
+  listTransfers() {
+    return this.request<Transfer[]>('GET', '/api/transfers');
+  }
+  createTransfer(input: TransferInput) {
+    return this.request<Transfer>('POST', '/api/transfers', input);
+  }
+  deleteTransfer(id: string) {
+    return this.request<void>('DELETE', `/api/transfers/${id}`);
   }
 
   // --- Categorías ---
@@ -230,8 +260,8 @@ export class ApiClient {
 
   // --- Importación ---
   /** Importa transacciones desde el CSV con el mismo formato que exporta la app. */
-  importTransactions(csv: string) {
-    return this.request<ImportResult>('POST', '/api/transactions/import', { csv });
+  importTransactions(csv: string, accountId?: string) {
+    return this.request<ImportResult>('POST', '/api/transactions/import', { csv, accountId });
   }
 
   // --- Reportes ---

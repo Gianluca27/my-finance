@@ -45,6 +45,13 @@ async function main() {
     });
   }
 
+  const existingAccount = await prisma.account.findFirst({ where: { userId: user.id } });
+  if (!existingAccount) {
+    await prisma.account.create({
+      data: { name: 'Efectivo', type: 'CASH', isDefault: true, userId: user.id },
+    });
+  }
+
   console.log(`Seed listo. Usuario demo: ${email} / demo1234`);
 }
 

@@ -5,6 +5,7 @@ import { Layout } from './components/Layout';
 
 // Cada página se carga bajo demanda: el bundle inicial no arrastra Recharts
 // (solo lo usa el Dashboard) ni el resto de las vistas.
+const AccountsPage = lazy(() => import('./pages/AccountsPage').then((m) => ({ default: m.AccountsPage })));
 const AuthPage = lazy(() => import('./pages/AuthPage').then((m) => ({ default: m.AuthPage })));
 const BudgetsPage = lazy(() => import('./pages/BudgetsPage').then((m) => ({ default: m.BudgetsPage })));
 const CategoriesPage = lazy(() => import('./pages/CategoriesPage').then((m) => ({ default: m.CategoriesPage })));
@@ -40,6 +41,7 @@ export default function App() {
       <Suspense fallback={<p className="muted">Cargando…</p>}>
         <Routes>
           <Route path="/" element={<DashboardPage />} />
+          <Route path="/cuentas" element={<AccountsPage />} />
           <Route path="/transacciones" element={<TransactionsPage />} />
           <Route path="/recurrentes" element={<RecurringPage />} />
           <Route path="/presupuestos" element={<BudgetsPage />} />

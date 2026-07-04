@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { getDefaultAccountId } from '../lib/accounts';
 import { advanceDueDate, nextDueDate } from '../lib/dates';
 import { serialize } from '../lib/serialize';
 import { requireAuth } from '../middleware/auth';
@@ -124,6 +125,7 @@ router.post(
     if (!existing) throw new HttpError(404, 'Gasto recurrente no encontrado');
 
     const notePrefix = existing.type === 'INCOME' ? 'Cobro recurrente' : 'Pago recurrente';
+    const accountId = await getDefaultAccountId(req.auth!.userId);
     const [transaction, recurring] = await prisma.$transaction([
       prisma.transaction.create({
         data: {
@@ -132,6 +134,7 @@ router.post(
           date: new Date(),
           note: `${notePrefix}: ${existing.name}`,
           categoryId: existing.categoryId,
+          accountId,
           userId: req.auth!.userId,
         },
         include: { category: true },

@@ -1,5 +1,5 @@
-import type { DashboardData, ImportResult, Paginated, Transaction } from '@myfinance/shared';
-import { useRef, useState } from 'react';
+import type { Account, DashboardData, ImportResult, Paginated, Transaction } from '@myfinance/shared';
+import { useEffect, useRef, useState } from 'react';
 import { api, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
 import { IcoDoc } from '../components/icons';
@@ -42,9 +42,17 @@ export function ReportsPage() {
   const [busy, setBusy] = useState<'csv' | 'pdf' | null>(null);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importAccountId, setImportAccountId] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
   const { data } = useCached<DashboardData>('dashboard', () => api.dashboard());
+  const { data: accountsData } = useCached<Account[]>('accounts', () => api.listAccounts());
+  const accounts = accountsData ?? [];
+  useEffect(() => {
+    if (!importAccountId && accounts.length) {
+      setImportAccountId(accounts.find((a) => a.isDefault)?.id ?? accounts[0].id);
+    }
+  }, [accountsData, importAccountId, accounts]);
   const range = data ? monthRange(data.month) : null;
   const { data: monthTx } = useCached<Paginated<Transaction>>(
     range ? `reports-month-count:${data!.month}` : 'reports-month-count:pending',
@@ -88,7 +96,7 @@ export function ReportsPage() {
     setImporting(true);
     try {
       const csv = await file.text();
-      const result = await api.importTransactions(csv);
+      const result = await api.importTransactions(csv, importAccountId || undefined);
       setImportResult(result);
       // Los movimientos importados afectan resumen, presupuestos y listados.
       invalidate('transactions');
@@ -181,6 +189,19 @@ export function ReportsPage() {
           Subí un CSV con el mismo formato que exporta la app (<code>fecha,tipo,monto,categoria,nota</code>). Las
           categorías se emparejan por nombre; si no existen, el movimiento se importa sin categoría.
         </p>
+        {accounts.length > 0 && (
+          <label className="field" style={{ marginBottom: 12 }}>
+            Importar en la cuenta
+            <select value={importAccountId} onChange={(e) => setImportAccountId(e.target.value)}>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.icon ? `${a.icon} ` : ''}
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <input
           ref={fileRef}
           type="file"

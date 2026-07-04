@@ -160,7 +160,9 @@ export function Layout({ children }: { children: ReactNode }) {
           </button>
         </header>
 
-        <main className="mf-content">{children}</main>
+        <main className={location.pathname === '/' ? 'mf-content mf-content--wide' : 'mf-content'}>
+          {children}
+        </main>
 
         <nav className="mf-bottomnav">
           {BOTTOM_ITEMS.map((item) => (

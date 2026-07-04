@@ -1412,7 +1412,6 @@ td.num {
 }
 
 .mf-bar-pair {
-  position: relative;
   flex: 1;
   width: 100%;
   display: flex;
@@ -1422,11 +1421,8 @@ td.num {
 }
 
 .mf-bar-tooltip {
-  position: absolute;
-  bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  margin-bottom: 10px;
+  position: fixed;
+  transform: translate(-50%, calc(-100% - 10px));
   background: var(--surface-2);
   border: 1px solid var(--border-2);
   color: var(--text);
@@ -1437,7 +1433,7 @@ td.num {
   white-space: nowrap;
   box-shadow: var(--shadow);
   pointer-events: none;
-  z-index: 10;
+  z-index: 1000;
 }
 
 .mf-bar-tooltip::after {

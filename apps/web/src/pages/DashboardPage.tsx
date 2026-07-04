@@ -73,7 +73,7 @@ function budgetBarColor(status: BudgetStatus): string {
 export function DashboardPage() {
   const { data, error } = useCached<DashboardData>('dashboard', () => api.dashboard());
   const { data: budgets } = useCached<BudgetStatus[]>('budgets', () => api.listBudgets());
-  const [hoverMonth, setHoverMonth] = useState<string | null>(null);
+  const [barHover, setBarHover] = useState<{ month: string; left: number; top: number } | null>(null);
 
   const top = useMemo(() => (data ? topCategories(data.expensesByCategory) : []), [data]);
   const donutSegments = useMemo(() => {
@@ -270,14 +270,12 @@ export function DashboardPage() {
               <div className="mf-bar-col" key={m.month}>
                 <div
                   className="mf-bar-pair"
-                  onMouseEnter={() => setHoverMonth(m.month)}
-                  onMouseLeave={() => setHoverMonth(null)}
+                  onMouseEnter={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setBarHover({ month: m.month, left: rect.left + rect.width / 2, top: rect.top });
+                  }}
+                  onMouseLeave={() => setBarHover(null)}
                 >
-                  {hoverMonth === m.month && (
-                    <div className="mf-bar-tooltip">
-                      {hoverMonthLabel(m.month)}: Ingresos: {formatMoney(m.income)}. Gastos: {formatMoney(m.expense)}.
-                    </div>
-                  )}
                   <div
                     className="mf-bar mf-bar-income"
                     style={{ height: `${Math.max(2, (m.income / maxBar) * 100)}%` }}
@@ -299,6 +297,19 @@ export function DashboardPage() {
               </div>
             ))}
           </div>
+          {barHover &&
+            (() => {
+              const m = data.monthlyComparison.find((mm) => mm.month === barHover.month);
+              if (!m) return null;
+              return (
+                <div
+                  className="mf-bar-tooltip"
+                  style={{ left: barHover.left, top: barHover.top }}
+                >
+                  {hoverMonthLabel(m.month)}: Ingresos: {formatMoney(m.income)}. Gastos: {formatMoney(m.expense)}.
+                </div>
+              );
+            })()}
         </div>
       </div>
 

@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
-import { IcoClip, IcoSearch, IcoTrash } from '../components/icons';
+import { AddTransactionModal } from '../components/AddTransactionModal';
+import { IcoClip, IcoPencil, IcoSearch, IcoTrash } from '../components/icons';
 import { Modal } from '../components/Modal';
 
 /** Reescala la imagen (máx 1280px) y la devuelve como JPEG base64 para no superar ~1 MB. */
@@ -70,15 +71,8 @@ export function TransactionsPage() {
   const [viewing, setViewing] = useState<{ id: string; url: string } | null>(null);
   const [viewBusy, setViewBusy] = useState(false);
 
-  // Edición inline
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editType, setEditType] = useState<TransactionType>('EXPENSE');
-  const [editAmount, setEditAmount] = useState('');
-  const [editDate, setEditDate] = useState('');
-  const [editCategoryId, setEditCategoryId] = useState('');
-  const [editAccountId, setEditAccountId] = useState('');
-  const [editNote, setEditNote] = useState('');
-  const [editBusy, setEditBusy] = useState(false);
+  // Edición vía modal (reutiliza el de "Nuevo movimiento")
+  const [editing, setEditing] = useState<Transaction | null>(null);
 
   const listKey = `transactions:${JSON.stringify([page, filterType, filterCategory, filterAccount, search])}`;
   const { data, error: loadError, refresh } = useCached<Paginated<Transaction>>(listKey, () =>
@@ -167,43 +161,6 @@ export function TransactionsPage() {
     }
   }
 
-  function onStartEdit(tx: Transaction) {
-    setEditingId(tx.id);
-    setEditType(tx.type);
-    setEditAmount(String(tx.amount));
-    setEditDate(tx.date.slice(0, 10));
-    setEditCategoryId(tx.categoryId ?? '');
-    setEditAccountId(tx.accountId);
-    setEditNote(tx.note ?? '');
-    setError(null);
-  }
-
-  function onCancelEdit() {
-    setEditingId(null);
-  }
-
-  async function onSaveEdit(id: string) {
-    setError(null);
-    setEditBusy(true);
-    try {
-      await api.updateTransaction(id, {
-        type: editType,
-        amount: Number(editAmount),
-        date: editDate,
-        note: editNote || null,
-        categoryId: editCategoryId || null,
-        accountId: editAccountId || undefined,
-      });
-      setEditingId(null);
-      invalidateAfterMutation();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error inesperado');
-    } finally {
-      setEditBusy(false);
-    }
-  }
-
-  const editCategories = categories.filter((c) => c.type === editType);
   const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
 
   return (
@@ -232,6 +189,15 @@ export function TransactionsPage() {
           </div>
         )}
       </Modal>
+
+      <AddTransactionModal
+        open={editing !== null}
+        transaction={editing}
+        onClose={() => {
+          setEditing(null);
+          refresh();
+        }}
+      />
 
       <div className="card mf-tx-card">
         <div className="mf-tx-toolbar">
@@ -305,10 +271,10 @@ export function TransactionsPage() {
           <table className="mf-tx-table">
             <colgroup>
               <col style={{ width: '10%' }} />
-              <col style={{ width: '34%' }} />
+              <col style={{ width: '32%' }} />
               <col style={{ width: '22%' }} />
-              <col style={{ width: '24%' }} />
-              <col style={{ width: '10%' }} />
+              <col style={{ width: '22%' }} />
+              <col style={{ width: '14%' }} />
             </colgroup>
             <thead>
               <tr>
@@ -320,125 +286,63 @@ export function TransactionsPage() {
               </tr>
             </thead>
             <tbody>
-              {data.items.map((tx) =>
-                editingId === tx.id ? (
-                  <tr key={tx.id}>
-                    <td>
-                      <input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} />
-                    </td>
-                    <td>
-                      <input value={editNote} onChange={(e) => setEditNote(e.target.value)} maxLength={500} />
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        <select value={editCategoryId} onChange={(e) => setEditCategoryId(e.target.value)}>
-                          <option value="">Sin categoría</option>
-                          {editCategories.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.icon ? `${c.icon} ` : ''}
-                              {c.name}
-                            </option>
-                          ))}
-                        </select>
-                        {accounts.length > 0 && (
-                          <select value={editAccountId} onChange={(e) => setEditAccountId(e.target.value)}>
-                            {accounts.map((a) => (
-                              <option key={a.id} value={a.id}>
-                                {a.name}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                      </div>
-                    </td>
-                    <td className="num">
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        <select
-                          value={editType}
-                          onChange={(e) => {
-                            const t = e.target.value as TransactionType;
-                            setEditType(t);
-                            setEditCategoryId('');
-                          }}
-                        >
-                          <option value="EXPENSE">Gasto</option>
-                          <option value="INCOME">Ingreso</option>
-                        </select>
-                        <input
-                          type="number"
-                          min="0.01"
-                          step="0.01"
-                          value={editAmount}
-                          onChange={(e) => setEditAmount(e.target.value)}
-                          required
-                        />
-                      </div>
-                    </td>
-                    <td className="num">
-                      <div className="row-actions">
-                        <button disabled={editBusy} onClick={() => onSaveEdit(tx.id)}>
-                          {editBusy ? 'Guardando…' : 'Guardar'}
-                        </button>
-                        <button className="secondary" disabled={editBusy} onClick={onCancelEdit}>
-                          Cancelar
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  <tr key={tx.id} className="mf-tx-row" onClick={() => onStartEdit(tx)}>
-                    <td className="mf-tx-date">{formatRowDate(tx.date)}</td>
-                    <td className="mf-tx-detail">
-                      {tx.note || '—'}
-                      {accounts.length > 1 && accountName(tx.accountId) && (
-                        <div className="muted" style={{ fontSize: 11.5 }}>{accountName(tx.accountId)}</div>
-                      )}
-                    </td>
-                    <td>
-                      <span className="cat-chip">
-                        <span className="cat-dot" style={{ background: tx.category?.color ?? '#9ca3af' }} />
-                        {tx.category?.name ?? 'Sin categoría'}
-                      </span>
-                    </td>
-                    <td
-                      className={`num mf-tx-amount ${tx.type === 'INCOME' ? 'income' : 'expense'}`}
-                    >
-                      {tx.type === 'INCOME' ? '+ ' : '− '}
-                      {formatMoney(tx.amount)}
-                    </td>
-                    <td className="num">
-                      <div className="row-actions" style={{ justifyContent: 'flex-end' }}>
-                        <button
-                          type="button"
-                          className="mf-icon-btn"
-                          disabled={uploadingId === tx.id || viewBusy}
-                          aria-label={tx.receiptMime ? 'Ver recibo' : 'Adjuntar recibo'}
-                          title={tx.receiptMime ? 'Ver recibo' : 'Adjuntar recibo'}
-                          style={tx.receiptMime ? { color: 'var(--accent)' } : undefined}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (uploadingId === tx.id) return;
-                            tx.receiptMime ? onViewReceipt(tx.id) : onPickReceipt(tx.id);
-                          }}
-                        >
-                          <IcoClip size={16} />
-                        </button>
-                        <button
-                          type="button"
-                          className="mf-icon-btn"
-                          aria-label="Eliminar movimiento"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onDelete(tx.id);
-                          }}
-                        >
-                          <IcoTrash size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ),
-              )}
+              {data.items.map((tx) => (
+                <tr key={tx.id} className="mf-tx-row">
+                  <td className="mf-tx-date">{formatRowDate(tx.date)}</td>
+                  <td className="mf-tx-detail">
+                    {tx.note || '—'}
+                    {accounts.length > 1 && accountName(tx.accountId) && (
+                      <div className="muted" style={{ fontSize: 11.5 }}>{accountName(tx.accountId)}</div>
+                    )}
+                  </td>
+                  <td>
+                    <span className="cat-chip">
+                      <span className="cat-dot" style={{ background: tx.category?.color ?? '#9ca3af' }} />
+                      {tx.category?.name ?? 'Sin categoría'}
+                    </span>
+                  </td>
+                  <td className={`num mf-tx-amount ${tx.type === 'INCOME' ? 'income' : 'expense'}`}>
+                    {tx.type === 'INCOME' ? '+ ' : '− '}
+                    {formatMoney(tx.amount)}
+                  </td>
+                  <td className="num">
+                    <div className="row-actions" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
+                      <button
+                        type="button"
+                        className="mf-icon-btn"
+                        disabled={uploadingId === tx.id || viewBusy}
+                        aria-label={tx.receiptMime ? 'Ver recibo' : 'Adjuntar recibo'}
+                        title={tx.receiptMime ? 'Ver recibo' : 'Adjuntar recibo'}
+                        style={tx.receiptMime ? { color: 'var(--accent)' } : undefined}
+                        onClick={() => {
+                          if (uploadingId === tx.id) return;
+                          tx.receiptMime ? onViewReceipt(tx.id) : onPickReceipt(tx.id);
+                        }}
+                      >
+                        <IcoClip size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        className="mf-icon-btn"
+                        aria-label="Editar movimiento"
+                        title="Editar movimiento"
+                        onClick={() => setEditing(tx)}
+                      >
+                        <IcoPencil size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        className="mf-icon-btn"
+                        aria-label="Eliminar movimiento"
+                        title="Eliminar movimiento"
+                        onClick={() => onDelete(tx.id)}
+                      >
+                        <IcoTrash size={16} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         )}

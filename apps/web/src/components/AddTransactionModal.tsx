@@ -1,10 +1,20 @@
-import type { Account, Category, TransactionType } from '@myfinance/shared';
+import type { Account, Category, Transaction, TransactionType } from '@myfinance/shared';
 import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import { invalidate, useCached } from '../cache';
 import { Modal } from './Modal';
 
-export function AddTransactionModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function AddTransactionModal({
+  open,
+  onClose,
+  transaction,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** Si se pasa, el modal edita ese movimiento en vez de crear uno nuevo. */
+  transaction?: Transaction | null;
+}) {
+  const editing = !!transaction;
   const [type, setType] = useState<TransactionType>('EXPENSE');
   const [amount, setAmount] = useState('');
   const [categoryId, setCategoryId] = useState('');
@@ -19,10 +29,26 @@ export function AddTransactionModal({ open, onClose }: { open: boolean; onClose:
   const { data: accountsData } = useCached<Account[]>('accounts', () => api.listAccounts());
   const accounts = accountsData ?? [];
 
-  // Preseleccionar la cuenta por defecto cuando cargan las cuentas.
+  // Al abrir, precargar los datos del movimiento a editar (o limpiar para uno nuevo).
   useEffect(() => {
-    if (!accountId && accounts.length) setAccountId(accounts.find((a) => a.isDefault)?.id ?? accounts[0].id);
-  }, [accountsData, accountId, accounts]);
+    if (!open) return;
+    if (transaction) {
+      setType(transaction.type);
+      setAmount(String(transaction.amount));
+      setCategoryId(transaction.categoryId ?? '');
+      setAccountId(transaction.accountId);
+      setDate(transaction.date.slice(0, 10));
+      setNote(transaction.note ?? '');
+    }
+    setError(null);
+  }, [open, transaction]);
+
+  // Preseleccionar la cuenta por defecto cuando cargan las cuentas (solo al crear).
+  useEffect(() => {
+    if (!editing && !accountId && accounts.length) {
+      setAccountId(accounts.find((a) => a.isDefault)?.id ?? accounts[0].id);
+    }
+  }, [accountsData, accountId, accounts, editing]);
 
   function reset() {
     setType('EXPENSE');
@@ -35,7 +61,7 @@ export function AddTransactionModal({ open, onClose }: { open: boolean; onClose:
   }
 
   function close() {
-    reset();
+    if (!editing) reset();
     onClose();
   }
 
@@ -48,14 +74,19 @@ export function AddTransactionModal({ open, onClose }: { open: boolean; onClose:
     }
     setBusy(true);
     try {
-      await api.createTransaction({
+      const payload = {
         type,
         amount: amt,
         date,
         note: note || null,
         categoryId: categoryId || null,
         accountId: accountId || null,
-      });
+      };
+      if (transaction) {
+        await api.updateTransaction(transaction.id, payload);
+      } else {
+        await api.createTransaction(payload);
+      }
       invalidate('transactions');
       invalidate('dashboard');
       invalidate('budgets');
@@ -68,7 +99,7 @@ export function AddTransactionModal({ open, onClose }: { open: boolean; onClose:
   }
 
   return (
-    <Modal open={open} onClose={close} title="Nuevo movimiento">
+    <Modal open={open} onClose={close} title={editing ? 'Editar movimiento' : 'Nuevo movimiento'}>
       <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {error && <div className="error-banner">{error}</div>}
         <div className="mf-seg">
@@ -141,7 +172,7 @@ export function AddTransactionModal({ open, onClose }: { open: boolean; onClose:
           Nota
           <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} />
         </label>
-        <button disabled={busy}>{busy ? 'Guardando…' : 'Guardar movimiento'}</button>
+        <button disabled={busy}>{busy ? 'Guardando…' : editing ? 'Guardar cambios' : 'Guardar movimiento'}</button>
       </form>
     </Modal>
   );

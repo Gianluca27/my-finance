@@ -86,6 +86,8 @@ export interface Debt {
   totalAmount: number;
   /** Calculado: totalAmount - suma de pagos vinculados. No se persiste. */
   remainingBalance: number;
+  /** Vencimiento opcional (ISO). Solo se usa la parte de fecha. */
+  dueDate: string | null;
   settledAt: string | null;
   categoryId: string | null;
   category: Category | null;
@@ -274,6 +276,8 @@ export interface DebtInput {
   description?: string | null;
   totalAmount: number;
   categoryId?: string | null;
+  /** Vencimiento opcional como `YYYY-MM-DD` o null. */
+  dueDate?: string | null;
 }
 
 /** Edición: no permite cambiar `direction` (ver spec de deudas). */

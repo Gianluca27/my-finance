@@ -2129,6 +2129,37 @@ td.num {
   margin-top: 2px;
 }
 
+.mf-debt-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.mf-due-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 10px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.mf-due-badge.overdue {
+  background: var(--neg-weak);
+  color: var(--neg);
+}
+
+.mf-due-badge.soon {
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+  color: var(--warn);
+}
+
+.mf-due-badge.plain {
+  background: var(--surface-2);
+  color: var(--text-3);
+}
+
 .mf-progress-fill.owe {
   background: var(--neg);
 }

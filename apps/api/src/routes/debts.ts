@@ -20,6 +20,7 @@ const createSchema = z.object({
   description: z.string().max(500).nullable().optional(),
   totalAmount: z.number().positive().max(999_999_999),
   categoryId: z.string().nullable().optional(),
+  dueDate: z.coerce.date().nullable().optional(),
 });
 
 // Edición: `direction` es inmutable una vez creada la deuda (ver spec).

@@ -92,6 +92,10 @@ export const IcoTrash = (p: IconProps) => (
   />
 );
 
+export const IcoPencil = (p: IconProps) => (
+  <PathIcon {...p} paths={[{ d: 'M13.5 4.5l2 2M12.5 3.5l4 4L7 17H3v-4z' }]} />
+);
+
 export function IcoSearch(p: IconProps) {
   const sz = p.size ?? 16;
   return (

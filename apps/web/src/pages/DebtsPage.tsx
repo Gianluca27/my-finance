@@ -2,13 +2,40 @@ import type { Category, Debt, DebtDirection } from '@myfinance/shared';
 import { useState, type FormEvent } from 'react';
 import { api, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
-import { IcoPlus, IcoTrash } from '../components/icons';
+import { IcoPencil, IcoPlus, IcoTrash } from '../components/icons';
 import { Modal } from '../components/Modal';
 
 const DIRECTION_LABEL: Record<DebtDirection, string> = {
   I_OWE: 'Debés',
   OWED_TO_ME: 'Te deben',
 };
+
+/** Fecha local YYYY-MM-DD (evita corrimiento de zona horaria de toISOString). */
+function todayISODate(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Toma la parte YYYY-MM-DD de un ISO/fecha sin reinterpretar zona horaria. */
+function toDateInput(iso: string): string {
+  return iso.slice(0, 10);
+}
+
+type DueBadge = { text: string; modifier: 'overdue' | 'soon' | 'plain' };
+
+/** Badge de vencimiento comparando solo la parte de fecha contra hoy. */
+function dueBadge(dueDate: string | null): DueBadge | null {
+  if (!dueDate) return null;
+  const due = toDateInput(dueDate);
+  const today = todayISODate();
+  const days = Math.round((Date.parse(`${due}T00:00:00`) - Date.parse(`${today}T00:00:00`)) / 86_400_000);
+  const [, m, d] = due.split('-');
+  const short = `${d}/${m}`;
+  if (days < 0) return { text: 'Vencida', modifier: 'overdue' };
+  if (days === 0) return { text: 'Vence hoy', modifier: 'soon' };
+  if (days <= 7) return { text: `Vence en ${days} día${days === 1 ? '' : 's'}`, modifier: 'soon' };
+  return { text: `Vence ${short}`, modifier: 'plain' };
+}
 
 const AVATAR_PALETTE = ['#f59e0b', '#ef4444', '#22c55e', '#a855f7', '#3b82f6', '#ec4899', '#14b8a6'];
 
@@ -23,11 +50,13 @@ export function DebtsPage() {
   const [showSettled, setShowSettled] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
 
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [direction, setDirection] = useState<DebtDirection>('I_OWE');
   const [counterparty, setCounterparty] = useState('');
   const [description, setDescription] = useState('');
   const [totalAmount, setTotalAmount] = useState('');
   const [categoryId, setCategoryId] = useState('');
+  const [dueDate, setDueDate] = useState('');
   const [busy, setBusy] = useState(false);
 
   const [payingId, setPayingId] = useState<string | null>(null);
@@ -49,23 +78,57 @@ export function DebtsPage() {
     refresh();
   }
 
+  function resetForm() {
+    setEditingId(null);
+    setDirection('I_OWE');
+    setCounterparty('');
+    setDescription('');
+    setTotalAmount('');
+    setCategoryId('');
+    setDueDate('');
+  }
+
+  function onOpenCreate() {
+    resetForm();
+    setError(null);
+    setFormOpen(true);
+  }
+
+  function onStartEdit(debt: Debt) {
+    setEditingId(debt.id);
+    setDirection(debt.direction);
+    setCounterparty(debt.counterparty);
+    setDescription(debt.description ?? '');
+    setTotalAmount(String(debt.totalAmount));
+    setCategoryId(debt.categoryId ?? '');
+    setDueDate(debt.dueDate ? toDateInput(debt.dueDate) : '');
+    setError(null);
+    setFormOpen(true);
+  }
+
+  function onCloseForm() {
+    setFormOpen(false);
+    resetForm();
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     setBusy(true);
     try {
-      await api.createDebt({
-        direction,
+      const payload = {
         counterparty,
         description: description || null,
         totalAmount: Number(totalAmount),
         categoryId: categoryId || null,
-      });
-      setCounterparty('');
-      setDescription('');
-      setTotalAmount('');
-      setCategoryId('');
-      setFormOpen(false);
+        dueDate: dueDate || null,
+      };
+      if (editingId) {
+        await api.updateDebt(editingId, payload);
+      } else {
+        await api.createDebt({ direction, ...payload });
+      }
+      onCloseForm();
       invalidateAfterMutation();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error inesperado');
@@ -110,8 +173,15 @@ export function DebtsPage() {
 
   const activeDebts = (debts ?? []).filter((d) => !d.settledAt);
   const settledDebts = (debts ?? []).filter((d) => d.settledAt);
-  const oweDebts = activeDebts.filter((d) => d.direction === 'I_OWE');
-  const owedDebts = activeDebts.filter((d) => d.direction === 'OWED_TO_ME');
+  // Deudas con vencimiento primero (más próximo/vencido arriba); sin fecha al final.
+  const byDueDate = (a: Debt, b: Debt) => {
+    if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
+    if (a.dueDate) return -1;
+    if (b.dueDate) return 1;
+    return 0;
+  };
+  const oweDebts = activeDebts.filter((d) => d.direction === 'I_OWE').sort(byDueDate);
+  const owedDebts = activeDebts.filter((d) => d.direction === 'OWED_TO_ME').sort(byDueDate);
 
   const totalIOwe = oweDebts.reduce((sum, d) => sum + d.remainingBalance, 0);
   const totalOwedToMe = owedDebts.reduce((sum, d) => sum + d.remainingBalance, 0);
@@ -122,6 +192,7 @@ export function DebtsPage() {
     const percentPaid = debt.totalAmount > 0 ? Math.min(100, Math.round((paid / debt.totalAmount) * 100)) : 100;
     const color = avatarColor(debt.counterparty);
     const barModifier = debt.direction === 'I_OWE' ? 'owe' : 'owed';
+    const badge = dueBadge(debt.dueDate);
     return (
       <div className="card mf-debt-card" key={debt.id}>
         <div className="mf-debt-head">
@@ -139,16 +210,28 @@ export function DebtsPage() {
             </div>
           )}
           {!debt.settledAt && (
-            <button
-              type="button"
-              className="mf-icon-btn"
-              aria-label="Eliminar deuda"
-              onClick={() => onDelete(debt.id)}
-            >
-              <IcoTrash size={14} />
-            </button>
+            <div className="mf-debt-actions">
+              <button
+                type="button"
+                className="mf-icon-btn"
+                aria-label="Editar deuda"
+                onClick={() => onStartEdit(debt)}
+              >
+                <IcoPencil size={14} />
+              </button>
+              <button
+                type="button"
+                className="mf-icon-btn"
+                aria-label="Eliminar deuda"
+                onClick={() => onDelete(debt.id)}
+              >
+                <IcoTrash size={14} />
+              </button>
+            </div>
           )}
         </div>
+
+        {!debt.settledAt && badge && <span className={`mf-due-badge ${badge.modifier}`}>{badge.text}</span>}
 
         {debt.settledAt ? (
           <p className="muted mono" style={{ margin: '10px 0 0' }}>
@@ -261,18 +344,19 @@ export function DebtsPage() {
         </div>
       )}
 
-      <button type="button" className="mf-add-btn" style={{ marginTop: 16 }} onClick={() => setFormOpen(true)}>
+      <button type="button" className="mf-add-btn" style={{ marginTop: 16 }} onClick={onOpenCreate}>
         <IcoPlus />
         <span className="mf-add-label">Nueva Deuda</span>
       </button>
 
-      <Modal open={formOpen} onClose={() => setFormOpen(false)} title="Nueva deuda">
+      <Modal open={formOpen} onClose={onCloseForm} title={editingId ? 'Editar deuda' : 'Nueva deuda'}>
         <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {error && <div className="error-banner">{error}</div>}
           <label className="field">
             Dirección
             <select
               value={direction}
+              disabled={editingId !== null}
               onChange={(e) => {
                 setDirection(e.target.value as DebtDirection);
                 setCategoryId('');
@@ -317,10 +401,16 @@ export function DebtsPage() {
             </select>
           </label>
           <label className="field">
+            Vencimiento
+            <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+          </label>
+          <label className="field">
             Descripción
             <input value={description} onChange={(e) => setDescription(e.target.value)} maxLength={500} />
           </label>
-          <button disabled={busy}>{busy ? 'Guardando…' : 'Agregar deuda'}</button>
+          <button disabled={busy}>
+            {busy ? 'Guardando…' : editingId ? 'Guardar cambios' : 'Agregar deuda'}
+          </button>
         </form>
       </Modal>
     </>

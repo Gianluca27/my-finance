@@ -274,8 +274,22 @@ router.get(
       { totalIOwe: 0, totalOwedToMe: 0 },
     );
 
+    // --- Disponible para gastar (Safe-to-spend) ---
+    // Balance real menos gastos fijos activos que todavía vencen antes de fin del mes seleccionado.
+    const committedAgg = await prisma.recurringExpense.aggregate({
+      where: { userId, active: true, type: 'EXPENSE', nextDueDate: { gte: today, lt: end } },
+      _sum: { amount: true },
+    });
+    const balance = round2(totalIncome - totalExpense);
+    const committedExpenses = round2(committedAgg._sum.amount?.toNumber() ?? 0);
+    const safeToSpend = {
+      balance,
+      committedExpenses,
+      available: round2(balance - committedExpenses),
+    };
+
     res.json({
-      balance: Math.round((totalIncome - totalExpense) * 100) / 100,
+      balance,
       month,
       monthIncome,
       monthExpense,
@@ -288,6 +302,7 @@ router.get(
         anomalies,
       },
       debtsSummary,
+      safeToSpend,
     });
   }),
 );

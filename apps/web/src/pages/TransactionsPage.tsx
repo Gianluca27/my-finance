@@ -1,9 +1,32 @@
 import type { Category, Paginated, Transaction, TransactionType } from '@myfinance/shared';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
-import { IcoSearch, IcoTrash } from '../components/icons';
+import { IcoClip, IcoSearch, IcoTrash } from '../components/icons';
+import { Modal } from '../components/Modal';
+
+/** Reescala la imagen (máx 1280px) y la devuelve como JPEG base64 para no superar ~1 MB. */
+async function prepareImage(file: File): Promise<{ data: string; mime: string }> {
+  const bitmap = await createImageBitmap(file);
+  const maxDim = 1280;
+  const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+  const w = Math.round(bitmap.width * scale);
+  const h = Math.round(bitmap.height * scale);
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('No se pudo procesar la imagen');
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  const blob = await new Promise<Blob>((resolve, reject) =>
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('No se pudo procesar la imagen'))), 'image/jpeg', 0.8),
+  );
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return { data: btoa(binary), mime: 'image/jpeg' };
+}
 
 const PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 350;
@@ -38,6 +61,13 @@ export function TransactionsPage() {
     }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(handle);
   }, [searchInput]);
+
+  // Recibos adjuntos
+  const fileRef = useRef<HTMLInputElement>(null);
+  const uploadForId = useRef<string | null>(null);
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<{ id: string; url: string } | null>(null);
+  const [viewBusy, setViewBusy] = useState(false);
 
   // Edición inline
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -74,6 +104,58 @@ export function TransactionsPage() {
     try {
       await api.deleteTransaction(id);
       invalidateAfterMutation();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error inesperado');
+    }
+  }
+
+  function onPickReceipt(id: string) {
+    uploadForId.current = id;
+    fileRef.current?.click();
+  }
+
+  async function onReceiptFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    const id = uploadForId.current;
+    e.target.value = '';
+    if (!file || !id) return;
+    setError(null);
+    setUploadingId(id);
+    try {
+      const { data, mime } = await prepareImage(file);
+      await api.uploadReceipt(id, data, mime);
+      refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error inesperado');
+    } finally {
+      setUploadingId(null);
+    }
+  }
+
+  async function onViewReceipt(id: string) {
+    setError(null);
+    setViewBusy(true);
+    try {
+      const blob = await api.getReceipt(id);
+      setViewing({ id, url: URL.createObjectURL(blob) });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error inesperado');
+    } finally {
+      setViewBusy(false);
+    }
+  }
+
+  function closeViewer() {
+    if (viewing) URL.revokeObjectURL(viewing.url);
+    setViewing(null);
+  }
+
+  async function onDeleteReceipt(id: string) {
+    if (!confirm('¿Eliminar el recibo adjunto?')) return;
+    try {
+      await api.deleteReceipt(id);
+      closeViewer();
+      refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error inesperado');
     }
@@ -119,6 +201,29 @@ export function TransactionsPage() {
   return (
     <>
       {(error ?? loadError) && <div className="error-banner">{error ?? loadError}</div>}
+
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        style={{ display: 'none' }}
+        onChange={onReceiptFile}
+      />
+
+      <Modal open={viewing !== null} onClose={closeViewer} title="Recibo adjunto">
+        {viewing && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <img
+              src={viewing.url}
+              alt="Recibo"
+              style={{ maxWidth: '100%', maxHeight: '70vh', borderRadius: 8, objectFit: 'contain' }}
+            />
+            <button className="secondary" onClick={() => onDeleteReceipt(viewing.id)}>
+              Eliminar recibo
+            </button>
+          </div>
+        )}
+      </Modal>
 
       <div className="card mf-tx-card">
         <div className="mf-tx-toolbar">
@@ -261,17 +366,34 @@ export function TransactionsPage() {
                       {formatMoney(tx.amount)}
                     </td>
                     <td className="num">
-                      <button
-                        type="button"
-                        className="mf-icon-btn"
-                        aria-label="Eliminar movimiento"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDelete(tx.id);
-                        }}
-                      >
-                        <IcoTrash size={16} />
-                      </button>
+                      <div className="row-actions" style={{ justifyContent: 'flex-end' }}>
+                        <button
+                          type="button"
+                          className="mf-icon-btn"
+                          disabled={uploadingId === tx.id || viewBusy}
+                          aria-label={tx.receiptMime ? 'Ver recibo' : 'Adjuntar recibo'}
+                          title={tx.receiptMime ? 'Ver recibo' : 'Adjuntar recibo'}
+                          style={tx.receiptMime ? { color: 'var(--accent)' } : undefined}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (uploadingId === tx.id) return;
+                            tx.receiptMime ? onViewReceipt(tx.id) : onPickReceipt(tx.id);
+                          }}
+                        >
+                          <IcoClip size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          className="mf-icon-btn"
+                          aria-label="Eliminar movimiento"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDelete(tx.id);
+                          }}
+                        >
+                          <IcoTrash size={16} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ),

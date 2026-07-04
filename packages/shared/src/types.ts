@@ -36,6 +36,8 @@ export interface Transaction {
   category: Category | null;
   debtId: string | null;
   goalId: string | null;
+  /** MIME del recibo adjunto, o null si no tiene. Los bytes se sirven aparte. */
+  receiptMime: string | null;
   createdAt: string;
 }
 
@@ -127,6 +129,15 @@ export interface DashboardInsights {
   anomalies: CategoryAnomaly[];
 }
 
+export interface SafeToSpend {
+  /** Balance total actual (base del cálculo). */
+  balance: number;
+  /** Gastos fijos activos aún por vencer antes de fin del mes seleccionado. */
+  committedExpenses: number;
+  /** balance - committedExpenses. Puede ser negativo si los compromisos superan el balance. */
+  available: number;
+}
+
 export interface DebtsSummary {
   /** Suma de remainingBalance de deudas activas (no saldadas) con direction I_OWE. */
   totalIOwe: number;
@@ -144,6 +155,7 @@ export interface DashboardData {
   upcomingPayments: RecurringExpense[];
   insights: DashboardInsights;
   debtsSummary: DebtsSummary;
+  safeToSpend: SafeToSpend;
 }
 
 export interface Paginated<T> {
@@ -233,6 +245,20 @@ export interface GoalInput {
 }
 
 export type GoalUpdateInput = Partial<GoalInput>;
+
+export interface CategoryRule {
+  id: string;
+  /** Texto a buscar (substring, sin distinguir mayúsculas) en la nota del movimiento. */
+  keyword: string;
+  categoryId: string;
+  category: Category;
+  createdAt: string;
+}
+
+export interface CategoryRuleInput {
+  keyword: string;
+  categoryId: string;
+}
 
 export interface ImportResult {
   /** Filas insertadas correctamente. */

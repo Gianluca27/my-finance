@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import { Router } from 'express';
 import { z } from 'zod';
+import { loadRules, matchRule } from '../lib/categoryRules';
 import { serialize } from '../lib/serialize';
 import { requireAuth } from '../middleware/auth';
 import { asyncHandler, HttpError } from '../middleware/error';
@@ -73,8 +74,14 @@ router.post(
   asyncHandler(async (req, res) => {
     const input = transactionSchema.parse(req.body);
     await assertCategoryOwned(req.auth!.userId, input.categoryId);
+    // Si no se eligió categoría, intentar autocategorizar por reglas sobre la nota.
+    let categoryId = input.categoryId ?? null;
+    if (!categoryId) {
+      const rules = await loadRules(req.auth!.userId);
+      categoryId = matchRule(rules, input.note, input.type);
+    }
     const transaction = await prisma.transaction.create({
-      data: { ...input, userId: req.auth!.userId },
+      data: { ...input, categoryId, userId: req.auth!.userId },
       include: { category: true },
     });
     if (transaction.type === 'EXPENSE') {
@@ -118,6 +125,68 @@ router.delete(
     });
     if (!existing) throw new HttpError(404, 'Transacción no encontrada');
     await prisma.transaction.delete({ where: { id: existing.id } });
+    res.status(204).end();
+  }),
+);
+
+const ALLOWED_RECEIPT_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const MAX_RECEIPT_BYTES = 1_500_000;
+const receiptSchema = z.object({
+  data: z.string().min(1),
+  mime: z.string(),
+});
+
+/** Adjunta un recibo (imagen). Recibe base64 sin prefijo `data:`. */
+router.post(
+  '/:id/receipt',
+  asyncHandler(async (req, res) => {
+    const { data, mime } = receiptSchema.parse(req.body);
+    if (!ALLOWED_RECEIPT_MIME.has(mime)) throw new HttpError(400, 'Formato no soportado (jpg, png o webp)');
+    const buffer = Buffer.from(data, 'base64');
+    if (buffer.length === 0) throw new HttpError(400, 'Imagen inválida');
+    if (buffer.length > MAX_RECEIPT_BYTES) throw new HttpError(413, 'La imagen supera 1,5 MB');
+    const existing = await prisma.transaction.findFirst({
+      where: { id: req.params.id, userId: req.auth!.userId },
+    });
+    if (!existing) throw new HttpError(404, 'Transacción no encontrada');
+    // Upsert del recibo + flag liviano en la transacción, en una sola transacción.
+    await prisma.$transaction([
+      prisma.receipt.upsert({
+        where: { transactionId: existing.id },
+        create: { transactionId: existing.id, data: buffer, mime },
+        update: { data: buffer, mime },
+      }),
+      prisma.transaction.update({ where: { id: existing.id }, data: { receiptMime: mime } }),
+    ]);
+    res.status(201).json({ receiptMime: mime });
+  }),
+);
+
+/** Sirve la imagen del recibo. `requireAuth` acepta `?token=` para poder usarla en <img>/enlaces. */
+router.get(
+  '/:id/receipt',
+  asyncHandler(async (req, res) => {
+    const receipt = await prisma.receipt.findFirst({
+      where: { transactionId: req.params.id, transaction: { userId: req.auth!.userId } },
+    });
+    if (!receipt) throw new HttpError(404, 'Sin recibo');
+    res.setHeader('Content-Type', receipt.mime);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.send(Buffer.from(receipt.data));
+  }),
+);
+
+router.delete(
+  '/:id/receipt',
+  asyncHandler(async (req, res) => {
+    const existing = await prisma.transaction.findFirst({
+      where: { id: req.params.id, userId: req.auth!.userId },
+    });
+    if (!existing) throw new HttpError(404, 'Transacción no encontrada');
+    await prisma.$transaction([
+      prisma.receipt.deleteMany({ where: { transactionId: existing.id } }),
+      prisma.transaction.update({ where: { id: existing.id }, data: { receiptMime: null } }),
+    ]);
     res.status(204).end();
   }),
 );
@@ -168,6 +237,7 @@ router.post(
 
     const categories = await prisma.category.findMany({ where: { userId } });
     const categoryByKey = new Map(categories.map((c) => [`${c.type}:${c.name.trim().toLowerCase()}`, c.id]));
+    const rules = await loadRules(userId);
 
     const rawLines = csv.replace(/^﻿/, '').split(/\r?\n/);
     const errors: Array<{ line: number; reason: string }> = [];
@@ -205,10 +275,12 @@ router.post(
         return;
       }
 
-      const categoryId =
+      let categoryId =
         categoriaStr && categoriaStr.toLowerCase() !== 'sin categoría'
           ? categoryByKey.get(`${type}:${categoriaStr.toLowerCase()}`) ?? null
           : null;
+      // Sin categoría explícita en el CSV → intentar autocategorizar por reglas sobre la nota.
+      if (!categoryId) categoryId = matchRule(rules, notaStr ?? null, type);
 
       toCreate.push({
         userId,

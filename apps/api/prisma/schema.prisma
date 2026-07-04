@@ -41,6 +41,7 @@ model User {
   fcmTokens         FcmToken[]
   debts             Debt[]
   goals             Goal[]
+  categoryRules     CategoryRule[]
 }
 
 model FcmToken {
@@ -68,6 +69,7 @@ model Category {
   recurringExpenses RecurringExpense[]
   budgets           Budget[]
   debts             Debt[]
+  rules             CategoryRule[]
 
   @@unique([userId, name, type])
   @@index([userId])
@@ -87,6 +89,9 @@ model Transaction {
   debt       Debt?           @relation(fields: [debtId], references: [id], onDelete: SetNull)
   goalId     String?
   goal       Goal?           @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  /// MIME del recibo adjunto (flag liviano). Los bytes viven en el modelo Receipt aparte.
+  receiptMime String?
+  receipt    Receipt?
   createdAt  DateTime        @default(now())
   updatedAt  DateTime        @updatedAt
 
@@ -94,6 +99,16 @@ model Transaction {
   @@index([userId, categoryId])
   @@index([debtId])
   @@index([goalId])
+}
+
+/// Bytes del recibo adjunto, en tabla aparte para no cargarlos en las lecturas normales de Transaction.
+model Receipt {
+  id            String      @id @default(cuid())
+  data          Bytes
+  mime          String
+  transactionId String      @unique
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  createdAt     DateTime    @default(now())
 }
 
 model RecurringExpense {
@@ -157,6 +172,19 @@ model Debt {
   updatedAt    DateTime      @updatedAt
 
   payments Transaction[]
+
+  @@index([userId])
+}
+
+model CategoryRule {
+  id         String   @id @default(cuid())
+  /// Texto a buscar (substring, case-insensitive) en la nota del movimiento
+  keyword    String
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
 
   @@index([userId])
 }

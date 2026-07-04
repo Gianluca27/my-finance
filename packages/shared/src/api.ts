@@ -5,6 +5,8 @@ import type {
   BudgetStatus,
   Category,
   CategoryInput,
+  CategoryRule,
+  CategoryRuleInput,
   DashboardData,
   Debt,
   DebtInput,
@@ -102,6 +104,17 @@ export class ApiClient {
     return this.request<void>('DELETE', `/api/categories/${id}`);
   }
 
+  // --- Reglas de categorización automática ---
+  listCategoryRules() {
+    return this.request<CategoryRule[]>('GET', '/api/rules');
+  }
+  createCategoryRule(input: CategoryRuleInput) {
+    return this.request<CategoryRule>('POST', '/api/rules', input);
+  }
+  deleteCategoryRule(id: string) {
+    return this.request<void>('DELETE', `/api/rules/${id}`);
+  }
+
   // --- Transacciones ---
   listTransactions(filters: TransactionFilters = {}) {
     const params = new URLSearchParams();
@@ -119,6 +132,23 @@ export class ApiClient {
   }
   deleteTransaction(id: string) {
     return this.request<void>('DELETE', `/api/transactions/${id}`);
+  }
+  /** Adjunta un recibo (imagen en base64, sin prefijo data:). */
+  uploadReceipt(id: string, data: string, mime: string) {
+    return this.request<{ receiptMime: string }>('POST', `/api/transactions/${id}/receipt`, { data, mime });
+  }
+  deleteReceipt(id: string) {
+    return this.request<void>('DELETE', `/api/transactions/${id}/receipt`);
+  }
+  /** Descarga el recibo como Blob (para mostrar en <img> vía object URL). */
+  async getReceipt(id: string): Promise<Blob> {
+    const token = await this.opts.getToken();
+    const res = await fetch(`${this.opts.baseUrl}/api/transactions/${id}/receipt`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (res.status === 401) this.opts.onUnauthorized?.();
+    if (!res.ok) throw new ApiError(res.status, `Error ${res.status}`);
+    return res.blob();
   }
 
   // --- Gastos recurrentes ---

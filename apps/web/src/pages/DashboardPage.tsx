@@ -346,6 +346,20 @@ export function DashboardPage() {
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
           <div className="card">
+            <div className="mf-eyebrow">Disponible para gastar</div>
+            <div
+              className="mf-hero-balance"
+              style={{ fontSize: 26, color: data.safeToSpend.available < 0 ? 'var(--neg)' : 'var(--pos)' }}
+            >
+              {formatMoney(data.safeToSpend.available)}
+            </div>
+            <div className="muted" style={{ fontSize: 12.5 }}>
+              Balance {formatMoney(data.safeToSpend.balance)} − gastos fijos por venir{' '}
+              {formatMoney(data.safeToSpend.committedExpenses)}
+            </div>
+          </div>
+
+          <div className="card">
             <div className="mf-card-head" style={{ marginBottom: 14 }}>
               <div className="mf-eyebrow">Presupuestos del mes</div>
               <Link to="/presupuestos" className="mf-link">

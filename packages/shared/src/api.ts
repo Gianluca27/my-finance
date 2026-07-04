@@ -9,6 +9,10 @@ import type {
   Debt,
   DebtInput,
   DebtUpdateInput,
+  Goal,
+  GoalInput,
+  GoalUpdateInput,
+  ImportResult,
   Paginated,
   RecurringExpense,
   RecurringExpenseInput,
@@ -169,9 +173,35 @@ export class ApiClient {
     });
   }
 
+  // --- Metas de ahorro ---
+  listGoals() {
+    return this.request<Goal[]>('GET', '/api/goals');
+  }
+  createGoal(input: GoalInput) {
+    return this.request<Goal>('POST', '/api/goals', input);
+  }
+  updateGoal(id: string, input: GoalUpdateInput) {
+    return this.request<Goal>('PUT', `/api/goals/${id}`, input);
+  }
+  deleteGoal(id: string) {
+    return this.request<void>('DELETE', `/api/goals/${id}`);
+  }
+  /** Registra un aporte: crea la Transaction (EXPENSE) vinculada y marca la meta como lograda al alcanzar el objetivo. */
+  contributeGoal(id: string, amount: number) {
+    return this.request<{ transaction: Transaction; goal: Goal }>('POST', `/api/goals/${id}/contributions`, {
+      amount,
+    });
+  }
+
   // --- Dashboard ---
   dashboard(month?: string) {
     return this.request<DashboardData>('GET', `/api/dashboard${month ? `?month=${month}` : ''}`);
+  }
+
+  // --- Importación ---
+  /** Importa transacciones desde el CSV con el mismo formato que exporta la app. */
+  importTransactions(csv: string) {
+    return this.request<ImportResult>('POST', '/api/transactions/import', { csv });
   }
 
   // --- Reportes ---

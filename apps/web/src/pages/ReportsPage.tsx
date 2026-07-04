@@ -1,7 +1,7 @@
-import type { DashboardData, Paginated, Transaction } from '@myfinance/shared';
-import { useState } from 'react';
+import type { DashboardData, ImportResult, Paginated, Transaction } from '@myfinance/shared';
+import { useRef, useState } from 'react';
 import { api, formatMoney } from '../api';
-import { useCached } from '../cache';
+import { invalidate, useCached } from '../cache';
 import { IcoDoc } from '../components/icons';
 
 const MONTHS_FULL = [
@@ -40,6 +40,9 @@ export function ReportsPage() {
   const [month, setMonth] = useState(currentMonth());
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<'csv' | 'pdf' | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const { data } = useCached<DashboardData>('dashboard', () => api.dashboard());
   const range = data ? monthRange(data.month) : null;
@@ -74,6 +77,28 @@ export function ReportsPage() {
       setError(err instanceof Error ? err.message : 'Error inesperado');
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function onImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(null);
+    setImportResult(null);
+    setImporting(true);
+    try {
+      const csv = await file.text();
+      const result = await api.importTransactions(csv);
+      setImportResult(result);
+      // Los movimientos importados afectan resumen, presupuestos y listados.
+      invalidate('transactions');
+      invalidate('dashboard');
+      invalidate('budgets');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error inesperado');
+    } finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = '';
     }
   }
 
@@ -143,6 +168,46 @@ export function ReportsPage() {
             {busy === 'pdf' ? 'Generando…' : 'Generar PDF'}
           </button>
         </div>
+      </div>
+
+      <div className="card mf-report-card" style={{ marginTop: 16 }}>
+        <div className="mf-report-head">
+          <div className="mf-report-icon csv">
+            <IcoDoc size={20} />
+          </div>
+          <div className="mf-report-title">Importar CSV</div>
+        </div>
+        <p className="mf-report-desc">
+          Subí un CSV con el mismo formato que exporta la app (<code>fecha,tipo,monto,categoria,nota</code>). Las
+          categorías se emparejan por nombre; si no existen, el movimiento se importa sin categoría.
+        </p>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".csv,text/csv"
+          onChange={onImportFile}
+          disabled={importing}
+          style={{ marginBottom: 12 }}
+        />
+        {importing && <p className="muted">Importando…</p>}
+        {importResult && (
+          <div className="mf-report-desc">
+            <strong>{importResult.imported}</strong> movimientos importados
+            {importResult.skipped > 0 && <> · {importResult.skipped} filas ignoradas</>}
+            {importResult.errors.length > 0 && (
+              <>
+                <span style={{ color: 'var(--neg)' }}> · {importResult.errors.length} con errores</span>
+                <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+                  {importResult.errors.slice(0, 10).map((err) => (
+                    <li key={err.line} className="muted" style={{ fontSize: 12 }}>
+                      Línea {err.line}: {err.reason}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {data && monthTx && (

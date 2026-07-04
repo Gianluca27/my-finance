@@ -40,6 +40,7 @@ model User {
   budgets           Budget[]
   fcmTokens         FcmToken[]
   debts             Debt[]
+  goals             Goal[]
 }
 
 model FcmToken {
@@ -84,17 +85,22 @@ model Transaction {
   category   Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   debtId     String?
   debt       Debt?           @relation(fields: [debtId], references: [id], onDelete: SetNull)
+  goalId     String?
+  goal       Goal?           @relation(fields: [goalId], references: [id], onDelete: SetNull)
   createdAt  DateTime        @default(now())
   updatedAt  DateTime        @updatedAt
 
   @@index([userId, date])
   @@index([userId, categoryId])
   @@index([debtId])
+  @@index([goalId])
 }
 
 model RecurringExpense {
   id                 String    @id @default(cuid())
   name               String
+  /// Ingreso recurrente (sueldo, alquiler cobrado) o gasto fijo. Default EXPENSE por compatibilidad.
+  type               TransactionType @default(EXPENSE)
   amount             Decimal   @db.Decimal(12, 2)
   frequency          Frequency
   /// 1-31 para mensual/anual, 0-6 para semanal (0 = domingo)
@@ -151,6 +157,26 @@ model Debt {
   updatedAt    DateTime      @updatedAt
 
   payments Transaction[]
+
+  @@index([userId])
+}
+
+model Goal {
+  id           String    @id @default(cuid())
+  name         String
+  targetAmount Decimal   @db.Decimal(12, 2)
+  /// Fecha objetivo opcional para estimar ritmo de ahorro
+  targetDate   DateTime?
+  color        String    @default("#6366f1")
+  icon         String?
+  /// Se completa automáticamente cuando lo ahorrado alcanza el objetivo
+  achievedAt   DateTime?
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  contributions Transaction[]
 
   @@index([userId])
 }

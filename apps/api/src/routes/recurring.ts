@@ -12,6 +12,7 @@ router.use(requireAuth);
 
 const baseSchema = z.object({
   name: z.string().min(1).max(100),
+  type: z.enum(['INCOME', 'EXPENSE']).default('EXPENSE'),
   amount: z.number().positive().max(999_999_999),
   frequency: z.enum(['WEEKLY', 'MONTHLY', 'YEARLY']),
   dueDay: z.number().int(),
@@ -122,13 +123,14 @@ router.post(
     });
     if (!existing) throw new HttpError(404, 'Gasto recurrente no encontrado');
 
+    const notePrefix = existing.type === 'INCOME' ? 'Cobro recurrente' : 'Pago recurrente';
     const [transaction, recurring] = await prisma.$transaction([
       prisma.transaction.create({
         data: {
-          type: 'EXPENSE',
+          type: existing.type,
           amount: existing.amount,
           date: new Date(),
-          note: `Pago recurrente: ${existing.name}`,
+          note: `${notePrefix}: ${existing.name}`,
           categoryId: existing.categoryId,
           userId: req.auth!.userId,
         },
@@ -143,9 +145,12 @@ router.post(
       }),
     ]);
 
-    checkBudgetAlert(req.auth!.userId, existing.categoryId).catch((err) =>
-      console.error('[budgets] Error evaluando alerta:', err),
-    );
+    // Las alertas de presupuesto sólo aplican a gastos.
+    if (existing.type === 'EXPENSE') {
+      checkBudgetAlert(req.auth!.userId, existing.categoryId).catch((err) =>
+        console.error('[budgets] Error evaluando alerta:', err),
+      );
+    }
     res.status(201).json({ transaction: serialize(transaction), recurring: serialize(recurring) });
   }),
 );

@@ -122,4 +122,110 @@ router.delete(
   }),
 );
 
+const importSchema = z.object({ csv: z.string().min(1).max(2_000_000) });
+
+/** Parsea una línea CSV (comillas dobles, comas y comillas escapadas ""). */
+function parseCsvLine(line: string): string[] {
+  const fields: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (inQuotes) {
+      if (char === '"') {
+        if (line[i + 1] === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        current += char;
+      }
+    } else if (char === '"') {
+      inQuotes = true;
+    } else if (char === ',') {
+      fields.push(current);
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  fields.push(current);
+  return fields;
+}
+
+/**
+ * Importa transacciones desde el CSV con el mismo formato que exporta la app
+ * (encabezado `fecha,tipo,monto,categoria,nota`). Las categorías se emparejan por
+ * nombre+tipo; si no existe, el movimiento se importa sin categoría.
+ */
+router.post(
+  '/import',
+  asyncHandler(async (req, res) => {
+    const { csv } = importSchema.parse(req.body);
+    const userId = req.auth!.userId;
+
+    const categories = await prisma.category.findMany({ where: { userId } });
+    const categoryByKey = new Map(categories.map((c) => [`${c.type}:${c.name.trim().toLowerCase()}`, c.id]));
+
+    const rawLines = csv.replace(/^﻿/, '').split(/\r?\n/);
+    const errors: Array<{ line: number; reason: string }> = [];
+    const toCreate: Prisma.TransactionCreateManyInput[] = [];
+    let skipped = 0;
+
+    rawLines.forEach((rawLine, index) => {
+      const lineNo = index + 1;
+      if (rawLine.trim() === '') {
+        skipped++;
+        return;
+      }
+      const cols = parseCsvLine(rawLine).map((c) => c.trim());
+      // Encabezado (mismo formato que la exportación)
+      if (index === 0 && cols[0]?.toLowerCase() === 'fecha') {
+        skipped++;
+        return;
+      }
+      const [fechaStr, tipoStr, montoStr, categoriaStr, notaStr] = cols;
+
+      const date = new Date(fechaStr);
+      if (!fechaStr || Number.isNaN(date.getTime())) {
+        errors.push({ line: lineNo, reason: 'Fecha inválida' });
+        return;
+      }
+      const tipoNorm = (tipoStr ?? '').toLowerCase();
+      const type = tipoNorm === 'ingreso' ? 'INCOME' : tipoNorm === 'gasto' ? 'EXPENSE' : null;
+      if (!type) {
+        errors.push({ line: lineNo, reason: 'Tipo debe ser "ingreso" o "gasto"' });
+        return;
+      }
+      const amount = Number((montoStr ?? '').replace(/[^0-9.-]/g, ''));
+      if (!Number.isFinite(amount) || amount <= 0) {
+        errors.push({ line: lineNo, reason: 'Monto inválido' });
+        return;
+      }
+
+      const categoryId =
+        categoriaStr && categoriaStr.toLowerCase() !== 'sin categoría'
+          ? categoryByKey.get(`${type}:${categoriaStr.toLowerCase()}`) ?? null
+          : null;
+
+      toCreate.push({
+        userId,
+        type,
+        amount,
+        date,
+        note: notaStr ? notaStr.slice(0, 500) : null,
+        categoryId,
+      });
+    });
+
+    if (toCreate.length > 0) {
+      await prisma.transaction.createMany({ data: toCreate });
+    }
+
+    res.status(201).json({ imported: toCreate.length, skipped, errors: errors.slice(0, 50) });
+  }),
+);
+
 export default router;

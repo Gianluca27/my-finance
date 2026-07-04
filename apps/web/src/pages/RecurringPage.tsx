@@ -1,4 +1,4 @@
-import type { Category, Frequency, RecurringExpense } from '@myfinance/shared';
+import type { Category, Frequency, RecurringExpense, TransactionType } from '@myfinance/shared';
 import { useState, type FormEvent } from 'react';
 import { api, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
@@ -36,6 +36,7 @@ export function RecurringPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [name, setName] = useState('');
+  const [type, setType] = useState<TransactionType>('EXPENSE');
   const [amount, setAmount] = useState('');
   const [frequency, setFrequency] = useState<Frequency>('MONTHLY');
   const [dueDay, setDueDay] = useState('1');
@@ -49,9 +50,12 @@ export function RecurringPage() {
     api.listRecurring(),
   );
   const { data: categoriesData } = useCached<Category[]>('categories', () => api.listCategories());
-  const categories = (categoriesData ?? []).filter((c) => c.type === 'EXPENSE');
+  // Las categorías del formulario siguen el tipo elegido (gasto fijo vs ingreso fijo).
+  const categories = (categoriesData ?? []).filter((c) => c.type === type);
 
-  const totalMonthly = (items ?? []).filter((i) => i.active).reduce((sum, i) => sum + i.amount, 0);
+  const activeItems = (items ?? []).filter((i) => i.active);
+  const totalExpense = activeItems.filter((i) => i.type === 'EXPENSE').reduce((sum, i) => sum + i.amount, 0);
+  const totalIncome = activeItems.filter((i) => i.type === 'INCOME').reduce((sum, i) => sum + i.amount, 0);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -60,6 +64,7 @@ export function RecurringPage() {
     try {
       await api.createRecurring({
         name,
+        type,
         amount: Number(amount),
         frequency,
         dueDay: Number(dueDay),
@@ -80,7 +85,8 @@ export function RecurringPage() {
   }
 
   async function onPay(item: RecurringExpense) {
-    if (!confirm(`¿Registrar el pago de "${item.name}" por ${formatMoney(item.amount)}?`)) return;
+    const verb = item.type === 'INCOME' ? 'el cobro' : 'el pago';
+    if (!confirm(`¿Registrar ${verb} de "${item.name}" por ${formatMoney(item.amount)}?`)) return;
     try {
       await api.payRecurring(item.id);
       // El pago crea una transacción: además del listado, cambian resumen y presupuestos.
@@ -121,9 +127,15 @@ export function RecurringPage() {
     <>
       {(error ?? loadError) && <div className="error-banner">{error ?? loadError}</div>}
 
-      <div className="card mf-recur-total-card">
-        <div className="mf-eyebrow">Total mensual comprometido</div>
-        <div className="mf-hero-balance">{formatMoney(totalMonthly)}</div>
+      <div className="mf-grid-2" style={{ marginBottom: 16 }}>
+        <div className="card mf-recur-total-card">
+          <div className="mf-eyebrow">Gastos fijos comprometidos</div>
+          <div className="mf-hero-balance" style={{ color: 'var(--neg)' }}>{formatMoney(totalExpense)}</div>
+        </div>
+        <div className="card mf-recur-total-card">
+          <div className="mf-eyebrow">Ingresos fijos esperados</div>
+          <div className="mf-hero-balance" style={{ color: 'var(--pos)' }}>{formatMoney(totalIncome)}</div>
+        </div>
       </div>
 
       <div className="card">
@@ -136,10 +148,11 @@ export function RecurringPage() {
             {items.map((item) => {
               const badge = dueBadge(item);
               const color = item.category?.color ?? '#9ca3af';
+              const isIncome = item.type === 'INCOME';
               return (
                 <div key={item.id} className="mf-recur-row" style={{ opacity: item.active ? 1 : 0.5 }}>
                   <div className="mf-recur-icon" style={{ background: `${color}26` }}>
-                    {item.category?.icon ?? '💳'}
+                    {item.category?.icon ?? (isIncome ? '💵' : '💳')}
                   </div>
                   <div className="mf-recur-info">
                     <div className="mf-recur-name">
@@ -152,10 +165,13 @@ export function RecurringPage() {
                     </div>
                   </div>
                   <span className={`mf-recur-badge ${badge.urgent ? 'urgent' : ''}`}>{badge.text}</span>
-                  <div className="mf-recur-amount">{formatMoney(item.amount)}</div>
+                  <div className="mf-recur-amount" style={{ color: isIncome ? 'var(--pos)' : undefined }}>
+                    {isIncome ? '+' : ''}
+                    {formatMoney(item.amount)}
+                  </div>
                   <div className="mf-recur-actions">
                     <button className="mf-recur-pay" onClick={() => onPay(item)}>
-                      Pagar
+                      {isIncome ? 'Cobrar' : 'Pagar'}
                     </button>
                     <button
                       type="button"
@@ -188,12 +204,25 @@ export function RecurringPage() {
 
       <button type="button" className="mf-add-btn" onClick={() => setFormOpen(true)}>
         <IcoPlus />
-        <span className="mf-add-label">Nuevo Gasto Fijo</span>
+        <span className="mf-add-label">Nuevo Fijo</span>
       </button>
 
-      <Modal open={formOpen} onClose={() => setFormOpen(false)} title="Nuevo gasto fijo">
+      <Modal open={formOpen} onClose={() => setFormOpen(false)} title="Nuevo movimiento fijo">
         <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {error && <div className="error-banner">{error}</div>}
+          <label className="field">
+            Tipo
+            <select
+              value={type}
+              onChange={(e) => {
+                setType(e.target.value as TransactionType);
+                setCategoryId('');
+              }}
+            >
+              <option value="EXPENSE">Gasto fijo</option>
+              <option value="INCOME">Ingreso fijo</option>
+            </select>
+          </label>
           <label className="field">
             Nombre
             <input
@@ -201,7 +230,7 @@ export function RecurringPage() {
               onChange={(e) => setName(e.target.value)}
               required
               maxLength={100}
-              placeholder="Ej: Netflix, Alquiler…"
+              placeholder={type === 'INCOME' ? 'Ej: Sueldo, Alquiler cobrado…' : 'Ej: Netflix, Alquiler…'}
               autoFocus
             />
           </label>

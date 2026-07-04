@@ -24,6 +24,11 @@ export function BudgetsPage() {
   const totalSpent = (budgets ?? []).reduce((sum, b) => sum + b.spent, 0);
   const monthLabel = new Date().toLocaleDateString('es-AR', { month: 'long' });
 
+  // Días que quedan en el mes (incluyendo hoy) para repartir lo que resta del presupuesto.
+  const now = new Date();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const daysLeft = Math.max(1, daysInMonth - now.getDate() + 1);
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -87,6 +92,8 @@ export function BudgetsPage() {
             const near = !over && budget.percentUsed >= budget.alertThreshold;
             const status = over ? 'Superado' : near ? 'Cerca del límite' : 'En camino';
             const color = budget.category.color;
+            const remainingBudget = Math.max(0, budget.amount - budget.spent);
+            const perDay = remainingBudget / daysLeft;
             return (
               <div className="card mf-budget-card" key={budget.id}>
                 <div className="mf-budget-head">
@@ -117,7 +124,13 @@ export function BudgetsPage() {
                   <span className="mono muted">
                     {formatMoney(budget.spent)} de {formatMoney(budget.amount)}
                   </span>
-                  <span className="muted">Quedan {formatMoney(Math.max(0, budget.amount - budget.spent))}</span>
+                  <span className="muted">Quedan {formatMoney(remainingBudget)}</span>
+                </div>
+                <div className="mf-budget-foot" style={{ marginTop: 4 }}>
+                  <span className="muted">{daysLeft} días para fin de mes</span>
+                  <span className={over ? '' : 'mono'} style={{ color: over ? 'var(--neg)' : 'var(--pos)' }}>
+                    {over ? 'Presupuesto superado' : `${formatMoney(perDay)}/día disponible`}
+                  </span>
                 </div>
               </div>
             );

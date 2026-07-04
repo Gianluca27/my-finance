@@ -39,8 +39,10 @@ export async function runRemindersJob(): Promise<{ rolled: number; reminded: num
     if (item.lastRemindedFor && item.lastRemindedFor.getTime() === item.nextDueDate.getTime()) continue;
 
     const dueStr = item.nextDueDate.toISOString().slice(0, 10);
-    const when = daysUntilDue === 0 ? 'vence hoy' : `vence en ${daysUntilDue} día${daysUntilDue === 1 ? '' : 's'} (${dueStr})`;
-    const title = `Pago próximo: ${item.name}`;
+    const isIncome = item.type === 'INCOME';
+    const verb = isIncome ? 'se cobra' : 'vence';
+    const when = daysUntilDue === 0 ? `${verb} hoy` : `${verb} en ${daysUntilDue} día${daysUntilDue === 1 ? '' : 's'} (${dueStr})`;
+    const title = `${isIncome ? 'Cobro' : 'Pago'} próximo: ${item.name}`;
     const body = `${item.name} por $${item.amount.toNumber().toFixed(2)} ${when}.`;
 
     await notifyUser(item.userId, {

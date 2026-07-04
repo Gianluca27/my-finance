@@ -35,12 +35,15 @@ export interface Transaction {
   categoryId: string | null;
   category: Category | null;
   debtId: string | null;
+  goalId: string | null;
   createdAt: string;
 }
 
 export interface RecurringExpense {
   id: string;
   name: string;
+  /** INCOME (sueldo, alquiler cobrado) o EXPENSE (gasto fijo). */
+  type: TransactionType;
   amount: number;
   frequency: Frequency;
   /** Día de vencimiento: 1-31 (mensual/anual) o 0-6 (semanal, 0 = domingo) */
@@ -178,6 +181,8 @@ export interface CategoryInput {
 
 export interface RecurringExpenseInput {
   name: string;
+  /** Default EXPENSE si se omite. */
+  type?: TransactionType;
   amount: number;
   frequency: Frequency;
   dueDay: number;
@@ -203,3 +208,37 @@ export interface DebtInput {
 
 /** Edición: no permite cambiar `direction` (ver spec de deudas). */
 export type DebtUpdateInput = Partial<Omit<DebtInput, 'direction'>>;
+
+export interface Goal {
+  id: string;
+  name: string;
+  targetAmount: number;
+  targetDate: string | null;
+  color: string;
+  icon: string | null;
+  achievedAt: string | null;
+  /** Calculado: suma de los aportes vinculados. No se persiste. */
+  saved: number;
+  /** Calculado: targetAmount - saved (mínimo 0). No se persiste. */
+  remaining: number;
+  createdAt: string;
+}
+
+export interface GoalInput {
+  name: string;
+  targetAmount: number;
+  targetDate?: string | null;
+  color?: string;
+  icon?: string | null;
+}
+
+export type GoalUpdateInput = Partial<GoalInput>;
+
+export interface ImportResult {
+  /** Filas insertadas correctamente. */
+  imported: number;
+  /** Filas ignoradas (vacías, encabezado, formato inválido). */
+  skipped: number;
+  /** Detalle de errores por fila (línea 1-indexada + motivo), acotado. */
+  errors: Array<{ line: number; reason: string }>;
+}

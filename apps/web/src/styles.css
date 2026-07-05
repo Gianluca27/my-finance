@@ -1169,11 +1169,25 @@ td.num {
 .mf-b-bars {
   grid-column: 6 / 13;
 }
+.mf-b-networth {
+  grid-column: 1 / 13;
+}
 .mf-b-upcoming {
   grid-column: 1 / 7;
 }
 .mf-b-budgets {
   grid-column: 7 / 13;
+}
+
+.mf-nw-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 11px;
+}
+.mf-nw-labels span {
+  flex: 1;
+  text-align: center;
 }
 
 .mf-eyebrow {
@@ -1216,6 +1230,9 @@ td.num {
   .mf-b-bars {
     grid-column: 4 / 7;
   }
+  .mf-b-networth {
+    grid-column: 1 / 7;
+  }
   .mf-b-upcoming {
     grid-column: 1 / 4;
   }
@@ -1236,6 +1253,7 @@ td.num {
   .mf-b-side,
   .mf-b-donut,
   .mf-b-bars,
+  .mf-b-networth,
   .mf-b-upcoming,
   .mf-b-budgets {
     grid-column: auto;

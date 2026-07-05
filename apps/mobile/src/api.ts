@@ -18,7 +18,7 @@ export function setOnUnauthorized(handler: () => void) {
   onUnauthorized = handler;
 }
 
-const baseUrl: string =
+export const baseUrl: string =
   (Constants.expoConfig?.extra?.apiUrl as string | undefined) ?? 'http://localhost:4000';
 
 export const api = new ApiClient({

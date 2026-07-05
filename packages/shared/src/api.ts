@@ -12,6 +12,7 @@ import type {
   CategoryRuleInput,
   DashboardData,
   Debt,
+  DigestFrequency,
   DebtInput,
   DebtUpdateInput,
   Goal,
@@ -88,7 +89,11 @@ export class ApiClient {
   me() {
     return this.request<User>('GET', '/api/auth/me');
   }
-  updateAlertPreferences(input: { emailAlerts?: boolean; pushAlerts?: boolean }) {
+  updateAlertPreferences(input: {
+    emailAlerts?: boolean;
+    pushAlerts?: boolean;
+    digestFrequency?: DigestFrequency;
+  }) {
     return this.request<User>('PATCH', '/api/auth/me', input);
   }
   registerFcmToken(token: string, platform?: string) {

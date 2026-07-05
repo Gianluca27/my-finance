@@ -5,8 +5,10 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "scheme": "myfinance",
-    "userInterfaceStyle": "automatic",
-    "assetBundlePatterns": ["**/*"],
+    "userInterfaceStyle": "dark",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "app.myfinance.mobile"
@@ -14,9 +16,12 @@
     "android": {
       "package": "app.myfinance.mobile"
     },
-    "plugins": ["expo-notifications"],
+    "plugins": [
+      "expo-notifications",
+      "expo-font"
+    ],
     "extra": {
-      "apiUrl": "http://10.0.2.2:4000"
+      "apiUrl": "http://192.168.68.110:4000"
     }
   }
 }

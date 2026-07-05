@@ -1,46 +1,47 @@
-export const lightColors = {
-  page: '#f9f9f7',
-  surface: '#fcfcfb',
-  textPrimary: '#0b0b0b',
-  textSecondary: '#52514e',
-  textMuted: '#898781',
-  border: 'rgba(11,11,11,0.10)',
-  gridline: '#e1e0d9',
-  accent: '#2a78d6',
-  income: '#2a78d6',
-  expense: '#eb6834',
-  good: '#0ca30c',
-  warning: '#fab219',
-  critical: '#d03b3b',
-  deltaGood: '#006300',
-  overlay: 'rgba(0,0,0,0.4)',
-  chipActiveBg: 'rgba(42,120,214,0.10)',
-  neutralDot: '#9ca3af',
-  onAccent: '#fff',
-};
-
-export const darkColors: typeof lightColors = {
-  page: '#111110',
-  surface: '#1a1a18',
-  textPrimary: '#f2f1ed',
-  textSecondary: '#c9c7c0',
-  textMuted: '#8f8d86',
-  border: 'rgba(255,255,255,0.12)',
-  gridline: '#2c2b27',
-  accent: '#4b95e8',
-  income: '#4b95e8',
-  expense: '#ff8a5c',
-  good: '#3ddb3d',
-  warning: '#ffc94d',
-  critical: '#ff6b6b',
-  deltaGood: '#4ce24c',
+/**
+ * Paleta única dark-only, portada 1:1 desde los tokens oklch de la app web
+ * (apps/web/src/styles.css) convertidos a sRGB. La web no tiene modo claro,
+ * así que el móvil tampoco: un solo objeto de colores.
+ */
+export const darkColors = {
+  page: '#0a0d10', // --bg
+  surface: '#14181b', // --surface
+  surface2: '#1d2125', // --surface-2 (campos, segmentos)
+  textPrimary: '#f1f4f6', // --text
+  textSecondary: '#aaaeb3', // --text-2
+  textMuted: '#767b80', // --text-3
+  border: '#2a2e33', // --border
+  gridline: '#2a2e33', // --border
+  accent: '#63e4a1', // --accent (verde menta)
+  income: '#63e4a1', // --pos
+  expense: '#f47b74', // --neg
+  good: '#63e4a1', // --pos
+  warning: '#f2b95a', // --warn
+  critical: '#f47b74', // --neg
+  deltaGood: '#63e4a1', // --pos
   overlay: 'rgba(0,0,0,0.6)',
-  chipActiveBg: 'rgba(75,149,232,0.18)',
-  neutralDot: '#6b7280',
-  onAccent: '#fff',
+  chipActiveBg: 'rgba(99,228,161,0.13)', // --accent-weak
+  neutralDot: '#767b80',
+  onAccent: '#012111', // --accent-ink (tinta oscura sobre el verde)
 };
 
-export type ThemeColors = typeof lightColors;
+export type ThemeColors = typeof darkColors;
+
+/** Familias de fuente cargadas en App.tsx (Schibsted Grotesk + IBM Plex Mono). */
+export const fonts = {
+  regular: 'SchibstedGrotesk_400Regular',
+  medium: 'SchibstedGrotesk_500Medium',
+  semibold: 'SchibstedGrotesk_600SemiBold',
+  bold: 'SchibstedGrotesk_700Bold',
+  monoRegular: 'IBMPlexMono_400Regular',
+  mono: 'IBMPlexMono_500Medium',
+};
+
+/** Radios de borde, iguales a --r / --r-sm de web. */
+export const radius = {
+  sm: 10,
+  md: 16,
+};
 
 export const spacing = {
   xs: 4,
@@ -60,3 +61,84 @@ export function formatMoney(value: number): string {
 export function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('es-AR', { timeZone: 'UTC' });
 }
+
+/** Fecha corta tipo "03 jul" (UTC). */
+export function formatShortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('es-AR', {
+    day: '2-digit',
+    month: 'short',
+    timeZone: 'UTC',
+  });
+}
+
+/** Monto compacto: "$ 1,2M" / "$ 34k" / "$ 500". */
+export function formatMoneyShort(value: number): string {
+  const abs = Math.abs(value);
+  const sign = value < 0 ? '-' : '';
+  if (abs >= 1_000_000) {
+    return `${sign}$ ${(abs / 1_000_000).toLocaleString('es-AR', { maximumFractionDigits: 1 })}M`;
+  }
+  if (abs >= 1_000) return `${sign}$ ${Math.round(abs / 1000)}k`;
+  return `${sign}$ ${Math.round(abs)}`;
+}
+
+/** Nombre del mes a partir de "YYYY-MM" (UTC), ej. "julio de 2026". */
+export function monthName(month: string): string {
+  const [y, m] = month.split('-').map(Number);
+  return new Date(Date.UTC(y, (m || 1) - 1, 1)).toLocaleDateString('es-AR', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+/** Etiqueta corta de mes desde "YYYY-MM", ej. "jul". */
+export function shortMonthLabel(month: string): string {
+  const [y, m] = month.split('-').map(Number);
+  return new Date(Date.UTC(y, (m || 1) - 1, 1)).toLocaleDateString('es-AR', {
+    month: 'short',
+    timeZone: 'UTC',
+  });
+}
+
+/** Días calendario hasta una fecha ISO (negativo si ya pasó). Compara solo la parte de fecha. */
+export function daysUntil(iso: string): number {
+  const now = new Date();
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const d = new Date(iso);
+  const target = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  return Math.round((target - today) / 86_400_000);
+}
+
+/** Progreso del mes actual: día actual y cantidad de días del mes. */
+export function monthProgress(): { day: number; days: number } {
+  const now = new Date();
+  const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  return { day: now.getDate(), days };
+}
+
+/** Mes actual en formato "YYYY-MM". */
+export function currentMonth(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** Fecha de hoy en formato "YYYY-MM-DD". */
+export function todayISODate(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
+    now.getDate(),
+  ).padStart(2, '0')}`;
+}
+
+/** Paleta de colores para cuentas, categorías y metas (igual que web). */
+export const COLOR_PALETTE = [
+  '#2a78d6',
+  '#0ca30c',
+  '#eb6834',
+  '#9333ea',
+  '#e11d48',
+  '#0891b2',
+  '#ca8a04',
+  '#475569',
+];

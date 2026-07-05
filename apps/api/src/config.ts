@@ -9,4 +9,5 @@ export const config = {
   emailFrom: process.env.EMAIL_FROM ?? 'alertas@myfinance.app',
   firebaseServiceAccountJson: process.env.FIREBASE_SERVICE_ACCOUNT_JSON || null,
   remindersCron: process.env.REMINDERS_CRON ?? '0 9 * * *',
+  digestsCron: process.env.DIGESTS_CRON ?? '0 9 * * *',
 };

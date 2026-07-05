@@ -32,6 +32,13 @@ enum AccountType {
   OTHER
 }
 
+enum DigestFrequency {
+  NONE
+  WEEKLY
+  MONTHLY
+  BOTH
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -39,6 +46,12 @@ model User {
   name         String
   emailAlerts  Boolean  @default(true)
   pushAlerts   Boolean  @default(true)
+  /// Frecuencia del email de resumen. Control independiente de emailAlerts.
+  digestFrequency    DigestFrequency @default(MONTHLY)
+  /// Lunes (UTC) del último resumen semanal enviado; evita duplicados.
+  lastWeeklyDigestFor  DateTime?
+  /// Primer día (UTC) del mes del último resumen mensual enviado; evita duplicados.
+  lastMonthlyDigestFor DateTime?
   createdAt    DateTime @default(now())
 
   categories        Category[]

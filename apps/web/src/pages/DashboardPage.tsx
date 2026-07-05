@@ -93,8 +93,32 @@ export function DashboardPage() {
     return [...budgets].sort((a, b) => b.percentUsed - a.percentUsed).slice(0, 4);
   }, [budgets]);
 
+  // Geometría del gráfico de patrimonio neto (área + línea, SVG a mano como el resto del dashboard).
+  const nw = useMemo(() => {
+    const pts = data?.netWorthTrend ?? [];
+    if (pts.length < 2) return null;
+    const W = 600;
+    const H = 130;
+    const padY = 14;
+    const values = pts.map((p) => p.netWorth);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min || 1;
+    const x = (i: number) => (i / (pts.length - 1)) * W;
+    const y = (v: number) => padY + (1 - (v - min) / range) * (H - padY * 2);
+    const line = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(p.netWorth).toFixed(1)}`).join(' ');
+    return { W, H, line, area: `${line} L ${W} ${H} L 0 ${H} Z` };
+  }, [data]);
+
   if (error && !data) return <div className="error-banner">{error}</div>;
   if (!data) return <p className="muted">Cargando resumen…</p>;
+
+  const netWorthCurrent = data.netWorthTrend.length
+    ? data.netWorthTrend[data.netWorthTrend.length - 1].netWorth
+    : data.balance;
+  const netWorthDelta =
+    data.netWorthTrend.length >= 2 ? netWorthCurrent - data.netWorthTrend[0].netWorth : null;
+  const netWorthUp = (netWorthDelta ?? 0) >= 0;
 
   const savingsRate =
     data.monthIncome > 0 ? Math.round(((data.monthIncome - data.monthExpense) / data.monthIncome) * 100) : 0;
@@ -232,6 +256,69 @@ export function DashboardPage() {
             Ver →
           </Link>
         </div>
+      </div>
+
+      <div className="card mf-b-networth">
+        <div className="mf-card-head" style={{ marginBottom: 8 }}>
+          <div className="mf-eyebrow">Patrimonio neto</div>
+          <span className="chip">Últimos 12 meses</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 10 }}>
+          <div className="mf-hero-balance" style={{ fontSize: 26 }}>
+            {formatMoney(netWorthCurrent)}
+          </div>
+          {netWorthDelta !== null && (
+            <span
+              className="mf-delta-badge"
+              style={{
+                background: netWorthUp ? 'var(--accent-weak)' : 'var(--neg-weak)',
+                color: netWorthUp ? 'var(--pos)' : 'var(--neg)',
+              }}
+            >
+              {netWorthUp ? '▲' : '▼'} {formatMoney(Math.abs(netWorthDelta))}
+            </span>
+          )}
+        </div>
+        {nw === null ? (
+          <p className="muted">Necesitás más historial para ver la tendencia.</p>
+        ) : (
+          <>
+            <svg
+              viewBox={`0 0 ${nw.W} ${nw.H}`}
+              width="100%"
+              height={nw.H}
+              preserveAspectRatio="none"
+              style={{ display: 'block' }}
+            >
+              <defs>
+                <linearGradient id="nwFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.25" />
+                  <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              <path d={nw.area} fill="url(#nwFill)" />
+              <path
+                d={nw.line}
+                fill="none"
+                stroke="var(--accent)"
+                strokeWidth={2}
+                strokeLinejoin="round"
+                strokeLinecap="round"
+                vectorEffect="non-scaling-stroke"
+              />
+            </svg>
+            <div className="mf-nw-labels">
+              {data.netWorthTrend.map((p, i) => (
+                <span
+                  key={p.month}
+                  style={{ color: p.month === data.month ? 'var(--text)' : 'var(--text-3)' }}
+                >
+                  {i % 2 === 0 ? shortMonthLabel(p.month) : ''}
+                </span>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
       <div className="card mf-b-donut">

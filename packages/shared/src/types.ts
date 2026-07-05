@@ -2,6 +2,8 @@ export type TransactionType = 'INCOME' | 'EXPENSE';
 export type Frequency = 'WEEKLY' | 'MONTHLY' | 'YEARLY';
 export type DebtDirection = 'I_OWE' | 'OWED_TO_ME';
 export type AccountType = 'CASH' | 'BANK' | 'CARD' | 'OTHER';
+/** Frecuencia del email de resumen periódico. Independiente de emailAlerts. */
+export type DigestFrequency = 'NONE' | 'WEEKLY' | 'MONTHLY' | 'BOTH';
 
 export interface User {
   id: string;
@@ -9,6 +11,7 @@ export interface User {
   name: string;
   emailAlerts: boolean;
   pushAlerts: boolean;
+  digestFrequency: DigestFrequency;
   createdAt: string;
 }
 
@@ -149,6 +152,12 @@ export interface DebtsSummary {
   totalOwedToMe: number;
 }
 
+/** Patrimonio neto a fin de un mes "YYYY-MM" (saldos iniciales + ingresos - gastos acumulados). */
+export interface NetWorthPoint {
+  month: string;
+  netWorth: number;
+}
+
 export interface DashboardData {
   balance: number;
   month: string;
@@ -156,6 +165,7 @@ export interface DashboardData {
   monthExpense: number;
   expensesByCategory: CategorySummary[];
   monthlyComparison: MonthlySummary[];
+  netWorthTrend: NetWorthPoint[];
   upcomingPayments: RecurringExpense[];
   insights: DashboardInsights;
   debtsSummary: DebtsSummary;

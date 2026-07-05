@@ -293,6 +293,33 @@ router.get(
       available: round2(balance - committedExpenses),
     };
 
+    // --- Tendencia de patrimonio neto (12 meses) ---
+    // Se reconstruye desde el historial: patrimonio a fin de mes = saldos iniciales
+    // + (ingresos - gastos) acumulados hasta ese mes. Las transferencias se cancelan globalmente.
+    const nwMonths = Array.from({ length: 12 }, (_, i) => shiftMonth(month, i - 11));
+    const nwWindowStart = monthRange(nwMonths[0]).start;
+    const nwWindowEnd = monthRange(nwMonths[nwMonths.length - 1]).end;
+    const [deltaBeforeRows, nwMonthlyRows] = await Promise.all([
+      prisma.$queryRaw<Array<{ delta: number }>>`
+        SELECT COALESCE(SUM(CASE WHEN "type" = 'INCOME' THEN "amount" ELSE -"amount" END), 0)::float8 AS delta
+        FROM "Transaction"
+        WHERE "userId" = ${userId} AND "date" < ${nwWindowStart}
+      `,
+      prisma.$queryRaw<Array<{ month: string; delta: number }>>`
+        SELECT to_char("date", 'YYYY-MM') AS month,
+               SUM(CASE WHEN "type" = 'INCOME' THEN "amount" ELSE -"amount" END)::float8 AS delta
+        FROM "Transaction"
+        WHERE "userId" = ${userId} AND "date" >= ${nwWindowStart} AND "date" < ${nwWindowEnd}
+        GROUP BY 1
+      `,
+    ]);
+    const nwDeltaByMonth = new Map(nwMonthlyRows.map((r) => [r.month, r.delta]));
+    let runningNetWorth = initialBalances + (deltaBeforeRows[0]?.delta ?? 0);
+    const netWorthTrend = nwMonths.map((m) => {
+      runningNetWorth += nwDeltaByMonth.get(m) ?? 0;
+      return { month: m, netWorth: round2(runningNetWorth) };
+    });
+
     res.json({
       balance,
       month,
@@ -300,6 +327,7 @@ router.get(
       monthExpense,
       expensesByCategory,
       monthlyComparison,
+      netWorthTrend,
       upcomingPayments: serialize(upcomingPayments),
       insights: {
         projectedMonthTotal,

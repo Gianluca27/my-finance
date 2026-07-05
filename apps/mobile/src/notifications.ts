@@ -5,9 +5,11 @@ import { api } from './api';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
+    // SDK 53+ reemplazó shouldShowAlert por banner/list.
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 

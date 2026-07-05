@@ -1,3 +1,4 @@
+import { DigestFrequency } from '@prisma/client';
 import bcrypt from 'bcrypt';
 import { Router } from 'express';
 import { z } from 'zod';
@@ -37,10 +38,11 @@ function publicUser(user: {
   name: string;
   emailAlerts: boolean;
   pushAlerts: boolean;
+  digestFrequency: DigestFrequency;
   createdAt: Date;
 }) {
-  const { id, email, name, emailAlerts, pushAlerts, createdAt } = user;
-  return serialize({ id, email, name, emailAlerts, pushAlerts, createdAt });
+  const { id, email, name, emailAlerts, pushAlerts, digestFrequency, createdAt } = user;
+  return serialize({ id, email, name, emailAlerts, pushAlerts, digestFrequency, createdAt });
 }
 
 router.post(
@@ -91,6 +93,7 @@ router.get(
 const prefsSchema = z.object({
   emailAlerts: z.boolean().optional(),
   pushAlerts: z.boolean().optional(),
+  digestFrequency: z.nativeEnum(DigestFrequency).optional(),
   name: z.string().min(1).max(100).optional(),
 });
 

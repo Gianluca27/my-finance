@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { runDigestsJob } from '../jobs/digests';
 import { runRemindersJob } from '../jobs/reminders';
 import { requireAuth } from '../middleware/auth';
 import { asyncHandler } from '../middleware/error';
@@ -32,6 +33,15 @@ router.post(
   '/run-reminders',
   asyncHandler(async (_req, res) => {
     const result = await runRemindersJob();
+    res.json(result);
+  }),
+);
+
+/** Dispara el job de resúmenes por email manualmente, forzando el envío (útil para pruebas). */
+router.post(
+  '/run-digests',
+  asyncHandler(async (_req, res) => {
+    const result = await runDigestsJob({ force: true });
     res.json(result);
   }),
 );

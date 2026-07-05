@@ -1,4 +1,4 @@
-import type { Account, Category, Paginated, Transaction, TransactionType } from '@myfinance/shared';
+import type { Account, Category, DashboardData, Paginated, Transaction, TransactionType } from '@myfinance/shared';
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, formatMoney } from '../api';
@@ -85,6 +85,10 @@ export function TransactionsPage() {
       search: search || undefined,
     }),
   );
+  // Resumen del mes: comparte la caché del dashboard, sin fetch extra si ya se cargó.
+  const { data: dash } = useCached<DashboardData>('dashboard', () => api.dashboard());
+  const monthNet = dash ? dash.monthIncome - dash.monthExpense : 0;
+
   const { data: categoriesData } = useCached<Category[]>('categories', () => api.listCategories());
   const categories = categoriesData ?? [];
   const { data: accountsData } = useCached<Account[]>('accounts', () => api.listAccounts());
@@ -198,6 +202,33 @@ export function TransactionsPage() {
           refresh();
         }}
       />
+
+      {dash && (
+        <div className="mf-grid-3" style={{ marginBottom: 22 }}>
+          <div className="card">
+            <div className="mf-serif-title">Ingresos del mes</div>
+            <div className="mf-hero-balance" style={{ fontSize: 26, color: 'var(--pos)' }}>
+              {formatMoney(dash.monthIncome)}
+            </div>
+          </div>
+          <div className="card">
+            <div className="mf-serif-title">Gastos del mes</div>
+            <div className="mf-hero-balance" style={{ fontSize: 26, color: 'var(--neg)' }}>
+              {formatMoney(dash.monthExpense)}
+            </div>
+          </div>
+          <div className="card">
+            <div className="mf-serif-title">Neto del mes</div>
+            <div
+              className="mf-hero-balance"
+              style={{ fontSize: 26, color: monthNet < 0 ? 'var(--neg)' : 'var(--text)' }}
+            >
+              {monthNet >= 0 ? '+ ' : '− '}
+              {formatMoney(Math.abs(monthNet))}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="card mf-tx-card">
         <div className="mf-tx-toolbar">

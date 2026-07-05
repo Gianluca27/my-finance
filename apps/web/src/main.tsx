@@ -11,6 +11,12 @@ import '@fontsource/ibm-plex-mono/latin-600.css';
 import '@fontsource/ibm-plex-mono/latin-ext-400.css';
 import '@fontsource/ibm-plex-mono/latin-ext-500.css';
 import '@fontsource/ibm-plex-mono/latin-ext-600.css';
+// Newsreader: serif editorial para cifras grandes (roman) y rótulos de sección (itálica).
+import '@fontsource/newsreader/latin-400.css';
+import '@fontsource/newsreader/latin-500.css';
+import '@fontsource/newsreader/latin-600.css';
+import '@fontsource/newsreader/latin-400-italic.css';
+import '@fontsource/newsreader/latin-500-italic.css';
 import './styles.css';
 
 // En producción el API vive en otro origen (Railway): abrir la conexión

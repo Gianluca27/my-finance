@@ -66,17 +66,23 @@ export function BudgetsPage() {
     <>
       {(error ?? loadError) && <div className="error-banner">{error ?? loadError}</div>}
 
-      <div className="mf-grid-2" style={{ marginBottom: 16 }}>
+      <div className="mf-grid-3" style={{ marginBottom: 22 }}>
         <div className="card">
-          <div className="mf-eyebrow">Presupuestado</div>
-          <div className="mf-hero-balance" style={{ fontSize: 32 }}>
+          <div className="mf-serif-title">Presupuestado</div>
+          <div className="mf-hero-balance" style={{ fontSize: 26 }}>
             {formatMoney(totalBudgeted)}
           </div>
         </div>
         <div className="card">
-          <div className="mf-eyebrow">Gastado en {monthLabel}</div>
-          <div className="mf-hero-balance" style={{ fontSize: 32, color: 'var(--neg)' }}>
+          <div className="mf-serif-title">Gastado en {monthLabel}</div>
+          <div className="mf-hero-balance" style={{ fontSize: 26, color: 'var(--neg)' }}>
             {formatMoney(totalSpent)}
+          </div>
+        </div>
+        <div className="card">
+          <div className="mf-serif-title">Restante</div>
+          <div className="mf-hero-balance" style={{ fontSize: 26, color: 'var(--pos)' }}>
+            {formatMoney(totalBudgeted - totalSpent)}
           </div>
         </div>
       </div>

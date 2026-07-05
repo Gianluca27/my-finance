@@ -173,19 +173,19 @@ export function GoalsPage() {
 
       <div className="mf-grid-3" style={{ marginBottom: 16 }}>
         <div className="card">
-          <div className="mf-eyebrow">Ahorrado</div>
+          <div className="mf-serif-title">Ahorrado</div>
           <div className="mf-hero-balance" style={{ fontSize: 32, color: 'var(--pos)' }}>
             {formatMoney(totalSaved)}
           </div>
         </div>
         <div className="card">
-          <div className="mf-eyebrow">Objetivo total</div>
+          <div className="mf-serif-title">Objetivo total</div>
           <div className="mf-hero-balance" style={{ fontSize: 32 }}>
             {formatMoney(totalTarget)}
           </div>
         </div>
         <div className="card">
-          <div className="mf-eyebrow">Progreso</div>
+          <div className="mf-serif-title">Progreso</div>
           <div className="mf-hero-balance" style={{ fontSize: 32 }}>
             {overallPct}%
           </div>

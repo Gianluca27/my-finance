@@ -116,7 +116,7 @@ export function ReportsPage() {
 
       {data && (
         <div className="card" style={{ marginBottom: 16 }}>
-          <div className="mf-eyebrow">Resumen de {monthLabel(data.month)}</div>
+          <div className="mf-serif-title">Resumen de {monthLabel(data.month)}</div>
           <div className="mf-hero-stats" style={{ marginTop: 16, paddingTop: 0, border: 'none' }}>
             <div>
               <div className="mf-stat-label">Ingresos</div>

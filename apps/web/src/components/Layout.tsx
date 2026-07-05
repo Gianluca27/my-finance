@@ -113,7 +113,10 @@ export function Layout({ children }: { children: ReactNode }) {
           <span className="mf-brand-mark">
             <LogoMark />
           </span>
-          <span className="mf-brand-name">MyFinance</span>
+          <span className="mf-brand-titles">
+            <span className="mf-brand-name">MyFinance</span>
+            <span className="mf-brand-tag">gestión privada</span>
+          </span>
         </div>
         {navList()}
         <div className="mf-side-footer">

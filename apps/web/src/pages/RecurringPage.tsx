@@ -129,11 +129,11 @@ export function RecurringPage() {
 
       <div className="mf-grid-2" style={{ marginBottom: 16 }}>
         <div className="card mf-recur-total-card">
-          <div className="mf-eyebrow">Gastos fijos comprometidos</div>
+          <div className="mf-serif-title">Gastos fijos comprometidos</div>
           <div className="mf-hero-balance" style={{ color: 'var(--neg)' }}>{formatMoney(totalExpense)}</div>
         </div>
         <div className="card mf-recur-total-card">
-          <div className="mf-eyebrow">Ingresos fijos esperados</div>
+          <div className="mf-serif-title">Ingresos fijos esperados</div>
           <div className="mf-hero-balance" style={{ color: 'var(--pos)' }}>{formatMoney(totalIncome)}</div>
         </div>
       </div>

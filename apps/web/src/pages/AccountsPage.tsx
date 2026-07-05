@@ -179,7 +179,7 @@ export function AccountsPage() {
       {(error ?? loadError) && <div className="error-banner">{error ?? loadError}</div>}
 
       <div className="card mf-recur-total-card" style={{ marginBottom: 16 }}>
-        <div className="mf-eyebrow">Patrimonio neto</div>
+        <div className="mf-serif-title">Patrimonio neto</div>
         <div className="mf-hero-balance" style={{ color: netWorth < 0 ? 'var(--neg)' : undefined }}>
           {formatMoney(netWorth)}
         </div>
@@ -240,7 +240,7 @@ export function AccountsPage() {
 
       {transfers && transfers.length > 0 && (
         <div className="card" style={{ marginTop: 16 }}>
-          <div className="mf-eyebrow" style={{ marginBottom: 12 }}>
+          <div className="mf-serif-title" style={{ marginBottom: 12 }}>
             Transferencias recientes
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

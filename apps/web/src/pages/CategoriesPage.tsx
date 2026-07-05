@@ -133,7 +133,7 @@ export function CategoriesPage() {
       {renderGrid(expenseCategories, 'Sin categorías de gasto.')}
 
       <div className="card" style={{ marginTop: 24 }}>
-        <div className="mf-eyebrow" style={{ marginBottom: 6 }}>
+        <div className="mf-serif-title" style={{ marginBottom: 6 }}>
           Reglas de categorización automática
         </div>
         <p className="muted" style={{ marginTop: 0, fontSize: 12.5 }}>

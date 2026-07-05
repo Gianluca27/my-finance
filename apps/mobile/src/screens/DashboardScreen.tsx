@@ -285,7 +285,7 @@ export function DashboardScreen() {
       </View>
 
       {/* Deudas */}
-      <Pressable style={styles.card} onPress={() => nav.navigate('Más', { screen: 'Deudas' })}>
+      <Pressable style={styles.card} onPress={() => nav.navigate('Deudas')}>
         <View style={styles.legendRow}>
           <Text style={styles.cardTitle}>Deudas</Text>
           <Text style={{ color: colors.accent, fontSize: 13 }}>Ver →</Text>

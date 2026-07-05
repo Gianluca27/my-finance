@@ -1,5 +1,4 @@
 import { DarkTheme, NavigationContainer } from '@react-navigation/native';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import {
   useFonts,
@@ -10,8 +9,9 @@ import {
 } from '@expo-google-fonts/schibsted-grotesk';
 import { IBMPlexMono_400Regular, IBMPlexMono_500Medium } from '@expo-google-fonts/ibm-plex-mono';
 import { StatusBar } from 'expo-status-bar';
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/auth';
 import { registerForPushNotifications } from './src/notifications';
 import { AccountsScreen } from './src/screens/AccountsScreen';
@@ -21,32 +21,32 @@ import { DashboardScreen } from './src/screens/DashboardScreen';
 import { DebtsScreen } from './src/screens/DebtsScreen';
 import { GoalsScreen } from './src/screens/GoalsScreen';
 import { LoginScreen } from './src/screens/LoginScreen';
-import { MoreMenuScreen } from './src/screens/MoreMenuScreen';
 import { RecurringScreen } from './src/screens/RecurringScreen';
 import { ReportsScreen } from './src/screens/ReportsScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { TransactionsScreen } from './src/screens/TransactionsScreen';
-import {
-  IcoGrid,
-  IcoList,
-  IcoLogout,
-  IcoMenu,
-  IcoMeter,
-  IcoRepeat,
-  type IconProps,
-} from './src/components/icons';
+import { Sidebar } from './src/components/Sidebar';
+import { IcoMenu } from './src/components/icons';
+import { ALL_ITEMS } from './src/navItems';
+import { navigationRef } from './src/navigationRef';
+import { SidebarProvider, useSidebar } from './src/SidebarContext';
 import { fonts } from './src/theme';
 import { ThemeProvider, useTheme } from './src/ThemeContext';
 
-const Tab = createBottomTabNavigator();
-const MoreStack = createNativeStackNavigator();
+const Stack = createNativeStackNavigator();
 
-const TAB_ICONS: Record<string, (p: IconProps) => React.ReactElement> = {
-  Resumen: IcoGrid,
-  Movimientos: IcoList,
-  Presupuestos: IcoMeter,
-  Fijos: IcoRepeat,
-  Más: IcoMenu,
+/** Cada `route` de navItems mapea a su pantalla. */
+const SCREENS: Record<string, React.ComponentType<any>> = {
+  Resumen: DashboardScreen,
+  Movimientos: TransactionsScreen,
+  Presupuestos: BudgetsScreen,
+  Fijos: RecurringScreen,
+  Cuentas: AccountsScreen,
+  Deudas: DebtsScreen,
+  Metas: GoalsScreen,
+  Categorias: CategoriesScreen,
+  Reportes: ReportsScreen,
+  Preferencias: SettingsScreen,
 };
 
 // Aplica Schibsted Grotesk como fuente por defecto de todo <Text>. Una sola vez.
@@ -59,41 +59,22 @@ function applyDefaultFont() {
   TextAny.defaultProps.style = [{ fontFamily: fonts.regular }, TextAny.defaultProps.style];
 }
 
-function LogoutButton() {
-  const { logout } = useAuth();
+/** Botón hamburguesa del header que abre la sidebar. */
+function MenuButton() {
+  const { open } = useSidebar();
   const { colors } = useTheme();
   return (
-    <TouchableOpacity onPress={logout} style={{ paddingHorizontal: 16, paddingVertical: 4 }}>
-      <IcoLogout color={colors.textSecondary} size={20} />
+    <TouchableOpacity onPress={open} style={{ paddingHorizontal: 16, paddingVertical: 4 }} hitSlop={8}>
+      <IcoMenu color={colors.textPrimary} size={22} />
     </TouchableOpacity>
-  );
-}
-
-function MoreNavigator() {
-  const { colors } = useTheme();
-  return (
-    <MoreStack.Navigator
-      screenOptions={{
-        headerStyle: { backgroundColor: colors.surface },
-        headerTintColor: colors.textPrimary,
-        headerTitleStyle: { fontFamily: fonts.bold },
-        headerRight: () => <LogoutButton />,
-      }}
-    >
-      <MoreStack.Screen name="MoreMenu" component={MoreMenuScreen} options={{ title: 'Más' }} />
-      <MoreStack.Screen name="Cuentas" component={AccountsScreen} options={{ title: 'Cuentas' }} />
-      <MoreStack.Screen name="Deudas" component={DebtsScreen} options={{ title: 'Deudas' }} />
-      <MoreStack.Screen name="Metas" component={GoalsScreen} options={{ title: 'Metas' }} />
-      <MoreStack.Screen name="Categorias" component={CategoriesScreen} options={{ title: 'Categorías' }} />
-      <MoreStack.Screen name="Reportes" component={ReportsScreen} options={{ title: 'Reportes' }} />
-      <MoreStack.Screen name="Preferencias" component={SettingsScreen} options={{ title: 'Preferencias' }} />
-    </MoreStack.Navigator>
   );
 }
 
 function Root() {
   const { user, loading } = useAuth();
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  const [activeRoute, setActiveRoute] = useState<string | undefined>(ALL_ITEMS[0].route);
   const [fontsLoaded] = useFonts({
     SchibstedGrotesk_400Regular,
     SchibstedGrotesk_500Medium,
@@ -132,30 +113,25 @@ function Root() {
     },
   };
 
+  const syncRoute = () => setActiveRoute(navigationRef.getCurrentRoute()?.name);
+
   return (
-    <NavigationContainer theme={navTheme}>
-      <Tab.Navigator
-        screenOptions={({ route }) => ({
-          headerRight: () => <LogoutButton />,
+    <NavigationContainer ref={navigationRef} theme={navTheme} onReady={syncRoute} onStateChange={syncRoute}>
+      <Stack.Navigator
+        screenOptions={{
+          headerLeft: () => <MenuButton />,
           headerStyle: { backgroundColor: colors.surface },
           headerTintColor: colors.textPrimary,
           headerTitleStyle: { fontFamily: fonts.bold },
-          tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border },
-          tabBarActiveTintColor: colors.accent,
-          tabBarInactiveTintColor: colors.textMuted,
-          tabBarLabelStyle: { fontFamily: fonts.medium, fontSize: 11 },
-          tabBarIcon: ({ color }) => {
-            const Icon = TAB_ICONS[route.name];
-            return Icon ? <Icon color={color} size={22} /> : null;
-          },
-        })}
+          // Respeta la barra de gestos/navegación de Android (inset inferior).
+          contentStyle: { paddingBottom: insets.bottom },
+        }}
       >
-        <Tab.Screen name="Resumen" component={DashboardScreen} />
-        <Tab.Screen name="Movimientos" component={TransactionsScreen} />
-        <Tab.Screen name="Presupuestos" component={BudgetsScreen} />
-        <Tab.Screen name="Fijos" component={RecurringScreen} />
-        <Tab.Screen name="Más" component={MoreNavigator} options={{ headerShown: false }} />
-      </Tab.Navigator>
+        {ALL_ITEMS.map((it) => (
+          <Stack.Screen key={it.route} name={it.route} component={SCREENS[it.route]} options={{ title: it.label }} />
+        ))}
+      </Stack.Navigator>
+      <Sidebar activeRoute={activeRoute} />
     </NavigationContainer>
   );
 }
@@ -173,7 +149,11 @@ export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <ThemedRoot />
+        <SafeAreaProvider>
+          <SidebarProvider>
+            <ThemedRoot />
+          </SidebarProvider>
+        </SafeAreaProvider>
       </AuthProvider>
     </ThemeProvider>
   );

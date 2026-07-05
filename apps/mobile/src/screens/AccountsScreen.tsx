@@ -3,7 +3,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { api } from '../api';
-import { COLOR_PALETTE, formatDate, formatMoney, spacing, type ThemeColors } from '../theme';
+import { COLOR_PALETTE, fonts, formatDate, formatMoney, spacing, type ThemeColors } from '../theme';
 import { useTheme } from '../ThemeContext';
 import {
   BottomSheet,
@@ -423,13 +423,16 @@ function createStyles(colors: ThemeColors) {
     root: { flex: 1, backgroundColor: colors.page },
     content: { padding: spacing.md, gap: spacing.md, paddingBottom: 96 },
     eyebrow: {
-      fontSize: 12,
-      fontWeight: '600',
-      color: colors.textMuted,
-      textTransform: 'uppercase',
-      letterSpacing: 0.5,
+      fontSize: 17,
+      fontFamily: fonts.serifMediumItalic,
+      color: colors.textSecondary,
     },
-    netWorth: { fontSize: 32, fontWeight: '800', marginVertical: 4 },
+    netWorth: {
+      fontSize: 32,
+      fontFamily: fonts.serifMedium,
+      marginVertical: 4,
+      fontVariant: ['tabular-nums'],
+    },
     actionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
     accountCard: { gap: spacing.sm },
     cardHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },

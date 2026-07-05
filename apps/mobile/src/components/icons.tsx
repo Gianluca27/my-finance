@@ -117,12 +117,13 @@ export function IcoSearch({ size = 16, color = '#f1f4f6' }: IconProps) {
   );
 }
 
-/** Marca de la app: tarjeta con línea, igual que la web (trazo en color `color`). */
-export function LogoMark({ size = 17, color = '#012111' }: IconProps) {
+/** Marca de la app: tarjeta con línea y chip, igual que la web (trazo en color `color`). */
+export function LogoMark({ size = 18, color = '#012111' }: IconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 20 20" fill="none" color={color}>
-      <Rect x="2" y="4" width="16" height="12" rx="2.5" stroke="currentColor" strokeWidth="2" />
-      <Path d="M2 8h16" stroke="currentColor" strokeWidth="2" />
+      <Rect x="2.5" y="4.5" width="15" height="11" rx="2.4" stroke="currentColor" strokeWidth="1.8" />
+      <Path d="M2.5 8.2h15" stroke="currentColor" strokeWidth="1.8" />
+      <Circle cx="13.6" cy="12" r="1.1" fill="currentColor" stroke="none" />
     </Svg>
   );
 }

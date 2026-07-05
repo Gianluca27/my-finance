@@ -1,17 +1,20 @@
 /**
- * Paleta única dark-only, portada 1:1 desde los tokens oklch de la app web
- * (apps/web/src/styles.css) convertidos a sRGB. La web no tiene modo claro,
- * así que el móvil tampoco: un solo objeto de colores.
+ * Paleta única dark-only, portada 1:1 desde los tokens de la app web
+ * (apps/web/src/styles.css). La web no tiene modo claro, así que el móvil
+ * tampoco: un solo objeto de colores. Rampa neutra en hex exactos del diseño
+ * (banca privada, azulado profundo) + oro cálido como acento secundario editorial.
  */
 export const darkColors = {
-  page: '#0a0d10', // --bg
-  surface: '#14181b', // --surface
-  surface2: '#1d2125', // --surface-2 (campos, segmentos)
-  textPrimary: '#f1f4f6', // --text
-  textSecondary: '#aaaeb3', // --text-2
-  textMuted: '#767b80', // --text-3
-  border: '#2a2e33', // --border
-  gridline: '#2a2e33', // --border
+  page: '#10141a', // --bg
+  page2: '#141922', // --bg-2
+  surface: '#1a2029', // --surface
+  surface2: '#232c37', // --surface-2 (campos, segmentos)
+  textPrimary: '#eef1ee', // --text
+  textSecondary: '#cdd4cf', // --text-2
+  textMuted: '#7a8480', // --text-3
+  border: '#262f3b', // --border
+  border2: '#333c47', // --border-2
+  gridline: '#262f3b', // --border
   accent: '#63e4a1', // --accent (verde menta)
   income: '#63e4a1', // --pos
   expense: '#f47b74', // --neg
@@ -21,13 +24,19 @@ export const darkColors = {
   deltaGood: '#63e4a1', // --pos
   overlay: 'rgba(0,0,0,0.6)',
   chipActiveBg: 'rgba(99,228,161,0.13)', // --accent-weak
-  neutralDot: '#767b80',
+  neutralDot: '#7a8480',
   onAccent: '#012111', // --accent-ink (tinta oscura sobre el verde)
+  gold: '#b6a684', // --gold (tagline, rótulos serif)
+  goldStrong: '#d3b06a', // --gold-strong
 };
 
 export type ThemeColors = typeof darkColors;
 
-/** Familias de fuente cargadas en App.tsx (Schibsted Grotesk + IBM Plex Mono). */
+/**
+ * Familias de fuente cargadas en App.tsx (Schibsted Grotesk + IBM Plex Mono +
+ * Newsreader). Newsreader es la serif editorial para cifras de display (roman)
+ * y rótulos de sección (itálica), igual que --serif / --hero-font en web.
+ */
 export const fonts = {
   regular: 'SchibstedGrotesk_400Regular',
   medium: 'SchibstedGrotesk_500Medium',
@@ -35,12 +44,17 @@ export const fonts = {
   bold: 'SchibstedGrotesk_700Bold',
   monoRegular: 'IBMPlexMono_400Regular',
   mono: 'IBMPlexMono_500Medium',
+  serif: 'Newsreader_400Regular',
+  serifMedium: 'Newsreader_500Medium',
+  serifSemibold: 'Newsreader_600SemiBold',
+  serifItalic: 'Newsreader_400Regular_Italic',
+  serifMediumItalic: 'Newsreader_500Medium_Italic',
 };
 
 /** Radios de borde, iguales a --r / --r-sm de web. */
 export const radius = {
   sm: 10,
-  md: 16,
+  md: 18,
 };
 
 export const spacing = {

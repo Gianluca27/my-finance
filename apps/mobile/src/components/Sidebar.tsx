@@ -86,9 +86,12 @@ export function Sidebar({ activeRoute }: { activeRoute: string | undefined }) {
         >
           <View style={styles.brand}>
             <View style={styles.brandMark}>
-              <LogoMark color={colors.onAccent} size={16} />
+              <LogoMark color={colors.onAccent} size={18} />
             </View>
-            <Text style={styles.brandText}>MyFinance</Text>
+            <View style={styles.brandTitles}>
+              <Text style={styles.brandText}>MyFinance</Text>
+              <Text style={styles.brandTag}>gestión privada</Text>
+            </View>
           </View>
 
           <ScrollView
@@ -161,19 +164,34 @@ function createStyles(colors: ThemeColors) {
     brand: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: spacing.sm,
+      gap: 11,
       paddingHorizontal: spacing.md,
       paddingBottom: spacing.md,
+      marginBottom: spacing.md,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
     },
     brandMark: {
-      width: 30,
-      height: 30,
-      borderRadius: radius.sm,
+      width: 34,
+      height: 34,
+      borderRadius: 10,
       backgroundColor: colors.accent,
       alignItems: 'center',
       justifyContent: 'center',
+      shadowColor: colors.accent,
+      shadowOpacity: 0.5,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 4 },
+      elevation: 4,
     },
-    brandText: { color: colors.textPrimary, fontFamily: fonts.bold, fontSize: 17 },
+    brandTitles: { flexDirection: 'column' },
+    brandText: { color: colors.textPrimary, fontFamily: fonts.bold, fontSize: 17, lineHeight: 20 },
+    brandTag: {
+      color: colors.gold,
+      fontFamily: fonts.serifItalic,
+      fontSize: 11.5,
+      lineHeight: 14,
+    },
     list: { flex: 1, paddingHorizontal: spacing.sm },
     row: {
       flexDirection: 'row',

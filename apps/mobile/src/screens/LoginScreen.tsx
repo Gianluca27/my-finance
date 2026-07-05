@@ -57,9 +57,12 @@ export function LoginScreen() {
         <View style={styles.form}>
           <View style={styles.brand}>
             <View style={styles.brandMark}>
-              <LogoMark size={19} color={colors.onAccent} />
+              <LogoMark size={18} color={colors.onAccent} />
             </View>
-            <Text style={styles.brandName}>MyFinance</Text>
+            <View style={styles.brandTitles}>
+              <Text style={styles.brandName}>MyFinance</Text>
+              <Text style={styles.brandTag}>gestión privada</Text>
+            </View>
           </View>
 
           <Text style={styles.title}>{title}</Text>
@@ -119,13 +122,21 @@ function createStyles(colors: ThemeColors) {
     brandMark: {
       width: 34,
       height: 34,
-      borderRadius: radius.sm,
+      borderRadius: 10,
       backgroundColor: colors.accent,
       alignItems: 'center',
       justifyContent: 'center',
+      shadowColor: colors.accent,
+      shadowOpacity: 0.5,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 4 },
+      elevation: 4,
     },
-    brandName: { color: colors.textPrimary, fontFamily: fonts.bold, fontSize: 18 },
-    title: { fontSize: 26, fontFamily: fonts.bold, color: colors.textPrimary, letterSpacing: -0.4 },
+    brandTitles: { flexDirection: 'column' },
+    brandName: { color: colors.textPrimary, fontFamily: fonts.bold, fontSize: 18, lineHeight: 21 },
+    brandTag: { color: colors.gold, fontFamily: fonts.serifItalic, fontSize: 11.5, lineHeight: 14 },
+    // Titular del formulario (mf-authform h1): serif Newsreader, igual que en web.
+    title: { fontSize: 30, fontFamily: fonts.serifMedium, color: colors.textPrimary, letterSpacing: -0.3 },
     subtitle: { color: colors.textMuted, fontFamily: fonts.regular, marginBottom: spacing.xs },
     errorBanner: {
       backgroundColor: 'rgba(244,123,116,0.13)',

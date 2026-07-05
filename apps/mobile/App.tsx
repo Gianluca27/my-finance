@@ -8,6 +8,13 @@ import {
   SchibstedGrotesk_700Bold,
 } from '@expo-google-fonts/schibsted-grotesk';
 import { IBMPlexMono_400Regular, IBMPlexMono_500Medium } from '@expo-google-fonts/ibm-plex-mono';
+import {
+  Newsreader_400Regular,
+  Newsreader_500Medium,
+  Newsreader_600SemiBold,
+  Newsreader_400Regular_Italic,
+  Newsreader_500Medium_Italic,
+} from '@expo-google-fonts/newsreader';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Text, TouchableOpacity, View } from 'react-native';
@@ -82,6 +89,11 @@ function Root() {
     SchibstedGrotesk_700Bold,
     IBMPlexMono_400Regular,
     IBMPlexMono_500Medium,
+    Newsreader_400Regular,
+    Newsreader_500Medium,
+    Newsreader_600SemiBold,
+    Newsreader_400Regular_Italic,
+    Newsreader_500Medium_Italic,
   });
 
   useEffect(() => {

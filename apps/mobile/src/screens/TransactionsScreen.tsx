@@ -26,6 +26,7 @@ import {
   Input,
   MutedText,
   Select,
+  SummaryTile,
 } from '../components/ui';
 import { formatMoney, formatShortDate, spacing, type ThemeColors } from '../theme';
 import { useTheme } from '../ThemeContext';
@@ -59,6 +60,17 @@ export function TransactionsScreen() {
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [viewing, setViewing] = useState<{ id: string; uri: string } | null>(null);
   const [viewBusy, setViewBusy] = useState(false);
+  // Resumen del mes (ingresos/gastos), tomado del dashboard, para las tarjetas de cabecera.
+  const [summary, setSummary] = useState<{ income: number; expense: number } | null>(null);
+
+  const loadSummary = useCallback(
+    () =>
+      api
+        .dashboard()
+        .then((d) => setSummary({ income: d.monthIncome, expense: d.monthExpense }))
+        .catch(() => {}),
+    [],
+  );
 
   const load = useCallback(() => {
     const filters: Record<string, unknown> = { page, pageSize: PAGE_SIZE };
@@ -78,7 +90,8 @@ export function TransactionsScreen() {
 
   useFocusEffect(useCallback(() => {
     load();
-  }, [load]));
+    loadSummary();
+  }, [load, loadSummary]));
 
   useEffect(() => {
     api.listCategories().then(setCategories).catch(() => {});
@@ -237,6 +250,21 @@ export function TransactionsScreen() {
         data={items}
         keyExtractor={(tx) => tx.id}
         contentContainerStyle={{ padding: spacing.md, paddingBottom: 100 }}
+        ListHeaderComponent={
+          summary ? (
+            <View style={styles.summaryRow}>
+              <SummaryTile label="Ingresos del mes" value={formatMoney(summary.income)} tone="income" />
+              <SummaryTile label="Gastos del mes" value={formatMoney(summary.expense)} tone="expense" />
+              <SummaryTile
+                label="Neto del mes"
+                value={`${summary.income - summary.expense >= 0 ? '+ ' : '− '}${formatMoney(
+                  Math.abs(summary.income - summary.expense),
+                )}`}
+                tone={summary.income - summary.expense < 0 ? 'expense' : 'default'}
+              />
+            </View>
+          ) : null
+        }
         ListEmptyComponent={<Text style={styles.muted}>Sin movimientos.</Text>}
         renderItem={({ item: tx }) => (
           <View style={styles.row}>
@@ -302,13 +330,19 @@ export function TransactionsScreen() {
       <AddTransactionModal
         visible={showAdd}
         onClose={() => setShowAdd(false)}
-        onSaved={load}
+        onSaved={() => {
+          load();
+          loadSummary();
+        }}
       />
       <AddTransactionModal
         visible={!!editing}
         transaction={editing}
         onClose={() => setEditing(null)}
-        onSaved={load}
+        onSaved={() => {
+          load();
+          loadSummary();
+        }}
       />
 
       <Modal visible={!!viewing} transparent animationType="fade" onRequestClose={() => setViewing(null)}>
@@ -334,6 +368,7 @@ function createStyles(colors: ThemeColors) {
   return StyleSheet.create({
     wrap: { flex: 1, backgroundColor: colors.page },
     filters: { padding: spacing.md, gap: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border },
+    summaryRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
     muted: { color: colors.textMuted, textAlign: 'center', marginTop: spacing.md },
     row: {
       flexDirection: 'row',

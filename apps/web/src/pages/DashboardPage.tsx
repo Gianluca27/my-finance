@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { api, formatMoney } from '../api';
 import { useCached } from '../cache';
 
-const DONUT_R = 54;
+const DONUT_R = 42;
 const DONUT_C = 2 * Math.PI * DONUT_R;
 const OTHER_COLOR = '#5a6472';
 
@@ -98,8 +98,8 @@ export function DashboardPage() {
     const pts = data?.netWorthTrend ?? [];
     if (pts.length < 2) return null;
     const W = 600;
-    const H = 130;
-    const padY = 14;
+    const H = 92;
+    const padY = 12;
     const values = pts.map((p) => p.netWorth);
     const min = Math.min(...values);
     const max = Math.max(...values);
@@ -259,7 +259,7 @@ export function DashboardPage() {
       </div>
 
       <div className="card mf-b-networth">
-        <div className="mf-card-head" style={{ marginBottom: 8 }}>
+        <div className="mf-card-head" style={{ marginBottom: 6 }}>
           <div className="mf-serif-title">Patrimonio neto</div>
           <span className="chip">Últimos 12 meses</span>
         </div>
@@ -332,17 +332,17 @@ export function DashboardPage() {
         ) : (
           <div className="mf-donut-row">
             <div className="mf-donut-wrap">
-              <svg width={132} height={132} viewBox="0 0 132 132" style={{ transform: 'rotate(-90deg)' }}>
-                <circle cx={66} cy={66} r={DONUT_R} fill="none" stroke="var(--surface-2)" strokeWidth={16} />
+              <svg width={108} height={108} viewBox="0 0 108 108" style={{ transform: 'rotate(-90deg)' }}>
+                <circle cx={54} cy={54} r={DONUT_R} fill="none" stroke="var(--surface-2)" strokeWidth={13} />
                 {donutSegments.map((seg, i) => (
                   <circle
                     key={i}
-                    cx={66}
-                    cy={66}
+                    cx={54}
+                    cy={54}
                     r={DONUT_R}
                     fill="none"
                     stroke={seg.color}
-                    strokeWidth={16}
+                    strokeWidth={13}
                     strokeDasharray={seg.dash}
                     strokeDashoffset={seg.offset}
                   />
@@ -442,7 +442,7 @@ export function DashboardPage() {
           <p className="muted">No hay vencimientos en los próximos 14 días.</p>
         ) : (
           <div>
-            {data.upcomingPayments.slice(0, 5).map((p) => {
+            {data.upcomingPayments.slice(0, 4).map((p) => {
               const due = dueInfo(p.nextDueDate);
               return (
                 <div className="mf-list-row" key={p.id}>
@@ -471,7 +471,7 @@ export function DashboardPage() {
         {miniBudgets.length === 0 ? (
           <p className="muted">Todavía no configuraste presupuestos.</p>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {miniBudgets.map((b) => (
               <div key={b.id}>
                 <div className="mf-mini-budget-head">

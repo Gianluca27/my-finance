@@ -366,7 +366,11 @@ export function FAB({ onPress }: { onPress: () => void }) {
         backgroundColor: colors.accent,
         alignItems: 'center',
         justifyContent: 'center',
-        elevation: 4,
+        shadowColor: colors.accent,
+        shadowOpacity: 0.5,
+        shadowRadius: 14,
+        shadowOffset: { width: 0, height: 6 },
+        elevation: 6,
       }}
       onPress={onPress}
     >
@@ -412,9 +416,23 @@ export function baseStyles(colors: ThemeColors) {
       borderColor: colors.border,
       padding: spacing.md,
     },
-    sectionTitle: { fontSize: 15, fontFamily: fonts.semibold, color: colors.textPrimary, marginBottom: spacing.sm },
-    tileLabel: { fontSize: 13, fontFamily: fonts.regular, color: colors.textMuted },
-    tileValue: { fontSize: 22, fontFamily: fonts.mono, color: colors.textPrimary, marginTop: 2 },
+    // Rótulo de sección editorial (mf-serif-title): itálica serif, reemplaza al eyebrow.
+    sectionTitle: {
+      fontSize: 17,
+      fontFamily: fonts.serifMediumItalic,
+      color: colors.textSecondary,
+      marginBottom: spacing.sm,
+    },
+    // Rótulo de la tarjeta-resumen (mf-serif-title): itálica serif, igual que en web.
+    tileLabel: { fontSize: 16, fontFamily: fonts.serifMediumItalic, color: colors.textSecondary },
+    // Cifra de display (mf-hero-balance): serif Newsreader, aire editorial de banca privada.
+    tileValue: {
+      fontSize: 24,
+      fontFamily: fonts.serifMedium,
+      color: colors.textPrimary,
+      marginTop: 4,
+      fontVariant: ['tabular-nums'],
+    },
     segment: {
       flexDirection: 'row',
       borderRadius: radius.sm,
@@ -463,7 +481,17 @@ export function baseStyles(colors: ThemeColors) {
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
     },
-    primaryBtn: { backgroundColor: colors.accent, borderRadius: radius.sm, padding: 13, alignItems: 'center' },
+    primaryBtn: {
+      backgroundColor: colors.accent,
+      borderRadius: 11,
+      padding: 13,
+      alignItems: 'center',
+      shadowColor: colors.accent,
+      shadowOpacity: 0.45,
+      shadowRadius: 12,
+      shadowOffset: { width: 0, height: 6 },
+      elevation: 4,
+    },
     primaryBtnText: { color: colors.onAccent, fontFamily: fonts.semibold, fontSize: 15 },
     sheetBackdrop: { flex: 1, backgroundColor: colors.overlay },
     sheetCard: {

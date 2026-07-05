@@ -135,6 +135,7 @@ export function BudgetsScreen() {
             value={formatMoney(totalSpent)}
             tone="expense"
           />
+          <SummaryTile label="Restante" value={formatMoney(totalBudgeted - totalSpent)} tone="good" />
         </View>
 
         {budgets.length === 0 ? (

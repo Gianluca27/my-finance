@@ -1025,6 +1025,13 @@ td.num {
   max-width: 1760px;
 }
 
+@media (min-width: 721px) {
+  /* El dashboard no tiene bottom nav, no necesita el padding-bottom grande de mf-content */
+  .mf-content--wide {
+    padding-bottom: 28px;
+  }
+}
+
 .mf-bottomnav {
   display: none;
   position: fixed;
@@ -1192,7 +1199,12 @@ td.num {
 .mf-dashboard {
   display: grid;
   grid-template-columns: repeat(12, 1fr);
-  gap: 20px;
+  gap: 14px;
+}
+
+/* Cards del dashboard más compactas para que todo entre sin scroll */
+.mf-dashboard .card {
+  padding: 16px;
 }
 
 .mf-b-balance {
@@ -1205,7 +1217,7 @@ td.num {
   grid-column: 10 / 13;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 12px;
 }
 .mf-b-donut {
   grid-column: 1 / 6;
@@ -1325,7 +1337,7 @@ td.num {
   background: linear-gradient(155deg, var(--surface-2), var(--surface));
   border: 1px solid var(--border);
   border-radius: 20px;
-  padding: 30px;
+  padding: 20px;
   box-shadow: var(--shadow);
   position: relative;
   overflow: hidden;
@@ -1357,6 +1369,12 @@ td.num {
   animation: mfrise 0.5s ease;
 }
 
+/* Balance principal del dashboard: más chico para que todas las cards entren sin scroll */
+.mf-b-balance .mf-hero-balance {
+  font-size: clamp(28px, 3vw, 38px);
+  margin-top: 8px;
+}
+
 .mf-hero-delta {
   display: flex;
   align-items: center;
@@ -1380,8 +1398,8 @@ td.num {
 .mf-hero-stats {
   display: flex;
   gap: 22px;
-  margin-top: 22px;
-  padding-top: 18px;
+  margin-top: 14px;
+  padding-top: 12px;
   border-top: 1px solid var(--border);
 }
 
@@ -1405,7 +1423,7 @@ td.num {
 .mf-insight-card {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
 }
 
 .mf-projection-row {
@@ -1431,14 +1449,14 @@ td.num {
   margin-top: auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .mf-anomaly-row {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 7px 10px;
   background: var(--neg-weak);
   border: 1px solid oklch(0.72 0.15 25 / 0.25);
   border-radius: var(--r-sm);
@@ -1460,7 +1478,7 @@ td.num {
 .mf-donut-row {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 14px;
 }
 
 .mf-donut-wrap {
@@ -1480,7 +1498,7 @@ td.num {
 
 .mf-donut-total {
   font-family: var(--mono);
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -1489,7 +1507,7 @@ td.num {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -1497,7 +1515,7 @@ td.num {
   display: flex;
   align-items: center;
   gap: 9px;
-  font-size: 13px;
+  font-size: 12.5px;
 }
 
 .mf-legend-dot {
@@ -1529,8 +1547,8 @@ td.num {
   align-items: flex-end;
   justify-content: space-between;
   gap: 14px;
-  height: 150px;
-  margin-top: 18px;
+  height: 100px;
+  margin-top: 10px;
 }
 
 .mf-bar-col {
@@ -1538,7 +1556,7 @@ td.num {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   height: 100%;
 }
 
@@ -1641,13 +1659,13 @@ td.num {
   align-items: center;
   justify-content: space-between;
   font-size: 13px;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   gap: 8px;
 }
 
 .mf-debt-strip {
   display: flex;
-  gap: 16px;
+  gap: 12px;
   align-items: center;
 }
 
@@ -1655,6 +1673,17 @@ td.num {
   width: 1px;
   align-self: stretch;
   background: var(--border);
+}
+
+/* Filas de "Próximos pagos" más compactas, sin afectar mf-list-row de otras páginas */
+.mf-dashboard .mf-list-row {
+  padding: 7px 0;
+}
+
+.mf-dashboard .mf-list-icon {
+  width: 30px;
+  height: 30px;
+  font-size: 14px;
 }
 
 /* ---------- Auth (login/registro) ---------- */

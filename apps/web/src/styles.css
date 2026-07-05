@@ -1684,6 +1684,20 @@ td.num {
   border-radius: 50%;
   background: var(--accent-weak);
   filter: blur(20px);
+  z-index: 0;
+}
+
+/* Grano de papel sobre el panel editorial del login (por encima del glow,
+   por debajo del contenido). */
+.mf-authhero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.5;
+  mix-blend-mode: soft-light;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.42'/%3E%3C/svg%3E");
 }
 
 .mf-authhero-brand {
@@ -1691,19 +1705,27 @@ td.num {
   align-items: center;
   gap: 11px;
   position: relative;
+  z-index: 2;
 }
 
 .mf-authhero-copy {
   position: relative;
+  z-index: 2;
   max-width: 420px;
 }
 
 .mf-authhero-copy h2 {
-  font-size: 34px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  line-height: 1.15;
+  font-family: var(--serif);
+  font-size: 38px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.12;
   margin: 0 0 16px;
+}
+
+.mf-authhero-copy h2 em {
+  font-style: italic;
+  color: var(--gold);
 }
 
 .mf-authhero-copy p {
@@ -1749,9 +1771,10 @@ td.num {
 }
 
 .mf-authform h1 {
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-family: var(--serif);
+  font-size: 30px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
   margin: 0 0 6px;
 }
 
@@ -1760,7 +1783,7 @@ td.num {
 }
 
 .mf-auth-cta {
-  background: var(--accent);
+  background: linear-gradient(150deg, var(--accent), color-mix(in oklch, var(--accent) 78%, #1a2b23));
   color: var(--accent-ink);
   border: none;
   border-radius: 12px;
@@ -1769,6 +1792,7 @@ td.num {
   font-size: 15px;
   cursor: pointer;
   margin-top: 6px;
+  box-shadow: 0 8px 20px -10px color-mix(in srgb, var(--accent) 60%, transparent);
 }
 
 .mf-auth-cta:hover {

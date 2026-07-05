@@ -37,13 +37,18 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
       <div className="mf-authhero">
         <div className="mf-authhero-glow" />
         <div className="mf-authhero-brand">
-          <span className="mf-brand-mark" style={{ width: 34, height: 34 }}>
-            <LogoMark size={19} />
+          <span className="mf-brand-mark">
+            <LogoMark />
           </span>
-          <span className="mf-brand-name">MyFinance</span>
+          <span className="mf-brand-titles">
+            <span className="mf-brand-name">MyFinance</span>
+            <span className="mf-brand-tag">gestión privada</span>
+          </span>
         </div>
         <div className="mf-authhero-copy">
-          <h2>Tus finanzas, con claridad y precisión.</h2>
+          <h2>
+            Tus finanzas, con <em>claridad y precisión</em>.
+          </h2>
           <p>
             Balance, presupuestos, gastos fijos y deudas en un solo lugar. Sin ruido, sin banca
             conectada — solo control.

@@ -15,10 +15,18 @@ import type {
   DigestFrequency,
   DebtInput,
   DebtUpdateInput,
+  ExchangeRate,
+  ExchangeRateInput,
   Goal,
   GoalInput,
   GoalUpdateInput,
   ImportResult,
+  Investment,
+  InvestmentDetail,
+  InvestmentInput,
+  InvestmentOperationInput,
+  InvestmentsOverview,
+  InvestmentUpdateInput,
   Paginated,
   RecurringExpense,
   RecurringExpenseInput,
@@ -256,6 +264,43 @@ export class ApiClient {
     return this.request<{ transaction: Transaction; goal: Goal }>('POST', `/api/goals/${id}/contributions`, {
       amount,
     });
+  }
+
+  // --- Inversiones ---
+  /** Portafolio completo: activos con métricas calculadas, cotizaciones y totales en moneda base. */
+  listInvestments() {
+    return this.request<InvestmentsOverview>('GET', '/api/investments');
+  }
+  /** Detalle de un activo: operaciones + histórico de precios. */
+  getInvestment(id: string) {
+    return this.request<InvestmentDetail>('GET', `/api/investments/${id}`);
+  }
+  createInvestment(input: InvestmentInput) {
+    return this.request<Investment>('POST', '/api/investments', input);
+  }
+  updateInvestment(id: string, input: InvestmentUpdateInput) {
+    return this.request<Investment>('PUT', `/api/investments/${id}`, input);
+  }
+  /** Solo permitido sin operaciones registradas. */
+  deleteInvestment(id: string) {
+    return this.request<void>('DELETE', `/api/investments/${id}`);
+  }
+  /** Registra compra/venta. La venta no puede superar la tenencia. */
+  addInvestmentOperation(id: string, input: InvestmentOperationInput) {
+    return this.request<InvestmentDetail>('POST', `/api/investments/${id}/operations`, input);
+  }
+  deleteInvestmentOperation(id: string, operationId: string) {
+    return this.request<InvestmentDetail>('DELETE', `/api/investments/${id}/operations/${operationId}`);
+  }
+  /** Actualiza el precio manual y guarda un snapshot para el histórico. */
+  updateInvestmentPrice(id: string, price: number) {
+    return this.request<Investment>('PATCH', `/api/investments/${id}/price`, { price });
+  }
+  upsertExchangeRate(input: ExchangeRateInput) {
+    return this.request<ExchangeRate>('PUT', '/api/investments/rates', input);
+  }
+  deleteExchangeRate(currency: string) {
+    return this.request<void>('DELETE', `/api/investments/rates/${encodeURIComponent(currency)}`);
   }
 
   // --- Dashboard ---

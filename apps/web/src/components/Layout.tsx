@@ -19,6 +19,7 @@ import {
   IcoSettings,
   IcoTag,
   IcoTarget,
+  IcoTrend,
   IcoWallet,
   LogoMark,
 } from './icons';
@@ -31,6 +32,7 @@ const NAV_ITEMS = [
   { to: '/presupuestos', label: 'Presupuestos', icon: IcoMeter },
   { to: '/deudas', label: 'Deudas', icon: IcoDebt },
   { to: '/metas', label: 'Metas', icon: IcoTarget },
+  { to: '/inversiones', label: 'Inversiones', icon: IcoTrend },
   { to: '/categorias', label: 'Categorías', icon: IcoTag },
   { to: '/reportes', label: 'Reportes', icon: IcoDoc },
 ];
@@ -51,6 +53,7 @@ const TITLES: Record<string, [string, string]> = {
   '/presupuestos': ['Control', 'Presupuestos'],
   '/deudas': ['Balance', 'Deudas'],
   '/metas': ['Ahorro', 'Metas'],
+  '/inversiones': ['Patrimonio', 'Inversiones'],
   '/categorias': ['Organización', 'Categorías'],
   '/reportes': ['Exportar', 'Reportes'],
   '/preferencias': ['Cuenta', 'Preferencias'],

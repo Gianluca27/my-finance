@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { currentMonth, isValidMonth, monthLength, monthRange, shiftMonth, startOfTodayUTC } from '../lib/dates';
+import { buildInvestmentsSummary, investmentMetrics } from '../lib/investments';
 import { serialize } from '../lib/serialize';
 import { requireAuth } from '../middleware/auth';
 import { asyncHandler } from '../middleware/error';
@@ -293,6 +294,33 @@ router.get(
       available: round2(balance - committedExpenses),
     };
 
+    // --- Resumen de inversiones (portafolio en moneda base, al TC vigente) ---
+    const [activeInvestments, investmentOps, exchangeRates] = await Promise.all([
+      prisma.investment.findMany({
+        where: { userId, archivedAt: null },
+        select: { id: true, currency: true, currentPrice: true },
+      }),
+      prisma.investmentOperation.findMany({
+        where: { userId },
+        orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+        select: { investmentId: true, type: true, quantity: true, unitPrice: true },
+      }),
+      prisma.exchangeRate.findMany({ where: { userId } }),
+    ]);
+    const invOpsById = new Map<string, Array<{ type: 'COMPRA' | 'VENTA'; quantity: number; unitPrice: number }>>();
+    for (const op of investmentOps) {
+      const list = invOpsById.get(op.investmentId) ?? [];
+      list.push({ type: op.type, quantity: op.quantity.toNumber(), unitPrice: op.unitPrice.toNumber() });
+      invOpsById.set(op.investmentId, list);
+    }
+    const investmentsSummary = buildInvestmentsSummary(
+      activeInvestments.map((inv) => {
+        const metrics = investmentMetrics(inv.currentPrice?.toNumber() ?? null, invOpsById.get(inv.id) ?? []);
+        return { currency: inv.currency, investedCost: metrics.investedCost, currentValue: metrics.currentValue };
+      }),
+      new Map(exchangeRates.map((r) => [r.currency, r.rate.toNumber()])),
+    );
+
     // --- Tendencia de patrimonio neto (12 meses) ---
     // Se reconstruye desde el historial: patrimonio a fin de mes = saldos iniciales
     // + (ingresos - gastos) acumulados hasta ese mes. Las transferencias se cancelan globalmente.
@@ -336,6 +364,7 @@ router.get(
       },
       debtsSummary,
       safeToSpend,
+      investmentsSummary,
     });
   }),
 );

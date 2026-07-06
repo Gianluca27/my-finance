@@ -256,6 +256,44 @@ export function DashboardPage() {
             Ver →
           </Link>
         </div>
+
+        <div className="card">
+          <div className="mf-card-head">
+            <div className="mf-serif-title">Inversiones</div>
+            <Link to="/inversiones" className="mf-link">
+              Ver →
+            </Link>
+          </div>
+          {data.investmentsSummary.totalValue === 0 && data.investmentsSummary.missingRates.length === 0 ? (
+            <p className="muted" style={{ fontSize: 12.5, margin: '6px 0 0' }}>
+              Todavía no cargaste inversiones.
+            </p>
+          ) : (
+            <>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+                <div className="mf-hero-balance" style={{ fontSize: 20 }}>
+                  {formatMoney(data.investmentsSummary.totalValue)}
+                </div>
+                {data.investmentsSummary.totalInvested > 0 && (
+                  <span
+                    className="mf-delta-badge"
+                    style={{
+                      background: data.investmentsSummary.pnl >= 0 ? 'var(--accent-weak)' : 'var(--neg-weak)',
+                      color: data.investmentsSummary.pnl >= 0 ? 'var(--pos)' : 'var(--neg)',
+                    }}
+                  >
+                    {data.investmentsSummary.pnl >= 0 ? '▲' : '▼'} {data.investmentsSummary.pnlPercent}%
+                  </span>
+                )}
+              </div>
+              {data.investmentsSummary.missingRates.length > 0 && (
+                <div style={{ fontSize: 12, color: 'var(--warn)', marginTop: 4 }}>
+                  Falta cotización: {data.investmentsSummary.missingRates.join(', ')}
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       <div className="card mf-b-networth">

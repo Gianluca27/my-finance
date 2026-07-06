@@ -56,6 +56,9 @@ export const IcoTarget = (p: IconProps) => (
     ]}
   />
 );
+export const IcoTrend = (p: IconProps) => (
+  <PathIcon {...p} paths={[{ d: 'M3 16l4.5-5 3 3L16 7' }, { d: 'M12.5 6.5H16V10' }]} />
+);
 export const IcoDoc = (p: IconProps) => (
   <PathIcon {...p} paths={[{ d: 'M6 3h5l4 4v10H6z' }, { d: 'M11 3v4h4M8.5 11h5M8.5 14h3' }]} />
 );

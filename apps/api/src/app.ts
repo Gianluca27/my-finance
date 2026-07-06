@@ -10,6 +10,7 @@ import categoriesRouter from './routes/categories';
 import dashboardRouter from './routes/dashboard';
 import debtsRouter from './routes/debts';
 import goalsRouter from './routes/goals';
+import investmentsRouter from './routes/investments';
 import notificationsRouter from './routes/notifications';
 import recurringRouter from './routes/recurring';
 import reportsRouter from './routes/reports';
@@ -36,6 +37,7 @@ export function createApp() {
   app.use('/api/budgets', budgetsRouter);
   app.use('/api/debts', debtsRouter);
   app.use('/api/goals', goalsRouter);
+  app.use('/api/investments', investmentsRouter);
   app.use('/api/dashboard', dashboardRouter);
   app.use('/api/reports', reportsRouter);
   app.use('/api/notifications', notificationsRouter);

@@ -97,6 +97,111 @@ export interface Debt {
   createdAt: string;
 }
 
+export type InvestmentType = 'ACCION' | 'CEDEAR' | 'CRIPTO' | 'FCI' | 'PLAZO_FIJO' | 'BONO' | 'OTRO';
+export type InvestmentOperationType = 'COMPRA' | 'VENTA';
+
+export interface Investment {
+  id: string;
+  name: string;
+  type: InvestmentType;
+  /** Ticker o símbolo opcional (ej: AAPL, BTC). */
+  symbol: string | null;
+  /** Código de moneda del activo (ej: USD). Null = moneda base de la app. */
+  currency: string | null;
+  /** Precio unitario actual cargado a mano; null hasta la primera actualización. */
+  currentPrice: number | null;
+  priceUpdatedAt: string | null;
+  color: string;
+  icon: string | null;
+  archivedAt: string | null;
+  createdAt: string;
+  /** Calculados del ledger de operaciones (no persistidos), en moneda del activo: */
+  quantity: number;
+  /** Costo promedio ponderado por unidad (las ventas no lo alteran). */
+  avgCost: number;
+  /** Costo de la tenencia actual: avgCost * quantity. */
+  investedCost: number;
+  /** quantity * (currentPrice ?? avgCost). */
+  currentValue: number;
+  /** currentValue - investedCost (no realizado). */
+  pnl: number;
+  pnlPercent: number;
+  operationCount: number;
+}
+
+export interface InvestmentOperation {
+  id: string;
+  type: InvestmentOperationType;
+  quantity: number;
+  unitPrice: number;
+  date: string;
+  note: string | null;
+  investmentId: string;
+  createdAt: string;
+}
+
+/** Punto del histórico de precios (un snapshot por actualización manual). */
+export interface InvestmentPricePoint {
+  id: string;
+  price: number;
+  date: string;
+}
+
+export interface InvestmentDetail extends Investment {
+  operations: InvestmentOperation[];
+  priceHistory: InvestmentPricePoint[];
+}
+
+/** Cotización manual de una moneda extranjera en moneda base (por 1 unidad). */
+export interface ExchangeRate {
+  id: string;
+  currency: string;
+  rate: number;
+  updatedAt: string;
+}
+
+/** Totales del portafolio en moneda base, convertidos al TC vigente. */
+export interface InvestmentsSummary {
+  totalInvested: number;
+  totalValue: number;
+  pnl: number;
+  pnlPercent: number;
+  /** Monedas usadas por activos sin cotización cargada (excluidos de los totales). */
+  missingRates: string[];
+}
+
+export interface InvestmentsOverview {
+  items: Investment[];
+  rates: ExchangeRate[];
+  summary: InvestmentsSummary;
+}
+
+export interface InvestmentInput {
+  name: string;
+  type: InvestmentType;
+  symbol?: string | null;
+  currency?: string | null;
+  color?: string;
+  icon?: string | null;
+}
+
+/** Edición; `archived` mapea a archivedAt (patrón Account). */
+export type InvestmentUpdateInput = Partial<InvestmentInput> & { archived?: boolean };
+
+export interface InvestmentOperationInput {
+  type: InvestmentOperationType;
+  quantity: number;
+  unitPrice: number;
+  /** Default: ahora. */
+  date?: string;
+  note?: string | null;
+}
+
+export interface ExchangeRateInput {
+  currency: string;
+  rate: number;
+}
+
 export interface CategorySummary {
   categoryId: string | null;
   categoryName: string;
@@ -170,6 +275,7 @@ export interface DashboardData {
   insights: DashboardInsights;
   debtsSummary: DebtsSummary;
   safeToSpend: SafeToSpend;
+  investmentsSummary: InvestmentsSummary;
 }
 
 export interface Paginated<T> {

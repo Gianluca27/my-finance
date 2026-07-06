@@ -39,6 +39,21 @@ enum DigestFrequency {
   BOTH
 }
 
+enum InvestmentType {
+  ACCION
+  CEDEAR
+  CRIPTO
+  FCI
+  PLAZO_FIJO
+  BONO
+  OTRO
+}
+
+enum InvestmentOperationType {
+  COMPRA
+  VENTA
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -64,6 +79,9 @@ model User {
   categoryRules     CategoryRule[]
   accounts          Account[]
   transfers         Transfer[]
+  investments          Investment[]
+  investmentOperations InvestmentOperation[]
+  exchangeRates        ExchangeRate[]
 }
 
 model FcmToken {
@@ -257,6 +275,80 @@ model Account {
   transfersTo   Transfer[]    @relation("TransferTo")
 
   @@index([userId])
+}
+
+/// Activo de inversión (acción, CEDEAR, cripto, FCI, plazo fijo, bono). Módulo aislado:
+/// no toca cuentas ni transacciones. Tenencia y costo promedio se derivan de las operaciones.
+model Investment {
+  id             String         @id @default(cuid())
+  name           String
+  type           InvestmentType
+  /// Ticker o símbolo opcional (ej: AAPL, BTC).
+  symbol         String?
+  /// Moneda del activo (código, ej: USD). Null = moneda base de la app, sin conversión.
+  currency       String?
+  /// Precio unitario actual, actualizado a mano. Null hasta la primera carga
+  /// (mientras tanto se valúa al costo promedio).
+  currentPrice   Decimal?       @db.Decimal(18, 8)
+  priceUpdatedAt DateTime?
+  color          String         @default("#6366f1")
+  icon           String?
+  archivedAt     DateTime?
+  userId         String
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  operations     InvestmentOperation[]
+  priceSnapshots InvestmentPriceSnapshot[]
+
+  @@index([userId])
+}
+
+/// Compra o venta de un activo. Cantidad y precio en la moneda del activo.
+/// Para plazo fijo/bono se usa cantidad 1 y precio = capital.
+model InvestmentOperation {
+  id           String                  @id @default(cuid())
+  type         InvestmentOperationType
+  quantity     Decimal                 @db.Decimal(24, 8)
+  unitPrice    Decimal                 @db.Decimal(18, 8)
+  date         DateTime
+  note         String?
+  investmentId String
+  investment   Investment              @relation(fields: [investmentId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime                @default(now())
+
+  @@index([investmentId, date])
+  @@index([userId])
+}
+
+/// Histórico de precios: cada actualización manual del precio guarda un punto,
+/// para graficar la evolución del activo.
+model InvestmentPriceSnapshot {
+  id           String     @id @default(cuid())
+  price        Decimal    @db.Decimal(18, 8)
+  date         DateTime   @default(now())
+  investmentId String
+  investment   Investment @relation(fields: [investmentId], references: [id], onDelete: Cascade)
+
+  @@index([investmentId, date])
+}
+
+/// Cotización manual de una moneda extranjera en moneda base (ej: USD -> 1300).
+/// Una por moneda por usuario; toda conversión usa la cotización vigente.
+model ExchangeRate {
+  id        String   @id @default(cuid())
+  /// Código de la moneda (ej: USD), en mayúsculas.
+  currency  String
+  rate      Decimal  @db.Decimal(18, 6)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, currency])
 }
 
 /// Movimiento de dinero entre dos cuentas del usuario. No cuenta como ingreso ni gasto.

@@ -97,7 +97,7 @@ export interface Debt {
   createdAt: string;
 }
 
-export type InvestmentType = 'ACCION' | 'CEDEAR' | 'CRIPTO' | 'FCI' | 'PLAZO_FIJO' | 'BONO' | 'OTRO';
+export type InvestmentType = 'ACCION' | 'ETF' | 'CEDEAR' | 'CRIPTO' | 'FCI' | 'PLAZO_FIJO' | 'BONO' | 'OTRO';
 export type InvestmentOperationType = 'COMPRA' | 'VENTA';
 
 export interface Investment {
@@ -108,9 +108,15 @@ export interface Investment {
   symbol: string | null;
   /** Código de moneda del activo (ej: USD). Null = moneda base de la app. */
   currency: string | null;
-  /** Precio unitario actual cargado a mano; null hasta la primera actualización. */
+  /** Precio unitario actual; null hasta la primera actualización. Manual, o
+   * automático (cron diario) si el activo está vinculado a Twelve Data. */
   currentPrice: number | null;
   priceUpdatedAt: string | null;
+  /** Símbolo en Twelve Data (ej: AAPL, BTC/USD). Null = activo manual.
+   * Con valor, el precio es automático y se bloquea la carga manual. */
+  providerSymbol: string | null;
+  /** Bolsa del símbolo (ej: NASDAQ). Null para cripto o activos manuales. */
+  providerExchange: string | null;
   color: string;
   icon: string | null;
   archivedAt: string | null;
@@ -174,6 +180,8 @@ export interface InvestmentsOverview {
   items: Investment[];
   rates: ExchangeRate[];
   summary: InvestmentsSummary;
+  /** true si la API tiene configurada la integración con Twelve Data. */
+  providerEnabled: boolean;
 }
 
 export interface InvestmentInput {
@@ -183,6 +191,26 @@ export interface InvestmentInput {
   currency?: string | null;
   color?: string;
   icon?: string | null;
+  /** Símbolo de Twelve Data para precio automático (ej: AAPL, BTC/USD). */
+  providerSymbol?: string | null;
+  providerExchange?: string | null;
+}
+
+/** Resultado del buscador de símbolos de Twelve Data. */
+export interface SymbolSearchResult {
+  /** Símbolo con el que se piden precios (ej: AAPL, BTC/USD). */
+  symbol: string;
+  name: string;
+  /** Bolsa (ej: NASDAQ). Null para cripto. */
+  exchange: string | null;
+  /** Moneda de cotización (ej: USD). */
+  currency: string;
+}
+
+export interface SymbolSearchResponse {
+  /** false si la API no tiene configurada la integración. */
+  enabled: boolean;
+  items: SymbolSearchResult[];
 }
 
 /** Edición; `archived` mapea a archivedAt (patrón Account). */

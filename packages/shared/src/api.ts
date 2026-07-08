@@ -30,6 +30,7 @@ import type {
   Paginated,
   RecurringExpense,
   RecurringExpenseInput,
+  SymbolSearchResponse,
   Transaction,
   TransactionFilters,
   TransactionInput,
@@ -292,9 +293,15 @@ export class ApiClient {
   deleteInvestmentOperation(id: string, operationId: string) {
     return this.request<InvestmentDetail>('DELETE', `/api/investments/${id}/operations/${operationId}`);
   }
-  /** Actualiza el precio manual y guarda un snapshot para el histórico. */
+  /** Actualiza el precio manual y guarda un snapshot para el histórico.
+   * Rechazado (400) si el activo está vinculado a Twelve Data. */
   updateInvestmentPrice(id: string, price: number) {
     return this.request<Investment>('PATCH', `/api/investments/${id}/price`, { price });
+  }
+  /** Busca símbolos en Twelve Data para vincular precio automático. */
+  searchInvestmentSymbols(type: 'ACCION' | 'ETF' | 'CRIPTO', q: string) {
+    const params = new URLSearchParams({ type, q });
+    return this.request<SymbolSearchResponse>('GET', `/api/investments/symbols/search?${params.toString()}`);
   }
   upsertExchangeRate(input: ExchangeRateInput) {
     return this.request<ExchangeRate>('PUT', '/api/investments/rates', input);

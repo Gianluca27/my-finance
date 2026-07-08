@@ -41,6 +41,7 @@ enum DigestFrequency {
 
 enum InvestmentType {
   ACCION
+  ETF
   CEDEAR
   CRIPTO
   FCI
@@ -287,10 +288,15 @@ model Investment {
   symbol         String?
   /// Moneda del activo (código, ej: USD). Null = moneda base de la app, sin conversión.
   currency       String?
-  /// Precio unitario actual, actualizado a mano. Null hasta la primera carga
-  /// (mientras tanto se valúa al costo promedio).
+  /// Precio unitario actual. Null hasta la primera carga (mientras tanto se
+  /// valúa al costo promedio). Manual, o automático si el activo está vinculado.
   currentPrice   Decimal?       @db.Decimal(18, 8)
   priceUpdatedAt DateTime?
+  /// Símbolo en Twelve Data (ej: AAPL, BTC/USD). Null = activo manual.
+  /// Con valor, el precio se actualiza por cron y se bloquea la carga manual.
+  providerSymbol   String?
+  /// Bolsa del símbolo en Twelve Data (ej: NASDAQ). Null para cripto.
+  providerExchange String?
   color          String         @default("#6366f1")
   icon           String?
   archivedAt     DateTime?

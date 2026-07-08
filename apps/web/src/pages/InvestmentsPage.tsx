@@ -4,8 +4,9 @@ import type {
   InvestmentOperationType,
   InvestmentsOverview,
   InvestmentType,
+  SymbolSearchResult,
 } from '@myfinance/shared';
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api, formatDate, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
 import { IcoPencil, IcoPlus, IcoTrash } from '../components/icons';
@@ -15,6 +16,7 @@ const COLOR_PALETTE = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#
 
 const TYPE_LABELS: Record<InvestmentType, string> = {
   ACCION: 'Acción',
+  ETF: 'ETF',
   CEDEAR: 'CEDEAR',
   CRIPTO: 'Cripto',
   FCI: 'FCI',
@@ -25,6 +27,7 @@ const TYPE_LABELS: Record<InvestmentType, string> = {
 
 const TYPE_FALLBACK_ICON: Record<InvestmentType, string> = {
   ACCION: '📈',
+  ETF: '📊',
   CEDEAR: '🌎',
   CRIPTO: '🪙',
   FCI: '🧺',
@@ -32,6 +35,13 @@ const TYPE_FALLBACK_ICON: Record<InvestmentType, string> = {
   BONO: '📜',
   OTRO: '💼',
 };
+
+/** Tipos con buscador de símbolos de Twelve Data (lo que cubre el plan free). */
+type SearchableType = 'ACCION' | 'ETF' | 'CRIPTO';
+
+function searchableType(type: InvestmentType): SearchableType | null {
+  return type === 'ACCION' || type === 'ETF' || type === 'CRIPTO' ? type : null;
+}
 
 const DONUT_R = 42;
 const DONUT_C = 2 * Math.PI * DONUT_R;
@@ -68,6 +78,9 @@ interface AssetFormState {
   currency: string;
   icon: string;
   color: string;
+  /** Símbolo de Twelve Data vinculado (precio automático), o null = manual. */
+  providerSymbol: string | null;
+  providerExchange: string | null;
 }
 
 const EMPTY_ASSET_FORM: AssetFormState = {
@@ -78,6 +91,8 @@ const EMPTY_ASSET_FORM: AssetFormState = {
   currency: '',
   icon: '',
   color: COLOR_PALETTE[0],
+  providerSymbol: null,
+  providerExchange: null,
 };
 
 export function InvestmentsPage() {
@@ -86,6 +101,9 @@ export function InvestmentsPage() {
   const [showArchived, setShowArchived] = useState(false);
 
   const [assetForm, setAssetForm] = useState<AssetFormState | null>(null);
+  const [symbolQuery, setSymbolQuery] = useState('');
+  const [symbolResults, setSymbolResults] = useState<SymbolSearchResult[]>([]);
+  const [symbolSearching, setSymbolSearching] = useState(false);
 
   const [opTarget, setOpTarget] = useState<Investment | null>(null);
   const [opType, setOpType] = useState<InvestmentOperationType>('COMPRA');
@@ -106,6 +124,60 @@ export function InvestmentsPage() {
   const { data, error: loadError, refresh } = useCached<InvestmentsOverview>('investments', () =>
     api.listInvestments(),
   );
+  const providerEnabled = data?.providerEnabled ?? false;
+
+  // Buscador de símbolos con debounce (los endpoints de búsqueda no gastan créditos).
+  const formSearchType = assetForm ? searchableType(assetForm.type) : null;
+  useEffect(() => {
+    const q = symbolQuery.trim();
+    if (!providerEnabled || !formSearchType || q.length < 2) {
+      setSymbolResults([]);
+      setSymbolSearching(false);
+      return;
+    }
+    setSymbolSearching(true);
+    let cancelled = false;
+    const handle = setTimeout(async () => {
+      try {
+        const res = await api.searchInvestmentSymbols(formSearchType, q);
+        if (!cancelled) setSymbolResults(res.items);
+      } catch {
+        if (!cancelled) setSymbolResults([]);
+      } finally {
+        if (!cancelled) setSymbolSearching(false);
+      }
+    }, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [symbolQuery, formSearchType, providerEnabled]);
+
+  function openAssetForm(form: AssetFormState) {
+    setSymbolQuery('');
+    setSymbolResults([]);
+    setError(null);
+    setAssetForm(form);
+  }
+
+  function onPickSymbol(result: SymbolSearchResult) {
+    if (!assetForm) return;
+    setAssetForm({
+      ...assetForm,
+      name: assetForm.name.trim() ? assetForm.name : result.name,
+      symbol: result.symbol.split('/')[0],
+      currency: result.currency,
+      providerSymbol: result.symbol,
+      providerExchange: result.exchange,
+    });
+    setSymbolQuery('');
+    setSymbolResults([]);
+  }
+
+  function onUnlinkSymbol() {
+    if (!assetForm) return;
+    setAssetForm({ ...assetForm, providerSymbol: null, providerExchange: null });
+  }
 
   function invalidateAfterMutation() {
     invalidate('investments');
@@ -138,6 +210,8 @@ export function InvestmentsPage() {
       currency: assetForm.currency || null,
       icon: assetForm.icon || null,
       color: assetForm.color,
+      providerSymbol: assetForm.providerSymbol,
+      providerExchange: assetForm.providerExchange,
     };
     run(async () => {
       if (assetForm.id) await api.updateInvestment(assetForm.id, input);
@@ -147,7 +221,7 @@ export function InvestmentsPage() {
   }
 
   function onEditAsset(inv: Investment) {
-    setAssetForm({
+    openAssetForm({
       id: inv.id,
       name: inv.name,
       type: inv.type,
@@ -155,6 +229,8 @@ export function InvestmentsPage() {
       currency: inv.currency ?? '',
       icon: inv.icon ?? '',
       color: inv.color,
+      providerSymbol: inv.providerSymbol,
+      providerExchange: inv.providerExchange,
     });
   }
 
@@ -367,17 +443,29 @@ export function InvestmentsPage() {
               <span className="mono">
                 {inv.currentPrice !== null ? formatPrice(inv.currentPrice, inv.currency) : '—'}
               </span>
-              <button
-                type="button"
-                className="mf-icon-btn"
-                aria-label="Actualizar precio"
-                title={
-                  inv.priceUpdatedAt ? `Actualizado ${formatDate(inv.priceUpdatedAt)}` : 'Cargar precio actual'
-                }
-                onClick={() => onStartPriceEdit(inv)}
-              >
-                <IcoPencil size={13} />
-              </button>
+              {inv.providerSymbol ? (
+                <span
+                  className="mf-delta-badge"
+                  style={{ background: 'var(--accent-weak)', fontSize: 10.5 }}
+                  title={`Precio automático (${inv.providerSymbol})${
+                    inv.priceUpdatedAt ? ` · actualizado ${formatDate(inv.priceUpdatedAt)}` : ''
+                  }`}
+                >
+                  auto
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  className="mf-icon-btn"
+                  aria-label="Actualizar precio"
+                  title={
+                    inv.priceUpdatedAt ? `Actualizado ${formatDate(inv.priceUpdatedAt)}` : 'Cargar precio actual'
+                  }
+                  onClick={() => onStartPriceEdit(inv)}
+                >
+                  <IcoPencil size={13} />
+                </button>
+              )}
             </span>
           )}
         </div>
@@ -515,7 +603,8 @@ export function InvestmentsPage() {
             Cotizaciones
           </div>
           <p className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
-            Valor manual de cada moneda extranjera en moneda base. Se usa para consolidar los totales.
+            Valor de cada moneda extranjera en moneda base. Se usa para consolidar los totales.
+            {providerEnabled && ' El USD (oficial) se actualiza solo a diario; para MEP o blue creá otra moneda (ej: USDMEP).'}
           </p>
           {rates.length === 0 && <p className="muted">Sin cotizaciones cargadas.</p>}
           {rates.map((rate) => (
@@ -523,7 +612,23 @@ export function InvestmentsPage() {
               <div className="mono" style={{ fontWeight: 600, width: 52 }}>
                 {rate.currency}
               </div>
-              {rateEdit?.currency === rate.currency ? (
+              {providerEnabled && rate.currency === 'USD' ? (
+                <>
+                  <div className="mono" style={{ flex: 1 }}>
+                    $ {rate.rate.toLocaleString('es-AR', { maximumFractionDigits: 2 })}
+                  </div>
+                  <span
+                    className="mf-delta-badge"
+                    style={{ background: 'var(--accent-weak)', fontSize: 10.5 }}
+                    title="Dólar oficial, actualizado a diario desde Twelve Data. Para MEP o blue creá otra moneda (ej: USDMEP)."
+                  >
+                    OFICIAL · auto
+                  </span>
+                  <span className="muted" style={{ fontSize: 11.5 }}>
+                    {formatDate(rate.updatedAt)}
+                  </span>
+                </>
+              ) : rateEdit?.currency === rate.currency ? (
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center', flex: 1 }}>
                   <input
                     type="number"
@@ -620,7 +725,7 @@ export function InvestmentsPage() {
         type="button"
         className="mf-add-btn"
         style={{ marginTop: 16 }}
-        onClick={() => setAssetForm(EMPTY_ASSET_FORM)}
+        onClick={() => openAssetForm(EMPTY_ASSET_FORM)}
       >
         <IcoPlus />
         <span className="mf-add-label">Nuevo activo</span>
@@ -651,7 +756,15 @@ export function InvestmentsPage() {
                 Tipo
                 <select
                   value={assetForm.type}
-                  onChange={(e) => setAssetForm({ ...assetForm, type: e.target.value as InvestmentType })}
+                  onChange={(e) => {
+                    const type = e.target.value as InvestmentType;
+                    // Al pasar a un tipo sin cobertura de Twelve Data, se desvincula.
+                    setAssetForm({
+                      ...assetForm,
+                      type,
+                      ...(searchableType(type) ? {} : { providerSymbol: null, providerExchange: null }),
+                    });
+                  }}
                 >
                   {(Object.keys(TYPE_LABELS) as InvestmentType[]).map((t) => (
                     <option key={t} value={t}>
@@ -667,6 +780,7 @@ export function InvestmentsPage() {
                   onChange={(e) => setAssetForm({ ...assetForm, symbol: e.target.value.toUpperCase() })}
                   maxLength={20}
                   placeholder="BTC"
+                  disabled={assetForm.providerSymbol !== null}
                 />
               </label>
               <label className="field" style={{ width: 110 }}>
@@ -676,12 +790,84 @@ export function InvestmentsPage() {
                   onChange={(e) => setAssetForm({ ...assetForm, currency: e.target.value.toUpperCase() })}
                   maxLength={8}
                   placeholder="Base"
+                  disabled={assetForm.providerSymbol !== null}
                 />
               </label>
             </div>
+
+            {/* Vinculación con Twelve Data: buscador para tipos con cobertura */}
+            {providerEnabled && formSearchType && (
+              assetForm.providerSymbol ? (
+                <div
+                  className="mf-list-row"
+                  style={{ background: 'var(--accent-weak)', borderRadius: 8, padding: '8px 10px' }}
+                >
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>
+                      Vinculado a{' '}
+                      <span className="mono">
+                        {assetForm.providerSymbol}
+                        {assetForm.providerExchange ? ` · ${assetForm.providerExchange}` : ''}
+                      </span>
+                    </div>
+                    <div className="muted" style={{ fontSize: 11.5 }}>
+                      El precio se actualiza solo cada día al cierre del mercado.
+                    </div>
+                  </div>
+                  <button type="button" className="secondary" onClick={onUnlinkSymbol}>
+                    Desvincular
+                  </button>
+                </div>
+              ) : (
+                <div style={{ position: 'relative' }}>
+                  <label className="field">
+                    Buscar en Twelve Data (precio automático)
+                    <input
+                      value={symbolQuery}
+                      onChange={(e) => setSymbolQuery(e.target.value)}
+                      placeholder={
+                        formSearchType === 'CRIPTO' ? 'Ej: BTC, Ethereum…' : 'Ej: AAPL, Apple, SPY…'
+                      }
+                      maxLength={40}
+                    />
+                  </label>
+                  {symbolQuery.trim().length >= 2 && (
+                    <div className="card" style={{ marginTop: 6, maxHeight: 220, overflowY: 'auto', padding: 6 }}>
+                      {symbolSearching && <p className="muted" style={{ margin: 6 }}>Buscando…</p>}
+                      {!symbolSearching && symbolResults.length === 0 && (
+                        <p className="muted" style={{ margin: 6, fontSize: 12.5 }}>
+                          Sin resultados. Podés completar el símbolo a mano abajo (precio manual).
+                        </p>
+                      )}
+                      {symbolResults.map((result) => (
+                        <button
+                          key={`${result.symbol}-${result.exchange ?? ''}`}
+                          type="button"
+                          className="ghost"
+                          style={{ display: 'flex', width: '100%', gap: 8, textAlign: 'left' }}
+                          onClick={() => onPickSymbol(result)}
+                        >
+                          <span className="mono" style={{ fontWeight: 600, minWidth: 80 }}>
+                            {result.symbol}
+                          </span>
+                          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {result.name}
+                          </span>
+                          <span className="muted" style={{ fontSize: 11.5 }}>
+                            {result.exchange ?? 'Cripto'} · {result.currency}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            )}
+
             <p className="muted" style={{ fontSize: 12, margin: 0 }}>
-              Moneda vacía = moneda base de la app. Con moneda (ej: USD), cargá su cotización para consolidar
-              totales.
+              {assetForm.providerSymbol
+                ? 'Activo vinculado: símbolo, moneda y precio los maneja Twelve Data. Desvinculalo para editarlos a mano.'
+                : 'Moneda vacía = moneda base de la app. Con moneda (ej: USD), cargá su cotización para consolidar totales.'}
             </p>
             <label className="field">
               Emoji (opcional)

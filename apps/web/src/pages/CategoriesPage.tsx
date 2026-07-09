@@ -197,10 +197,14 @@ export function CategoriesPage() {
         )}
       </div>
 
-      <button type="button" className="mf-add-btn" style={{ marginTop: 24 }} onClick={() => setFormOpen(true)}>
-        <IcoPlus />
-        <span className="mf-add-label">Nueva Categoría</span>
-      </button>
+      <div className="mf-dashed-tile mf-dashed-tile--row">
+        <button type="button" className="mf-dashed-main" onClick={() => setFormOpen(true)}>
+          <span className="mf-dashed-mark" aria-hidden="true">
+            <IcoPlus />
+          </span>
+          <span className="mf-dashed-title">Nueva categoría</span>
+        </button>
+      </div>
 
       <Modal open={formOpen} onClose={() => setFormOpen(false)} title="Nueva categoría">
         <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

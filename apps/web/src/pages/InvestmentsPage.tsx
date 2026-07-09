@@ -57,6 +57,14 @@ function formatAsset(value: number, currency: string | null): string {
   return `${value.toLocaleString('es-AR', { maximumFractionDigits: 2 })} ${currency}`;
 }
 
+/** Total del donut: abreviado para que entre dentro del anillo. */
+function formatMoneyShort(n: number): string {
+  const v = Math.abs(n);
+  if (v >= 1_000_000) return `$ ${(v / 1_000_000).toFixed(2).replace('.', ',')}M`;
+  if (v >= 1000) return `$ ${Math.round(v / 1000)}k`;
+  return `$ ${Math.round(v)}`;
+}
+
 /** Precios unitarios: más decimales cuando el precio es chico (cripto, FCI). */
 function formatPrice(value: number, currency: string | null): string {
   const digits = value > 0 && value < 1 ? 8 : 2;
@@ -487,7 +495,7 @@ export function InvestmentsPage() {
           </span>
         </div>
 
-        <div className="form-row" style={{ marginTop: 10 }}>
+        <div className="mf-asset-actions">
           {!inv.archivedAt && (
             <>
               <button type="button" onClick={() => onOpenOperation(inv, 'COMPRA')}>
@@ -585,8 +593,10 @@ export function InvestmentsPage() {
                   ))}
                 </svg>
                 <div className="mf-donut-center">
-                  <div className="mf-donut-total">{formatMoney(distribution.total)}</div>
-                  <div className="muted" style={{ fontSize: 10.5 }}>
+                  <div className="mf-donut-total" title={formatMoney(distribution.total)}>
+                    {formatMoneyShort(distribution.total)}
+                  </div>
+                  <div className="mf-caption" style={{ marginTop: 0 }}>
                     total
                   </div>
                 </div>
@@ -680,8 +690,8 @@ export function InvestmentsPage() {
               )}
             </div>
           ))}
-          <form className="form-row" style={{ marginTop: 10 }} onSubmit={onSubmitRate}>
-            <label className="field" style={{ width: 90 }}>
+          <form className="mf-rate-form" onSubmit={onSubmitRate}>
+            <label className="field mf-rate-currency">
               Moneda
               <input
                 value={rateCurrency}
@@ -691,7 +701,7 @@ export function InvestmentsPage() {
                 required
               />
             </label>
-            <label className="field" style={{ flex: 1 }}>
+            <label className="field mf-rate-value">
               Cotización
               <input
                 type="number"
@@ -703,7 +713,7 @@ export function InvestmentsPage() {
                 required
               />
             </label>
-            <button disabled={busy} style={{ alignSelf: 'flex-end' }}>
+            <button className="accent-soft" disabled={busy}>
               Guardar
             </button>
           </form>
@@ -727,15 +737,14 @@ export function InvestmentsPage() {
         </div>
       )}
 
-      <button
-        type="button"
-        className="mf-add-btn"
-        style={{ marginTop: 16 }}
-        onClick={() => openAssetForm(EMPTY_ASSET_FORM)}
-      >
-        <IcoPlus />
-        <span className="mf-add-label">Nuevo activo</span>
-      </button>
+      <div className="mf-dashed-tile mf-dashed-tile--row">
+        <button type="button" className="mf-dashed-main" onClick={() => openAssetForm(EMPTY_ASSET_FORM)}>
+          <span className="mf-dashed-mark" aria-hidden="true">
+            <IcoPlus />
+          </span>
+          <span className="mf-dashed-title">Nuevo activo</span>
+        </button>
+      </div>
 
       {/* --- Modal alta/edición de activo --- */}
       <Modal

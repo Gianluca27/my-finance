@@ -127,14 +127,14 @@ export function RecurringPage() {
     <>
       {(error ?? loadError) && <div className="error-banner">{error ?? loadError}</div>}
 
-      <div className="mf-grid-2" style={{ marginBottom: 16 }}>
+      <div className="mf-grid-2" style={{ marginBottom: 14 }}>
         <div className="card mf-recur-total-card">
           <div className="mf-label">Gastos fijos comprometidos</div>
-          <div className="mf-hero-balance" style={{ color: 'var(--neg)' }}>{formatMoney(totalExpense)}</div>
+          <div className="mf-figure mf-figure--stat" style={{ color: 'var(--neg)' }}>{formatMoney(totalExpense)}</div>
         </div>
         <div className="card mf-recur-total-card">
           <div className="mf-label">Ingresos fijos esperados</div>
-          <div className="mf-hero-balance" style={{ color: 'var(--pos)' }}>{formatMoney(totalIncome)}</div>
+          <div className="mf-figure mf-figure--stat" style={{ color: 'var(--pos)' }}>{formatMoney(totalIncome)}</div>
         </div>
       </div>
 
@@ -202,10 +202,14 @@ export function RecurringPage() {
         recordatorio por push y email según tus preferencias.
       </p>
 
-      <button type="button" className="mf-add-btn" onClick={() => setFormOpen(true)}>
-        <IcoPlus />
-        <span className="mf-add-label">Nuevo Fijo</span>
-      </button>
+      <div className="mf-dashed-tile mf-dashed-tile--row">
+        <button type="button" className="mf-dashed-main" onClick={() => setFormOpen(true)}>
+          <span className="mf-dashed-mark" aria-hidden="true">
+            <IcoPlus />
+          </span>
+          <span className="mf-dashed-title">Nuevo gasto fijo</span>
+        </button>
+      </div>
 
       <Modal open={formOpen} onClose={() => setFormOpen(false)} title="Nuevo movimiento fijo">
         <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

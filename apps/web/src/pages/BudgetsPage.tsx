@@ -66,23 +66,26 @@ export function BudgetsPage() {
     <>
       {(error ?? loadError) && <div className="error-banner">{error ?? loadError}</div>}
 
-      <div className="mf-grid-3" style={{ marginBottom: 22 }}>
+      <div className="mf-grid-3" style={{ marginBottom: 14 }}>
         <div className="card">
           <div className="mf-label">Presupuestado</div>
-          <div className="mf-hero-balance" style={{ fontSize: 26 }}>
+          <div className="mf-figure mf-figure--stat">
             {formatMoney(totalBudgeted)}
           </div>
         </div>
         <div className="card">
           <div className="mf-label">Gastado en {monthLabel}</div>
-          <div className="mf-hero-balance" style={{ fontSize: 26, color: 'var(--neg)' }}>
+          <div className="mf-figure mf-figure--stat" style={{ color: 'var(--neg)' }}>
             {formatMoney(totalSpent)}
           </div>
         </div>
-        <div className="card">
-          <div className="mf-label">Restante</div>
-          <div className="mf-hero-balance" style={{ fontSize: 26, color: 'var(--pos)' }}>
-            {formatMoney(totalBudgeted - totalSpent)}
+        <div className="mf-hero-card">
+          <div className="mf-hero-glow" />
+          <div className="mf-hero-body">
+            <div className="mf-label">Restante</div>
+            <div className="mf-figure mf-figure--stat" style={{ color: 'var(--pos)' }}>
+              {formatMoney(totalBudgeted - totalSpent)}
+            </div>
           </div>
         </div>
       </div>
@@ -144,10 +147,14 @@ export function BudgetsPage() {
         </div>
       )}
 
-      <button type="button" className="mf-add-btn" style={{ marginTop: 16 }} onClick={() => setFormOpen(true)}>
-        <IcoPlus />
-        <span className="mf-add-label">Nuevo Presupuesto</span>
-      </button>
+      <div className="mf-dashed-tile mf-dashed-tile--row">
+        <button type="button" className="mf-dashed-main" onClick={() => setFormOpen(true)}>
+          <span className="mf-dashed-mark" aria-hidden="true">
+            <IcoPlus />
+          </span>
+          <span className="mf-dashed-title">Nuevo presupuesto</span>
+        </button>
+      </div>
 
       <Modal open={formOpen} onClose={() => setFormOpen(false)} title="Nuevo presupuesto">
         <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

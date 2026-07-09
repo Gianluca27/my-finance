@@ -278,27 +278,30 @@ export function DebtsPage() {
     <>
       {(error ?? loadError) && <div className="error-banner">{error ?? loadError}</div>}
 
-      <div className="mf-grid-3" style={{ marginBottom: 16 }}>
+      <div className="mf-grid-3" style={{ marginBottom: 14 }}>
         <div className="card">
           <div className="mf-label">Debo</div>
-          <div className="mf-hero-balance" style={{ fontSize: 32, color: 'var(--neg)' }}>
+          <div className="mf-figure mf-figure--stat" style={{ fontSize: 32, color: 'var(--neg)' }}>
             {formatMoney(totalIOwe)}
           </div>
         </div>
         <div className="card">
           <div className="mf-label">Me deben</div>
-          <div className="mf-hero-balance" style={{ fontSize: 32, color: 'var(--pos)' }}>
+          <div className="mf-figure mf-figure--stat" style={{ fontSize: 32, color: 'var(--pos)' }}>
             {formatMoney(totalOwedToMe)}
           </div>
         </div>
-        <div className="card">
-          <div className="mf-label">Balance neto</div>
-          <div
-            className="mf-hero-balance"
-            style={{ fontSize: 32, color: netBalance < 0 ? 'var(--neg)' : 'var(--pos)' }}
-          >
-            {netBalance < 0 ? '−' : ''}
-            {formatMoney(Math.abs(netBalance))}
+        <div className="mf-hero-card">
+          <div className="mf-hero-glow" />
+          <div className="mf-hero-body">
+            <div className="mf-label">Balance neto</div>
+            <div
+              className="mf-figure mf-figure--stat"
+              style={{ fontSize: 32, color: netBalance < 0 ? 'var(--neg)' : 'var(--pos)' }}
+            >
+              {netBalance < 0 ? '−' : ''}
+              {formatMoney(Math.abs(netBalance))}
+            </div>
           </div>
         </div>
       </div>
@@ -344,10 +347,14 @@ export function DebtsPage() {
         </div>
       )}
 
-      <button type="button" className="mf-add-btn" style={{ marginTop: 16 }} onClick={onOpenCreate}>
-        <IcoPlus />
-        <span className="mf-add-label">Nueva Deuda</span>
-      </button>
+      <div className="mf-dashed-tile mf-dashed-tile--row">
+        <button type="button" className="mf-dashed-main" onClick={onOpenCreate}>
+          <span className="mf-dashed-mark" aria-hidden="true">
+            <IcoPlus />
+          </span>
+          <span className="mf-dashed-title">Nueva deuda</span>
+        </button>
+      </div>
 
       <Modal open={formOpen} onClose={onCloseForm} title={editingId ? 'Editar deuda' : 'Nueva deuda'}>
         <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

@@ -171,23 +171,26 @@ export function GoalsPage() {
     <>
       {(error ?? loadError) && <div className="error-banner">{error ?? loadError}</div>}
 
-      <div className="mf-grid-3" style={{ marginBottom: 16 }}>
+      <div className="mf-grid-3" style={{ marginBottom: 14 }}>
         <div className="card">
           <div className="mf-label">Ahorrado</div>
-          <div className="mf-hero-balance" style={{ fontSize: 32, color: 'var(--pos)' }}>
+          <div className="mf-figure mf-figure--stat" style={{ fontSize: 32, color: 'var(--pos)' }}>
             {formatMoney(totalSaved)}
           </div>
         </div>
         <div className="card">
           <div className="mf-label">Objetivo total</div>
-          <div className="mf-hero-balance" style={{ fontSize: 32 }}>
+          <div className="mf-figure mf-figure--stat" style={{ fontSize: 32 }}>
             {formatMoney(totalTarget)}
           </div>
         </div>
-        <div className="card">
-          <div className="mf-label">Progreso</div>
-          <div className="mf-hero-balance" style={{ fontSize: 32 }}>
-            {overallPct}%
+        <div className="mf-hero-card">
+          <div className="mf-hero-glow" />
+          <div className="mf-hero-body">
+            <div className="mf-label">Progreso</div>
+            <div className="mf-figure mf-figure--stat" style={{ fontSize: 32 }}>
+              {overallPct}%
+            </div>
           </div>
         </div>
       </div>
@@ -216,10 +219,14 @@ export function GoalsPage() {
         </div>
       )}
 
-      <button type="button" className="mf-add-btn" style={{ marginTop: 16 }} onClick={() => setFormOpen(true)}>
-        <IcoPlus />
-        <span className="mf-add-label">Nueva Meta</span>
-      </button>
+      <div className="mf-dashed-tile mf-dashed-tile--row">
+        <button type="button" className="mf-dashed-main" onClick={() => setFormOpen(true)}>
+          <span className="mf-dashed-mark" aria-hidden="true">
+            <IcoPlus />
+          </span>
+          <span className="mf-dashed-title">Nueva meta</span>
+        </button>
+      </div>
 
       <Modal open={formOpen} onClose={() => setFormOpen(false)} title="Nueva meta de ahorro">
         <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

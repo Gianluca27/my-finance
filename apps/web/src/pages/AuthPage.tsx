@@ -76,6 +76,16 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           SYS ONLINE · CIFRADO
         </div>
         <form className="mf-authform" onSubmit={onSubmit}>
+          {/* En mobile el panel de marca se oculta: la marca vuelve sobre el formulario. */}
+          <div className="mf-authform-brand">
+            <span className="mf-brand-mark" aria-hidden="true">
+              $
+            </span>
+            <span className="mf-brand-titles">
+              <span className="mf-brand-name">MyFinance</span>
+              <span className="mf-brand-tag">gestión // privada</span>
+            </span>
+          </div>
           <h1>{title}</h1>
           <p className="muted">{subtitle}</p>
           {error && <div className="error-banner">{error}</div>}

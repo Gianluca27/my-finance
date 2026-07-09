@@ -64,6 +64,13 @@ function topCategories(cats: CategorySummary[]): CategorySummary[] {
   return top;
 }
 
+/** Sigla del gasto fijo para el marcador: "Alquiler" → ALQ. */
+function shortCode(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length >= 2) return words.slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+  return (words[0] ?? '?').slice(0, 3).toUpperCase();
+}
+
 function budgetBarColor(status: BudgetStatus): string {
   if (status.percentUsed >= 100) return 'var(--neg)';
   if (status.percentUsed >= status.alertThreshold) return 'var(--warn)';
@@ -385,7 +392,7 @@ export function DashboardPage() {
               </svg>
               <div className="mf-donut-center">
                 <div className="mf-donut-total">{formatMoneyShort(data.monthExpense)}</div>
-                <div className="muted" style={{ fontSize: 10.5 }}>
+                <div className="mf-caption" style={{ marginTop: 0 }}>
                   total
                 </div>
               </div>
@@ -481,12 +488,12 @@ export function DashboardPage() {
               const due = dueInfo(p.nextDueDate);
               return (
                 <div className="mf-list-row" key={p.id}>
-                  <div className="mf-list-icon">{p.category?.icon ?? '💳'}</div>
+                  <div className="mf-list-icon mf-list-code">{shortCode(p.name)}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="mf-list-title">{p.name}</div>
-                    <div style={{ fontSize: 12, color: due.color }}>{due.label}</div>
+                    <div style={{ fontSize: 11.5, color: due.color }}>{due.label}</div>
                   </div>
-                  <div className="mono" style={{ fontWeight: 600 }}>
+                  <div className="mono" style={{ fontWeight: 600, fontSize: 13 }}>
                     {formatMoney(p.amount)}
                   </div>
                 </div>

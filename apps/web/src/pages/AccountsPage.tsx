@@ -277,9 +277,9 @@ export function AccountsPage() {
           <div className="mf-label mf-label--dot" style={{ marginBottom: 8 }}>
             Transferencias recientes
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div>
             {transfers.slice(0, 10).map((t) => (
-              <div className="mf-list-row" key={t.id}>
+              <div className="mf-list-row mf-transfer-row" key={t.id}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <span className="mf-legend-dot" style={{ background: t.fromAccount.color }} />
                   {t.fromAccount.name}
@@ -287,10 +287,7 @@ export function AccountsPage() {
                   <span className="mf-legend-dot" style={{ background: t.toAccount.color }} />
                   {t.toAccount.name}
                   {t.note && <span className="muted"> · {t.note}</span>}
-                  <span className="muted" style={{ fontSize: 12 }}>
-                    {' '}
-                    · {formatDate(t.date)}
-                  </span>
+                  <span className="muted"> · {formatDate(t.date)}</span>
                 </div>
                 <span className="mono" style={{ fontWeight: 600 }}>
                   {formatMoney(t.amount)}

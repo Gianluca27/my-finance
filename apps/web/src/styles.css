@@ -11,6 +11,10 @@
    ============================================================ */
 
 :root {
+  /* Los controles nativos (date picker, desplegable de select, botón de
+     input[type=file]) se pintan solos con el esquema del sistema: sin esto
+     aparecen en claro sobre el fondo oscuro. */
+  color-scheme: dark;
   --bg: #0a0e12;
   --bg-2: #0b1117;
   /* Las tarjetas son vidrio: blanco translúcido sobre --bg, no un gris opaco.
@@ -445,7 +449,31 @@ textarea:focus {
 }
 
 input::placeholder {
-  color: var(--ink-mut);
+  color: var(--text-4);
+}
+
+/* El botón del selector de archivos es nativo: se viste como .secondary */
+input[type='file'] {
+  padding: 9px 12px;
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+input[type='file']::file-selector-button {
+  font-family: var(--font);
+  font-weight: 600;
+  font-size: 13px;
+  margin-right: 12px;
+  padding: 7px 13px;
+  border-radius: 8px;
+  border: 1px solid var(--border-2);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+input[type='file']::file-selector-button:hover {
+  color: var(--text);
 }
 
 /* La acción primaria es menta sólida; todo lo demás es vidrio con contorno. */
@@ -903,6 +931,7 @@ td.num {
   text-transform: uppercase;
   color: var(--text-4);
   margin-top: 2px;
+  white-space: nowrap;
 }
 
 .mf-nav {
@@ -1437,13 +1466,13 @@ td.num {
 .mf-grid-2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 20px;
+  gap: 14px;
 }
 
 .mf-grid-3 {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
+  gap: 14px;
 }
 
 /* Dashboard bento: 12 -> 6 -> 1 columnas */
@@ -1726,9 +1755,9 @@ td.num {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 14px;
-  height: 100px;
-  margin-top: 10px;
+  gap: 16px;
+  height: 118px;
+  margin-top: 14px;
 }
 
 .mf-bar-col {
@@ -1831,6 +1860,14 @@ td.num {
   flex: none;
 }
 
+/* Marcador de sigla: mono, para leerse como código y no como ícono */
+.mf-list-code {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: #8fb8a6;
+}
+
 .mf-list-title {
   font-size: 13.5px;
   font-weight: 600;
@@ -1840,9 +1877,17 @@ td.num {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 13px;
-  margin-bottom: 4px;
+  font-size: 12.5px;
+  margin-bottom: 5px;
   gap: 8px;
+}
+
+/* El nombre de la categoría va pegado a su punto de color, no al borde */
+.mf-mini-budget-head > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
 }
 
 .mf-debt-strip {
@@ -2066,6 +2111,13 @@ td.num {
   animation: mfrise 0.5s ease;
 }
 
+.mf-authform-brand {
+  display: none;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
 .mf-authform h1 {
   font-size: 27px;
   font-weight: 600;
@@ -2123,6 +2175,13 @@ td.num {
   }
   .mf-authhero {
     display: none;
+  }
+  .mf-authform-brand {
+    display: flex;
+  }
+  .mf-authform-wrap {
+    align-items: flex-start;
+    padding-top: 72px;
   }
 }
 
@@ -2530,6 +2589,22 @@ select option {
   color: var(--text-3);
 }
 
+/* Fila de transferencia: los puntos de color van pegados a su cuenta */
+.mf-transfer-row {
+  padding: 10px 0;
+  font-size: 13px;
+}
+
+.mf-transfer-row .mf-legend-dot {
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.mf-transfer-row .muted {
+  font-size: 13px;
+  color: var(--text-4);
+}
+
 /* Acción terciaria que se lee como enlace, no como botón */
 .mf-link-btn {
   background: none;
@@ -2560,6 +2635,23 @@ select option {
 
 .mf-dashed-tile--block {
   min-height: 150px;
+}
+
+/* Variante de una línea: cierra una lista en vez de rellenar una celda */
+.mf-dashed-tile--row {
+  margin-top: 14px;
+  padding: 14px;
+}
+
+.mf-dashed-tile--row .mf-dashed-main {
+  flex-direction: row;
+  gap: 10px;
+}
+
+.mf-dashed-tile--row .mf-dashed-mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
 }
 
 .mf-dashed-main {
@@ -2646,6 +2738,62 @@ select option {
 .mf-asset-row .mono {
   color: var(--text-2);
   font-size: 12.5px;
+}
+
+/* Comprar/Vender comparten el ancho; historial y archivar se apartan */
+.mf-asset-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.mf-asset-actions button {
+  flex: 1;
+  padding: 8px;
+  font-size: 12.5px;
+}
+
+.mf-asset-actions button.ghost {
+  flex: none;
+  padding: 8px 12px;
+  border-color: var(--border);
+  font-weight: 500;
+}
+
+/* Alta de cotización: campos compactos, guardar en menta translúcida */
+.mf-rate-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.mf-rate-form input {
+  padding: 8px 10px;
+  font-size: 12.5px;
+  width: 100%;
+  min-width: 0;
+}
+
+.mf-rate-form label.field {
+  gap: 5px;
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+}
+
+.mf-rate-form .mf-rate-currency {
+  width: 88px;
+  flex: none;
+}
+
+.mf-rate-form .mf-rate-value {
+  flex: 1;
+  min-width: 0;
+}
+
+.mf-rate-form button {
+  padding: 9px 15px;
+  font-size: 13px;
 }
 
 /* ---------- Presupuestos ---------- */

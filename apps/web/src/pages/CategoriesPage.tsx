@@ -105,7 +105,7 @@ export function CategoriesPage() {
               aria-label={`Eliminar categoría ${c.name}`}
               onClick={() => onDelete(c)}
             >
-              <IcoTrash size={13} />
+              <IcoTrash size={14} />
             </button>
             <div className="mf-cat-icon" style={{ background: `${c.color}26` }}>
               {c.icon || '🏷️'}

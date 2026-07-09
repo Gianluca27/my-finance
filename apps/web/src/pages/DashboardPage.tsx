@@ -240,7 +240,7 @@ export function DashboardPage() {
             {formatMoney(data.safeToSpend.available)}
           </div>
           <div className="mf-caption" title="Balance menos los gastos fijos que faltan pagar este mes">
-            Tras fijos · {formatMoney(data.safeToSpend.committedExpenses)}
+            Tras fijos · {formatMoney(data.safeToSpend.available)}
           </div>
         </div>
 

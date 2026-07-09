@@ -1,7 +1,13 @@
 import type { Investment, InvestmentOperation } from '@prisma/client';
 import { Router } from 'express';
 import { z } from 'zod';
-import { buildInvestmentsSummary, computePosition, investmentMetrics, type PositionOp } from '../lib/investments';
+import {
+  buildInvestmentsSummary,
+  closestPriceMatch,
+  computePosition,
+  investmentMetrics,
+  type PositionOp,
+} from '../lib/investments';
 import { serialize } from '../lib/serialize';
 import { requireAuth } from '../middleware/auth';
 import { asyncHandler, HttpError } from '../middleware/error';
@@ -144,6 +150,10 @@ function providerLabel(source: string | null): string {
 
 function toRef(symbol: string, market: string | null): SymbolRef {
   return { symbol, market: market as ProviderMarket | null };
+}
+
+function dayKey(date: Date): string {
+  return date.toISOString().slice(0, 10);
 }
 
 /** Detalle completo: métricas + operaciones (recientes primero) + histórico de precios. */
@@ -450,6 +460,65 @@ router.delete(
     }
     await prisma.investment.delete({ where: { id: existing.id } });
     res.status(204).end();
+  }),
+);
+
+// --- Precio histórico (autocompletar el formulario de compra/venta por fecha) ---
+
+const priceAtQuerySchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida'),
+});
+
+/**
+ * Precio para una fecha pasada: prioriza los snapshots ya guardados (backfill
+ * al vincular + cron diario); si no hay nada ahí y el activo está vinculado,
+ * pide el histórico en vivo al proveedor y lo persiste para no repetirlo.
+ * `notes`/`corp` (sin endpoint histórico) y los activos manuales sólo pueden
+ * resolver contra lo que ya haya en la tabla.
+ */
+router.get(
+  '/:id/price-at',
+  asyncHandler(async (req, res) => {
+    const { date } = priceAtQuerySchema.parse(req.query);
+    const existing = await findOwned(req.auth!.userId, req.params.id);
+    const target = new Date(`${date}T00:00:00.000Z`);
+
+    const snapshots = await prisma.investmentPriceSnapshot.findMany({
+      where: { investmentId: existing.id },
+      select: { price: true, date: true },
+    });
+    let match = closestPriceMatch(
+      snapshots.map((s) => ({ date: s.date, price: s.price.toNumber() })),
+      target,
+    );
+
+    if (!match && existing.providerSymbol && existing.providerSource) {
+      const provider = getProvider(existing.providerSource as ProviderSource);
+      if (provider.enabled) {
+        const closes = await provider
+          .fetchDailyCloses(toRef(existing.providerSymbol, existing.providerMarket))
+          .catch((err) => {
+            console.warn(`[investments] Falló el histórico en vivo para ${existing.providerSymbol}:`, err);
+            return [] as DailyClose[];
+          });
+        if (closes.length > 0) {
+          const existingDays = new Set(snapshots.map((s) => dayKey(s.date)));
+          const toInsert = closes.filter((c) => !existingDays.has(dayKey(c.date)));
+          if (toInsert.length > 0) {
+            await prisma.investmentPriceSnapshot.createMany({
+              data: toInsert.map((c) => ({ investmentId: existing.id, price: c.price, date: c.date })),
+            });
+          }
+          match = closestPriceMatch(closes, target);
+        }
+      }
+    }
+
+    res.json({
+      price: match ? match.price : null,
+      date: match ? match.date.toISOString() : null,
+      exact: match !== null && dayKey(match.date) === dayKey(target),
+    });
   }),
 );
 

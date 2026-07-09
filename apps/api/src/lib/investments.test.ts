@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { investmentMetrics, type PositionOp } from './investments';
+import { closestPriceMatch, investmentMetrics, type PositionOp, type PricePoint } from './investments';
 
 /** 10.000 nominales de AL30 comprados a 85.600 (precio cada 100 VN). */
 const BOND_OPS: PositionOp[] = [{ type: 'COMPRA', quantity: 10_000, unitPrice: 85_600 }];
@@ -49,5 +49,40 @@ describe('investmentMetrics con priceFactor', () => {
     expect(m.avgCost).toBe(85_600);
     expect(m.investedCost).toBe(5_136_000); // 6.000 × 85.600 / 100
     expect(m.currentValue).toBe(5_400_000); // 6.000 × 90.000 / 100
+  });
+});
+
+describe('closestPriceMatch', () => {
+  const points: PricePoint[] = [
+    { date: new Date('2026-06-01T00:00:00.000Z'), price: 100 },
+    { date: new Date('2026-06-10T00:00:00.000Z'), price: 110 },
+  ];
+
+  it('encuentra el match exacto', () => {
+    const match = closestPriceMatch(points, new Date('2026-06-10T00:00:00.000Z'));
+    expect(match?.price).toBe(110);
+  });
+
+  it('dentro de la tolerancia agarra el más cercano', () => {
+    const match = closestPriceMatch(points, new Date('2026-06-03T00:00:00.000Z'));
+    expect(match?.price).toBe(100);
+  });
+
+  it('fuera de la tolerancia devuelve null', () => {
+    const match = closestPriceMatch(points, new Date('2026-06-20T00:00:00.000Z'));
+    expect(match).toBeNull();
+  });
+
+  it('sin puntos devuelve null', () => {
+    expect(closestPriceMatch([], new Date('2026-06-10T00:00:00.000Z'))).toBeNull();
+  });
+
+  it('ante un empate de distancia, gana el punto anterior', () => {
+    const tied: PricePoint[] = [
+      { date: new Date('2026-06-05T00:00:00.000Z'), price: 90 },
+      { date: new Date('2026-06-15T00:00:00.000Z'), price: 120 },
+    ];
+    const match = closestPriceMatch(tied, new Date('2026-06-10T00:00:00.000Z'));
+    expect(match?.price).toBe(90);
   });
 });

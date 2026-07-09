@@ -94,6 +94,34 @@ export function investmentMetrics(
   };
 }
 
+export interface PricePoint {
+  date: Date;
+  price: number;
+}
+
+/** Tolerancia para "precio en una fecha": cubre fines de semana/feriados sin fingir precisión. */
+export const PRICE_LOOKUP_TOLERANCE_DAYS = 5;
+
+/**
+ * Busca el punto más cercano a `target` dentro de la tolerancia, para
+ * autocompletar el precio de una operación al elegir una fecha pasada. Ante
+ * un empate de distancia, gana el punto anterior (dato ya cerrado ese día).
+ */
+export function closestPriceMatch(points: PricePoint[], target: Date): PricePoint | null {
+  const toleranceMs = PRICE_LOOKUP_TOLERANCE_DAYS * 86_400_000;
+  let best: PricePoint | null = null;
+  let bestDiff = Infinity;
+  for (const point of points) {
+    const diff = Math.abs(point.date.getTime() - target.getTime());
+    if (diff > toleranceMs) continue;
+    if (diff < bestDiff || (diff === bestDiff && best !== null && point.date.getTime() < best.date.getTime())) {
+      best = point;
+      bestDiff = diff;
+    }
+  }
+  return best;
+}
+
 export interface InvestmentsSummaryData {
   totalInvested: number;
   totalValue: number;

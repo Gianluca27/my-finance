@@ -10,7 +10,7 @@ import type {
   SymbolSearchKind,
   SymbolSearchResult,
 } from '@myfinance/shared';
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api, formatDate, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
 import { IcoPencil, IcoPlus, IcoTrash } from '../components/icons';
@@ -182,6 +182,10 @@ export function InvestmentsPage() {
   const [opPrice, setOpPrice] = useState('');
   const [opDate, setOpDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [opNote, setOpNote] = useState('');
+  const [opPriceHint, setOpPriceHint] = useState<string | null>(null);
+  const [opPriceLoading, setOpPriceLoading] = useState(false);
+  // Último precio autocompletado: si el usuario lo pisó a mano, no lo volvemos a tocar.
+  const opPriceAutoRef = useRef<string | null>(null);
 
   const [priceEditId, setPriceEditId] = useState<string | null>(null);
   const [priceValue, setPriceValue] = useState('');
@@ -224,6 +228,54 @@ export function InvestmentsPage() {
       clearTimeout(handle);
     };
   }, [symbolQuery, formSearchKind, searchAvailable]);
+
+  // Autocompleta el precio de la operación al elegir una fecha pasada, sin pisar
+  // un precio que el usuario ya haya tipeado a mano.
+  useEffect(() => {
+    if (!opTarget) return;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (opDate === todayStr) {
+      setOpPriceLoading(false);
+      setOpPriceHint(null);
+      const auto = opTarget.currentPrice !== null ? String(opTarget.currentPrice) : null;
+      if (auto !== null && (opPrice === '' || opPrice === opPriceAutoRef.current)) {
+        setOpPrice(auto);
+      }
+      opPriceAutoRef.current = auto;
+      return;
+    }
+    let cancelled = false;
+    setOpPriceLoading(true);
+    setOpPriceHint(null);
+    const handle = setTimeout(async () => {
+      try {
+        const res = await api.getInvestmentPriceAtDate(opTarget.id, opDate);
+        if (cancelled) return;
+        if (res.price !== null && res.date !== null) {
+          if (opPrice === '' || opPrice === opPriceAutoRef.current) {
+            setOpPrice(String(res.price));
+          }
+          opPriceAutoRef.current = String(res.price);
+          setOpPriceHint(
+            `${res.exact ? 'Cierre' : 'Cierre más cercano'} · ${formatDate(res.date)}: ${formatAsset(res.price, opTarget.currency)}`,
+          );
+        } else {
+          opPriceAutoRef.current = null;
+          setOpPriceHint('Sin dato histórico para esta fecha: ingresá el precio manualmente.');
+        }
+      } catch {
+        if (!cancelled) setOpPriceHint(null);
+      } finally {
+        if (!cancelled) setOpPriceLoading(false);
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+    // Sólo re-dispara por cambio de fecha/activo: opPrice se lee al momento del pedido, no gatilla el efecto.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opDate, opTarget]);
 
   function openAssetForm(form: AssetFormState) {
     setSymbolQuery('');
@@ -341,7 +393,10 @@ export function InvestmentsPage() {
     setOpTarget(inv);
     setOpType(type);
     setOpQuantity('');
-    setOpPrice(inv.currentPrice !== null ? String(inv.currentPrice) : '');
+    const auto = inv.currentPrice !== null ? String(inv.currentPrice) : null;
+    setOpPrice(auto ?? '');
+    opPriceAutoRef.current = auto;
+    setOpPriceHint(null);
     setOpDate(new Date().toISOString().slice(0, 10));
     setOpNote('');
     setError(null);
@@ -1136,6 +1191,11 @@ export function InvestmentsPage() {
                 />
               </label>
             </div>
+            {(opPriceLoading || opPriceHint) && (
+              <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+                {opPriceLoading ? 'Buscando precio histórico…' : opPriceHint}
+              </p>
+            )}
             {opType === 'VENTA' && (
               <p className="muted" style={{ fontSize: 12, margin: 0 }}>
                 Tenencia disponible: {formatQty(opTarget.quantity)}

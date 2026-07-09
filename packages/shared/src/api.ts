@@ -25,6 +25,7 @@ import type {
   InvestmentDetail,
   InvestmentInput,
   InvestmentOperationInput,
+  InvestmentPriceAtDate,
   InvestmentsOverview,
   InvestmentUpdateInput,
   Paginated,
@@ -293,6 +294,11 @@ export class ApiClient {
   }
   deleteInvestmentOperation(id: string, operationId: string) {
     return this.request<InvestmentDetail>('DELETE', `/api/investments/${id}/operations/${operationId}`);
+  }
+  /** Precio para una fecha pasada, para autocompletar el formulario de compra/venta. */
+  getInvestmentPriceAtDate(id: string, date: string) {
+    const params = new URLSearchParams({ date });
+    return this.request<InvestmentPriceAtDate>('GET', `/api/investments/${id}/price-at?${params.toString()}`);
   }
   /** Actualiza el precio manual y guarda un snapshot para el histórico.
    * Rechazado (400) si el activo está vinculado a un proveedor. */

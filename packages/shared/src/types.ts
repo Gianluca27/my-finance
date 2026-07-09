@@ -259,6 +259,14 @@ export interface InvestmentOperationInput {
   note?: string | null;
 }
 
+/** Precio para una fecha pasada (autocompleta el formulario de compra/venta). */
+export interface InvestmentPriceAtDate {
+  price: number | null;
+  /** Fecha real del dato encontrado (puede diferir de la pedida: fin de semana/feriado). */
+  date: string | null;
+  exact: boolean;
+}
+
 export interface ExchangeRateInput {
   currency: string;
   rate: number;

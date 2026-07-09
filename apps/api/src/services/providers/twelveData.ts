@@ -1,4 +1,13 @@
-import { config } from '../config';
+import { config } from '../../config';
+import {
+  BACKFILL_DAYS,
+  type DailyClose,
+  type PriceProvider,
+  type ProviderSymbol,
+  type SymbolRef,
+  type SymbolSearchKind,
+  refKey,
+} from './types';
 
 /**
  * Cliente de Twelve Data (https://twelvedata.com/docs).
@@ -7,6 +16,9 @@ import { config } from '../config';
  * - Endpoints de referencia (symbol_search, cryptocurrencies): NO consumen créditos.
  * - Endpoints de mercado (price, time_series): 1 crédito por símbolo,
  *   límite de 8 créditos/minuto y 800/día.
+ *
+ * Cobertura: acciones/ETFs de EE.UU. y cripto. El mercado argentino no entra en
+ * el plan gratuito — de eso se ocupa el adapter de data912.
  */
 
 /// Override para tests/desarrollo contra un mock local.
@@ -17,17 +29,7 @@ const CREDITS_PER_MINUTE = 8;
 
 export const twelveDataEnabled = Boolean(config.twelveDataApiKey);
 if (!twelveDataEnabled) {
-  console.warn('[twelvedata] TWELVE_DATA_API_KEY no configurada — precios automáticos deshabilitados');
-}
-
-export interface ProviderSymbol {
-  /** Símbolo con el que se piden precios (ej: AAPL, BTC/USD). */
-  symbol: string;
-  name: string;
-  /** Bolsa (ej: NASDAQ). Null para cripto. */
-  exchange: string | null;
-  /** Moneda de cotización (ej: USD). */
-  currency: string;
+  console.warn('[twelvedata] TWELVE_DATA_API_KEY no configurada — precios de EE.UU. y cripto quedan manuales');
 }
 
 interface TdErrorBody {
@@ -91,6 +93,10 @@ const INSTRUMENT_TYPES: Record<'ACCION' | 'ETF', string[]> = {
   ETF: ['ETF'],
 };
 
+function toProviderSymbol(symbol: string, name: string, exchange: string | null, currency: string): ProviderSymbol {
+  return { symbol, name, exchange, currency, source: 'TWELVE_DATA', market: null, priceFactor: 1 };
+}
+
 async function searchStocks(kind: 'ACCION' | 'ETF', query: string): Promise<ProviderSymbol[]> {
   const data = await cached(`search:${query.toUpperCase()}`, SEARCH_TTL_MS, () =>
     tdGet<{ data: SymbolSearchRow[] }>('/symbol_search', { symbol: query, outputsize: '120' }),
@@ -99,12 +105,7 @@ async function searchStocks(kind: 'ACCION' | 'ETF', query: string): Promise<Prov
   return (data.data ?? [])
     .filter((row) => row.country === 'United States' && allowed.includes(row.instrument_type))
     .slice(0, 30)
-    .map((row) => ({
-      symbol: row.symbol,
-      name: row.instrument_name,
-      exchange: row.exchange || null,
-      currency: row.currency || 'USD',
-    }));
+    .map((row) => toProviderSymbol(row.symbol, row.instrument_name, row.exchange || null, row.currency || 'USD'));
 }
 
 interface CryptoRow {
@@ -124,16 +125,7 @@ async function searchCrypto(query: string): Promise<ProviderSymbol[]> {
       return base.startsWith(q) || row.currency_base.toUpperCase().includes(q);
     })
     .slice(0, 30)
-    .map((row) => ({
-      symbol: row.symbol,
-      name: row.currency_base,
-      exchange: null,
-      currency: 'USD',
-    }));
-}
-
-export function searchSymbols(kind: 'ACCION' | 'ETF' | 'CRIPTO', query: string): Promise<ProviderSymbol[]> {
-  return kind === 'CRIPTO' ? searchCrypto(query) : searchStocks(kind, query);
+    .map((row) => toProviderSymbol(row.symbol, row.currency_base, null, 'USD'));
 }
 
 // --- Precios (endpoints de mercado, 1 crédito por símbolo) ---
@@ -142,12 +134,11 @@ interface PriceRow {
   price?: string;
 }
 
-/** Último precio de un símbolo. Lanza si el símbolo no existe o no hay créditos. */
-export async function fetchPrice(symbol: string): Promise<number> {
-  const data = await tdGet<PriceRow>('/price', { symbol });
+async function fetchPrice(ref: SymbolRef): Promise<number> {
+  const data = await tdGet<PriceRow>('/price', { symbol: ref.symbol });
   const price = Number(data.price);
   if (!Number.isFinite(price) || price <= 0) {
-    throw new Error(`Twelve Data no devolvió precio para ${symbol}`);
+    throw new Error(`Twelve Data no devolvió precio para ${ref.symbol}`);
   }
   return price;
 }
@@ -161,9 +152,9 @@ function sleep(ms: number): Promise<void> {
  * de créditos por minuto (chunks de a 8, con espera entre chunks). Los
  * símbolos que fallan (delisted, sin cobertura) se omiten del resultado.
  */
-export async function fetchPrices(symbols: string[]): Promise<Map<string, number>> {
+async function fetchPrices(refs: SymbolRef[]): Promise<Map<string, number>> {
   const result = new Map<string, number>();
-  const unique = [...new Set(symbols)];
+  const unique = [...new Set(refs.map((ref) => ref.symbol))];
   for (let i = 0; i < unique.length; i += CREDITS_PER_MINUTE) {
     if (i > 0) await sleep(62_000); // ventana nueva de créditos por minuto
     const chunk = unique.slice(i, i + CREDITS_PER_MINUTE);
@@ -176,7 +167,7 @@ export async function fetchPrices(symbols: string[]): Promise<Map<string, number
           : (data as Record<string, PriceRow>);
       for (const symbol of chunk) {
         const price = Number(bySymbol[symbol]?.price);
-        if (Number.isFinite(price) && price > 0) result.set(symbol, price);
+        if (Number.isFinite(price) && price > 0) result.set(refKey({ symbol, market: null }), price);
         else console.warn(`[twelvedata] Sin precio para ${symbol}`);
       }
     } catch (err) {
@@ -186,23 +177,43 @@ export async function fetchPrices(symbols: string[]): Promise<Map<string, number
   return result;
 }
 
-export interface DailyClose {
-  date: Date;
-  price: number;
-}
-
 /**
  * Cierres diarios del último año (para el backfill del histórico al vincular).
  * 1 crédito. Devuelve en orden cronológico ascendente.
  */
-export async function fetchDailyCloses(symbol: string, outputsize = 365): Promise<DailyClose[]> {
+async function fetchDailyCloses(ref: SymbolRef): Promise<DailyClose[]> {
   const data = await tdGet<{ values?: Array<{ datetime: string; close: string }> }>('/time_series', {
-    symbol,
+    symbol: ref.symbol,
     interval: '1day',
-    outputsize: String(outputsize),
+    outputsize: String(BACKFILL_DAYS),
   });
   return (data.values ?? [])
     .map((row) => ({ date: new Date(`${row.datetime}T00:00:00.000Z`), price: Number(row.close) }))
     .filter((row) => Number.isFinite(row.price) && row.price > 0 && !Number.isNaN(row.date.getTime()))
     .sort((a, b) => a.date.getTime() - b.date.getTime());
 }
+
+/** Cotización del dólar oficial (par configurable). `null` si no hay dato. */
+export async function fetchOfficialUsdRate(): Promise<number | null> {
+  const prices = await fetchPrices([{ symbol: config.twelveDataUsdPair, market: null }]);
+  return prices.get(refKey({ symbol: config.twelveDataUsdPair, market: null })) ?? null;
+}
+
+export const twelveDataProvider: PriceProvider = {
+  source: 'TWELVE_DATA',
+  label: 'Twelve Data',
+  get enabled() {
+    return twelveDataEnabled;
+  },
+  covers(kind: SymbolSearchKind) {
+    return kind === 'ACCION' || kind === 'ETF' || kind === 'CRIPTO';
+  },
+  search(kind, query) {
+    if (kind === 'CRIPTO') return searchCrypto(query);
+    if (kind === 'ACCION' || kind === 'ETF') return searchStocks(kind, query);
+    return Promise.resolve([]);
+  },
+  fetchPrice,
+  fetchPrices,
+  fetchDailyCloses,
+};

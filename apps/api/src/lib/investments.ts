@@ -64,21 +64,32 @@ export interface InvestmentMetrics {
 /**
  * Métricas calculadas de un activo, en su propia moneda. Si nunca se cargó un
  * precio actual, se valúa al costo promedio (P&L = 0).
+ *
+ * `priceFactor` son los nominales que cubre un precio cotizado: 1 en acciones,
+ * CEDEARs y cripto; 100 en renta fija argentina, que cotiza cada 100 VN. Solo
+ * escala los importes: `avgCost` queda en precio cotizado, comparable con
+ * `currentPrice`, y `pnlPercent` es un cociente donde el factor se cancela.
  */
-export function investmentMetrics(currentPrice: number | null, ops: PositionOp[]): InvestmentMetrics {
+export function investmentMetrics(
+  currentPrice: number | null,
+  ops: PositionOp[],
+  priceFactor = 1,
+): InvestmentMetrics {
   // Invariante: las escrituras validan la secuencia, así que acá nunca debería
   // ser null; si igual pasa, se reporta la posición como vacía en vez de romper.
   const position = computePosition(ops) ?? { quantity: 0, investedCost: 0, avgCost: 0 };
+  const factor = priceFactor > 0 ? priceFactor : 1;
   const effectivePrice = currentPrice ?? position.avgCost;
-  const currentValue = position.quantity * effectivePrice;
-  const pnl = currentValue - position.investedCost;
+  const investedCost = position.investedCost / factor;
+  const currentValue = (position.quantity * effectivePrice) / factor;
+  const pnl = currentValue - investedCost;
   return {
     quantity: round8(position.quantity),
     avgCost: round8(position.avgCost),
-    investedCost: round2(position.investedCost),
+    investedCost: round2(investedCost),
     currentValue: round2(currentValue),
     pnl: round2(pnl),
-    pnlPercent: position.investedCost > 0 ? round2((pnl / position.investedCost) * 100) : 0,
+    pnlPercent: investedCost > 0 ? round2((pnl / investedCost) * 100) : 0,
     operationCount: ops.length,
   };
 }

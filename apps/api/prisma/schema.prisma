@@ -292,11 +292,19 @@ model Investment {
   /// valúa al costo promedio). Manual, o automático si el activo está vinculado.
   currentPrice   Decimal?       @db.Decimal(18, 8)
   priceUpdatedAt DateTime?
-  /// Símbolo en Twelve Data (ej: AAPL, BTC/USD). Null = activo manual.
+  /// Símbolo en el proveedor (ej: AAPL, BTC/USD, AL30D). Null = activo manual.
   /// Con valor, el precio se actualiza por cron y se bloquea la carga manual.
   providerSymbol   String?
-  /// Bolsa del símbolo en Twelve Data (ej: NASDAQ). Null para cripto.
+  /// Proveedor que mantiene el precio: TWELVE_DATA | DATA912. Null = manual.
+  providerSource   String?
+  /// Mercado dentro de data912: stocks | cedears | bonds | notes | corp.
+  /// Null para Twelve Data. Define de qué listado sale el precio y si hay histórico.
+  providerMarket   String?
+  /// Bolsa del símbolo (ej: NASDAQ, BYMA). Null para cripto.
   providerExchange String?
+  /// Nominales que cubre un precio cotizado. 1 salvo renta fija argentina, que
+  /// cotiza cada 100 VN: ahí los importes se dividen por este factor.
+  priceFactor      Int            @default(1)
   color          String         @default("#6366f1")
   icon           String?
   archivedAt     DateTime?

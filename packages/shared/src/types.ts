@@ -100,6 +100,15 @@ export interface Debt {
 export type InvestmentType = 'ACCION' | 'ETF' | 'CEDEAR' | 'CRIPTO' | 'FCI' | 'PLAZO_FIJO' | 'BONO' | 'OTRO';
 export type InvestmentOperationType = 'COMPRA' | 'VENTA';
 
+/** Proveedor de precios automáticos de un activo vinculado. */
+export type ProviderSource = 'TWELVE_DATA' | 'DATA912';
+
+/** Mercado dentro de data912. Define de qué listado sale el precio y si hay histórico. */
+export type ProviderMarket = 'stocks' | 'cedears' | 'bonds' | 'notes' | 'corp';
+
+/** Tipos de activo con buscador de símbolos. El resto se carga a mano. */
+export type SymbolSearchKind = 'ACCION' | 'ETF' | 'CRIPTO' | 'CEDEAR' | 'BONO';
+
 export interface Investment {
   id: string;
   name: string;
@@ -109,25 +118,32 @@ export interface Investment {
   /** Código de moneda del activo (ej: USD). Null = moneda base de la app. */
   currency: string | null;
   /** Precio unitario actual; null hasta la primera actualización. Manual, o
-   * automático (cron diario) si el activo está vinculado a Twelve Data. */
+   * automático (cron diario) si el activo está vinculado a un proveedor. */
   currentPrice: number | null;
   priceUpdatedAt: string | null;
-  /** Símbolo en Twelve Data (ej: AAPL, BTC/USD). Null = activo manual.
+  /** Símbolo en el proveedor (ej: AAPL, BTC/USD, GGAL). Null = activo manual.
    * Con valor, el precio es automático y se bloquea la carga manual. */
   providerSymbol: string | null;
-  /** Bolsa del símbolo (ej: NASDAQ). Null para cripto o activos manuales. */
+  /** Proveedor que mantiene el precio. Null en activos manuales. */
+  providerSource: ProviderSource | null;
+  /** Mercado dentro de data912. Null para Twelve Data y activos manuales. */
+  providerMarket: ProviderMarket | null;
+  /** Bolsa del símbolo (ej: NASDAQ, BYMA). Null para cripto o activos manuales. */
   providerExchange: string | null;
+  /** Nominales que cubre un precio cotizado: 1, o 100 en renta fija.
+   * `currentPrice` y `avgCost` están en precio cotizado; los importes se dividen por él. */
+  priceFactor: number;
   color: string;
   icon: string | null;
   archivedAt: string | null;
   createdAt: string;
   /** Calculados del ledger de operaciones (no persistidos), en moneda del activo: */
   quantity: number;
-  /** Costo promedio ponderado por unidad (las ventas no lo alteran). */
+  /** Costo promedio ponderado, en precio cotizado (comparable con `currentPrice`). */
   avgCost: number;
-  /** Costo de la tenencia actual: avgCost * quantity. */
+  /** Costo de la tenencia actual: avgCost * quantity / priceFactor. */
   investedCost: number;
-  /** quantity * (currentPrice ?? avgCost). */
+  /** quantity * (currentPrice ?? avgCost) / priceFactor. */
   currentValue: number;
   /** currentValue - investedCost (no realizado). */
   pnl: number;
@@ -176,12 +192,19 @@ export interface InvestmentsSummary {
   missingRates: string[];
 }
 
+/** Qué proveedores de precio automático tiene configurados la API. */
+export interface ProviderAvailability {
+  /** Acciones/ETFs de EE.UU. y cripto. Requiere TWELVE_DATA_API_KEY. */
+  twelveData: boolean;
+  /** Mercado argentino y dólar MEP/CCL. Sin API key: activo salvo DATA912_ENABLED=false. */
+  data912: boolean;
+}
+
 export interface InvestmentsOverview {
   items: Investment[];
   rates: ExchangeRate[];
   summary: InvestmentsSummary;
-  /** true si la API tiene configurada la integración con Twelve Data. */
-  providerEnabled: boolean;
+  providers: ProviderAvailability;
 }
 
 export interface InvestmentInput {
@@ -191,24 +214,35 @@ export interface InvestmentInput {
   currency?: string | null;
   color?: string;
   icon?: string | null;
-  /** Símbolo de Twelve Data para precio automático (ej: AAPL, BTC/USD). */
+  /** Símbolo del proveedor para precio automático (ej: AAPL, BTC/USD, AL30D). */
   providerSymbol?: string | null;
+  /** Obligatorio junto con `providerSymbol`. */
+  providerSource?: ProviderSource | null;
+  /** Obligatorio cuando `providerSource` es DATA912. */
+  providerMarket?: ProviderMarket | null;
   providerExchange?: string | null;
+  /** Solo en activos manuales (1 o 100). En vinculados lo deriva el servidor del mercado. */
+  priceFactor?: number;
 }
 
-/** Resultado del buscador de símbolos de Twelve Data. */
+/** Resultado del buscador de símbolos. */
 export interface SymbolSearchResult {
-  /** Símbolo con el que se piden precios (ej: AAPL, BTC/USD). */
+  /** Símbolo con el que se piden precios (ej: AAPL, BTC/USD, AL30D). */
   symbol: string;
+  /** Nombre del instrumento. data912 no publica nombres: cae al propio símbolo. */
   name: string;
-  /** Bolsa (ej: NASDAQ). Null para cripto. */
+  /** Bolsa (ej: NASDAQ, BYMA). Null para cripto. */
   exchange: string | null;
-  /** Moneda de cotización (ej: USD). */
+  /** Moneda sugerida para el formulario (ej: USD, ARS). Editable por el usuario. */
   currency: string;
+  source: ProviderSource;
+  market: ProviderMarket | null;
+  /** Informativo: el servidor lo recalcula al vincular. */
+  priceFactor: number;
 }
 
 export interface SymbolSearchResponse {
-  /** false si la API no tiene configurada la integración. */
+  /** false si ningún proveedor cubre ese tipo de activo. */
   enabled: boolean;
   items: SymbolSearchResult[];
 }

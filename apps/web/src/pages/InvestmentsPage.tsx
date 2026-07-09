@@ -4,6 +4,10 @@ import type {
   InvestmentOperationType,
   InvestmentsOverview,
   InvestmentType,
+  ProviderAvailability,
+  ProviderMarket,
+  ProviderSource,
+  SymbolSearchKind,
   SymbolSearchResult,
 } from '@myfinance/shared';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
@@ -36,11 +40,63 @@ const TYPE_FALLBACK_ICON: Record<InvestmentType, string> = {
   OTRO: '💼',
 };
 
-/** Tipos con buscador de símbolos de Twelve Data (lo que cubre el plan free). */
-type SearchableType = 'ACCION' | 'ETF' | 'CRIPTO';
+const SOURCE_LABELS: Record<ProviderSource, string> = {
+  TWELVE_DATA: 'Twelve Data',
+  DATA912: 'data912',
+};
 
-function searchableType(type: InvestmentType): SearchableType | null {
-  return type === 'ACCION' || type === 'ETF' || type === 'CRIPTO' ? type : null;
+const MARKET_LABELS: Record<ProviderMarket, string> = {
+  stocks: 'Acciones BYMA',
+  cedears: 'CEDEARs',
+  bonds: 'Bonos',
+  notes: 'Letras',
+  corp: 'ONs',
+};
+
+const SEARCH_PLACEHOLDERS: Record<SymbolSearchKind, string> = {
+  ACCION: 'Ej: AAPL, Apple, GGAL…',
+  ETF: 'Ej: SPY, QQQ…',
+  CRIPTO: 'Ej: BTC, Ethereum…',
+  CEDEAR: 'Ej: AAPL, NVDA, MELI…',
+  BONO: 'Ej: AL30, GD30D, TX26…',
+};
+
+/** Tipos de activo con buscador de símbolos. El resto se carga a mano. */
+function searchKind(type: InvestmentType): SymbolSearchKind | null {
+  switch (type) {
+    case 'ACCION':
+    case 'ETF':
+    case 'CRIPTO':
+    case 'CEDEAR':
+    case 'BONO':
+      return type;
+    default:
+      return null;
+  }
+}
+
+/** Qué proveedor cubre cada tipo: las acciones consultan los dos (NASDAQ y BYMA). */
+function kindEnabled(kind: SymbolSearchKind, providers: ProviderAvailability): boolean {
+  switch (kind) {
+    case 'ACCION':
+      return providers.twelveData || providers.data912;
+    case 'ETF':
+    case 'CRIPTO':
+      return providers.twelveData;
+    case 'CEDEAR':
+    case 'BONO':
+      return providers.data912;
+  }
+}
+
+const NO_PROVIDERS: ProviderAvailability = { twelveData: false, data912: false };
+
+/** Cotizaciones que mantiene el cron y no se editan a mano. */
+function autoRateLabel(currency: string, providers: ProviderAvailability): string | null {
+  if (providers.twelveData && currency === 'USD') return 'OFICIAL · auto';
+  if (providers.data912 && currency === 'USDMEP') return 'MEP · auto';
+  if (providers.data912 && currency === 'USDCCL') return 'CCL · auto';
+  return null;
 }
 
 const DONUT_R = 42;
@@ -86,9 +142,13 @@ interface AssetFormState {
   currency: string;
   icon: string;
   color: string;
-  /** Símbolo de Twelve Data vinculado (precio automático), o null = manual. */
+  /** Símbolo vinculado (precio automático), o null = manual. */
   providerSymbol: string | null;
+  providerSource: ProviderSource | null;
+  providerMarket: ProviderMarket | null;
   providerExchange: string | null;
+  /** 100 en renta fija (cotiza cada 100 nominales), 1 en el resto. */
+  priceFactor: number;
 }
 
 const EMPTY_ASSET_FORM: AssetFormState = {
@@ -100,7 +160,10 @@ const EMPTY_ASSET_FORM: AssetFormState = {
   icon: '',
   color: COLOR_PALETTE[0],
   providerSymbol: null,
+  providerSource: null,
+  providerMarket: null,
   providerExchange: null,
+  priceFactor: 1,
 };
 
 export function InvestmentsPage() {
@@ -132,13 +195,14 @@ export function InvestmentsPage() {
   const { data, error: loadError, refresh } = useCached<InvestmentsOverview>('investments', () =>
     api.listInvestments(),
   );
-  const providerEnabled = data?.providerEnabled ?? false;
+  const providers = data?.providers ?? NO_PROVIDERS;
 
-  // Buscador de símbolos con debounce (los endpoints de búsqueda no gastan créditos).
-  const formSearchType = assetForm ? searchableType(assetForm.type) : null;
+  // Buscador de símbolos con debounce (ningún proveedor cobra créditos por buscar).
+  const formSearchKind = assetForm ? searchKind(assetForm.type) : null;
+  const searchAvailable = formSearchKind !== null && kindEnabled(formSearchKind, providers);
   useEffect(() => {
     const q = symbolQuery.trim();
-    if (!providerEnabled || !formSearchType || q.length < 2) {
+    if (!searchAvailable || !formSearchKind || q.length < 2) {
       setSymbolResults([]);
       setSymbolSearching(false);
       return;
@@ -147,7 +211,7 @@ export function InvestmentsPage() {
     let cancelled = false;
     const handle = setTimeout(async () => {
       try {
-        const res = await api.searchInvestmentSymbols(formSearchType, q);
+        const res = await api.searchInvestmentSymbols(formSearchKind, q);
         if (!cancelled) setSymbolResults(res.items);
       } catch {
         if (!cancelled) setSymbolResults([]);
@@ -159,7 +223,7 @@ export function InvestmentsPage() {
       cancelled = true;
       clearTimeout(handle);
     };
-  }, [symbolQuery, formSearchType, providerEnabled]);
+  }, [symbolQuery, formSearchKind, searchAvailable]);
 
   function openAssetForm(form: AssetFormState) {
     setSymbolQuery('');
@@ -176,7 +240,10 @@ export function InvestmentsPage() {
       symbol: result.symbol.split('/')[0],
       currency: result.currency,
       providerSymbol: result.symbol,
+      providerSource: result.source,
+      providerMarket: result.market,
       providerExchange: result.exchange,
+      priceFactor: result.priceFactor,
     });
     setSymbolQuery('');
     setSymbolResults([]);
@@ -184,7 +251,13 @@ export function InvestmentsPage() {
 
   function onUnlinkSymbol() {
     if (!assetForm) return;
-    setAssetForm({ ...assetForm, providerSymbol: null, providerExchange: null });
+    setAssetForm({
+      ...assetForm,
+      providerSymbol: null,
+      providerSource: null,
+      providerMarket: null,
+      providerExchange: null,
+    });
   }
 
   function invalidateAfterMutation() {
@@ -219,7 +292,11 @@ export function InvestmentsPage() {
       icon: assetForm.icon || null,
       color: assetForm.color,
       providerSymbol: assetForm.providerSymbol,
+      providerSource: assetForm.providerSource,
+      providerMarket: assetForm.providerMarket,
       providerExchange: assetForm.providerExchange,
+      // En los vinculados lo recalcula el servidor según el mercado.
+      priceFactor: assetForm.priceFactor,
     };
     run(async () => {
       if (assetForm.id) await api.updateInvestment(assetForm.id, input);
@@ -238,7 +315,10 @@ export function InvestmentsPage() {
       icon: inv.icon ?? '',
       color: inv.color,
       providerSymbol: inv.providerSymbol,
+      providerSource: inv.providerSource,
+      providerMarket: inv.providerMarket,
       providerExchange: inv.providerExchange,
+      priceFactor: inv.priceFactor,
     });
   }
 
@@ -348,6 +428,21 @@ export function InvestmentsPage() {
   const archivedAssets = items.filter((i) => i.archivedAt);
   const rateMap = useMemo(() => new Map(rates.map((r) => [r.currency, r.rate])), [rates]);
 
+  // Panel de dólares: oficial (Twelve Data) contra MEP y CCL (data912), con la brecha.
+  const dolares = useMemo(() => {
+    const oficial = rateMap.get('USD') ?? null;
+    const gap = (value: number) => (oficial !== null && oficial > 0 ? (value / oficial - 1) * 100 : null);
+    const tiles = [
+      { key: 'USD', label: 'Oficial', value: oficial, gap: null as number | null },
+      { key: 'USDMEP', label: 'MEP', value: rateMap.get('USDMEP') ?? null, gap: null as number | null },
+      { key: 'USDCCL', label: 'CCL', value: rateMap.get('USDCCL') ?? null, gap: null as number | null },
+    ].filter((tile) => tile.value !== null);
+    for (const tile of tiles) {
+      if (tile.key !== 'USD' && tile.value !== null) tile.gap = gap(tile.value);
+    }
+    return tiles;
+  }, [rateMap]);
+
   // Distribución del valor actual por tipo de activo, en moneda base (excluye monedas sin TC).
   const distribution = useMemo(() => {
     const byType = new Map<InvestmentType, number>();
@@ -398,6 +493,7 @@ export function InvestmentsPage() {
             <div className="mf-caption">
               {TYPE_LABELS[inv.type]}
               {inv.currency ? ` · ${inv.currency}` : ''}
+              {inv.priceFactor === 100 ? ' · cada 100 VN' : ''}
             </div>
           </div>
           <button type="button" className="mf-icon-btn" aria-label="Editar activo" onClick={() => onEditAsset(inv)}>
@@ -458,7 +554,9 @@ export function InvestmentsPage() {
                 <span
                   className="mf-delta-badge"
                   style={{ background: 'var(--accent-weak)', fontSize: 10.5 }}
-                  title={`Precio automático (${inv.providerSymbol})${
+                  title={`Precio automático desde ${
+                    inv.providerSource ? SOURCE_LABELS[inv.providerSource] : 'el proveedor'
+                  } (${inv.providerSymbol})${
                     inv.priceUpdatedAt ? ` · actualizado ${formatDate(inv.priceUpdatedAt)}` : ''
                   }`}
                 >
@@ -522,7 +620,11 @@ export function InvestmentsPage() {
     );
   }
 
-  const opTotal = Number(opQuantity) > 0 && Number(opPrice) > 0 ? Number(opQuantity) * Number(opPrice) : null;
+  // En renta fija el precio cotiza cada 100 nominales: el importe se divide por el factor.
+  const opTotal =
+    opTarget && Number(opQuantity) > 0 && Number(opPrice) > 0
+      ? (Number(opQuantity) * Number(opPrice)) / opTarget.priceFactor
+      : null;
 
   return (
     <>
@@ -620,15 +722,48 @@ export function InvestmentsPage() {
           </div>
           <p className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
             Valor de cada moneda extranjera en moneda base. Se usa para consolidar los totales.
-            {providerEnabled && ' El USD (oficial) se actualiza solo a diario; para MEP o blue creá otra moneda (ej: USDMEP).'}
+            {providers.twelveData && ' El USD (oficial) se actualiza solo a diario.'}
+            {providers.data912 && ' El MEP y el CCL también (USDMEP, USDCCL).'}
           </p>
+
+          {dolares.length > 0 && (
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              {dolares.map((tile) => (
+                <div
+                  key={tile.key}
+                  style={{
+                    flex: 1,
+                    background: 'var(--surface-2)',
+                    borderRadius: 8,
+                    padding: '8px 10px',
+                  }}
+                >
+                  <div className="mf-caption" style={{ marginTop: 0 }}>
+                    {tile.label}
+                  </div>
+                  <div className="mono" style={{ fontWeight: 600, fontSize: 15 }}>
+                    $ {tile.value!.toLocaleString('es-AR', { maximumFractionDigits: 2 })}
+                  </div>
+                  {tile.gap !== null && (
+                    <div className="muted" style={{ fontSize: 11 }}>
+                      brecha {tile.gap >= 0 ? '+' : ''}
+                      {tile.gap.toFixed(1)}%
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
           {rates.length === 0 && <p className="muted">Sin cotizaciones cargadas.</p>}
-          {rates.map((rate) => (
+          {rates.map((rate) => {
+            const autoLabel = autoRateLabel(rate.currency, providers);
+            return (
             <div className="mf-list-row" key={rate.id}>
-              <div className="mono" style={{ fontWeight: 600, width: 52 }}>
+              <div className="mono" style={{ fontWeight: 600, width: 62 }}>
                 {rate.currency}
               </div>
-              {providerEnabled && rate.currency === 'USD' ? (
+              {autoLabel !== null ? (
                 <>
                   <div className="mono" style={{ flex: 1 }}>
                     $ {rate.rate.toLocaleString('es-AR', { maximumFractionDigits: 2 })}
@@ -636,9 +771,9 @@ export function InvestmentsPage() {
                   <span
                     className="mf-delta-badge"
                     style={{ background: 'var(--accent-weak)', fontSize: 10.5 }}
-                    title="Dólar oficial, actualizado a diario desde Twelve Data. Para MEP o blue creá otra moneda (ej: USDMEP)."
+                    title={`Se actualiza a diario desde ${rate.currency === 'USD' ? 'Twelve Data' : 'data912'}.`}
                   >
-                    OFICIAL · auto
+                    {autoLabel}
                   </span>
                   <span className="muted" style={{ fontSize: 11.5 }}>
                     {formatDate(rate.updatedAt)}
@@ -689,7 +824,8 @@ export function InvestmentsPage() {
                 </>
               )}
             </div>
-          ))}
+            );
+          })}
           <form className="mf-rate-form" onSubmit={onSubmitRate}>
             <label className="field mf-rate-currency">
               Moneda
@@ -773,11 +909,16 @@ export function InvestmentsPage() {
                   value={assetForm.type}
                   onChange={(e) => {
                     const type = e.target.value as InvestmentType;
-                    // Al pasar a un tipo sin cobertura de Twelve Data, se desvincula.
+                    // El símbolo vinculado depende del tipo (un CEDEAR no vive en NASDAQ):
+                    // cambiar de tipo desvincula y hay que volver a buscar.
                     setAssetForm({
                       ...assetForm,
                       type,
-                      ...(searchableType(type) ? {} : { providerSymbol: null, providerExchange: null }),
+                      providerSymbol: null,
+                      providerSource: null,
+                      providerMarket: null,
+                      providerExchange: null,
+                      priceFactor: 1,
                     });
                   }}
                 >
@@ -805,13 +946,15 @@ export function InvestmentsPage() {
                   onChange={(e) => setAssetForm({ ...assetForm, currency: e.target.value.toUpperCase() })}
                   maxLength={8}
                   placeholder="Base"
-                  disabled={assetForm.providerSymbol !== null}
+                  // Twelve Data devuelve la moneda real; en data912 es una sugerencia del
+                  // sufijo de la especie (AL30 = ARS, AL30D = USD) y se puede corregir.
+                  disabled={assetForm.providerSource === 'TWELVE_DATA'}
                 />
               </label>
             </div>
 
-            {/* Vinculación con Twelve Data: buscador para tipos con cobertura */}
-            {providerEnabled && formSearchType && (
+            {/* Vinculación con un proveedor: buscador para los tipos con cobertura */}
+            {searchAvailable && formSearchKind && (
               assetForm.providerSymbol ? (
                 <div
                   className="mf-list-row"
@@ -826,7 +969,9 @@ export function InvestmentsPage() {
                       </span>
                     </div>
                     <div className="muted" style={{ fontSize: 11.5 }}>
-                      El precio se actualiza solo cada día al cierre del mercado.
+                      Precio automático desde {assetForm.providerSource ? SOURCE_LABELS[assetForm.providerSource] : ''}
+                      , cada día al cierre del mercado.
+                      {assetForm.priceFactor === 100 && ' Cotiza cada 100 nominales.'}
                     </div>
                   </div>
                   <button type="button" className="secondary" onClick={onUnlinkSymbol}>
@@ -836,13 +981,11 @@ export function InvestmentsPage() {
               ) : (
                 <div style={{ position: 'relative' }}>
                   <label className="field">
-                    Buscar en Twelve Data (precio automático)
+                    Buscar símbolo (precio automático)
                     <input
                       value={symbolQuery}
                       onChange={(e) => setSymbolQuery(e.target.value)}
-                      placeholder={
-                        formSearchType === 'CRIPTO' ? 'Ej: BTC, Ethereum…' : 'Ej: AAPL, Apple, SPY…'
-                      }
+                      placeholder={SEARCH_PLACEHOLDERS[formSearchKind]}
                       maxLength={40}
                     />
                   </label>
@@ -856,20 +999,28 @@ export function InvestmentsPage() {
                       )}
                       {symbolResults.map((result) => (
                         <button
-                          key={`${result.symbol}-${result.exchange ?? ''}`}
+                          key={`${result.source}-${result.market ?? ''}-${result.symbol}`}
                           type="button"
                           className="ghost"
-                          style={{ display: 'flex', width: '100%', gap: 8, textAlign: 'left' }}
+                          style={{ display: 'flex', width: '100%', gap: 8, textAlign: 'left', alignItems: 'center' }}
                           onClick={() => onPickSymbol(result)}
                         >
                           <span className="mono" style={{ fontWeight: 600, minWidth: 80 }}>
                             {result.symbol}
                           </span>
                           <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {result.name}
+                            {/* data912 no publica nombres: ahí `name` es el propio símbolo. */}
+                            {result.name === result.symbol ? '—' : result.name}
                           </span>
-                          <span className="muted" style={{ fontSize: 11.5 }}>
-                            {result.exchange ?? 'Cripto'} · {result.currency}
+                          <span className="muted" style={{ fontSize: 11.5, whiteSpace: 'nowrap' }}>
+                            {result.market ? MARKET_LABELS[result.market] : result.exchange ?? 'Cripto'} ·{' '}
+                            {result.currency}
+                          </span>
+                          <span
+                            className="mf-delta-badge"
+                            style={{ background: 'var(--surface-2)', fontSize: 10, whiteSpace: 'nowrap' }}
+                          >
+                            {SOURCE_LABELS[result.source]}
                           </span>
                         </button>
                       ))}
@@ -879,9 +1030,27 @@ export function InvestmentsPage() {
               )
             )}
 
+            {/* Renta fija manual: sin esto, la valuación de un bono sale 100x inflada. */}
+            {assetForm.type === 'BONO' && !assetForm.providerSymbol && (
+              <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
+                <input
+                  type="checkbox"
+                  checked={assetForm.priceFactor === 100}
+                  onChange={(e) => setAssetForm({ ...assetForm, priceFactor: e.target.checked ? 100 : 1 })}
+                />
+                Cotiza cada 100 nominales (bonos, letras, ONs)
+              </label>
+            )}
+
             <p className="muted" style={{ fontSize: 12, margin: 0 }}>
               {assetForm.providerSymbol
-                ? 'Activo vinculado: símbolo, moneda y precio los maneja Twelve Data. Desvinculalo para editarlos a mano.'
+                ? `Activo vinculado: el precio lo mantiene ${
+                    assetForm.providerSource ? SOURCE_LABELS[assetForm.providerSource] : 'el proveedor'
+                  }. Desvinculalo para cargarlo a mano.${
+                    assetForm.providerSource === 'DATA912'
+                      ? ' La moneda es una sugerencia según la especie: corregila si no coincide.'
+                      : ''
+                  }`
                 : 'Moneda vacía = moneda base de la app. Con moneda (ej: USD), cargá su cotización para consolidar totales.'}
             </p>
             <label className="field">
@@ -943,7 +1112,7 @@ export function InvestmentsPage() {
             </div>
             <div className="form-row">
               <label className="field" style={{ flex: 1 }}>
-                Cantidad
+                {opTarget.priceFactor === 100 ? 'Cantidad (nominales)' : 'Cantidad'}
                 <input
                   type="number"
                   min="0.00000001"
@@ -955,7 +1124,8 @@ export function InvestmentsPage() {
                 />
               </label>
               <label className="field" style={{ flex: 1 }}>
-                Precio unitario{opTarget.currency ? ` (${opTarget.currency})` : ''}
+                {opTarget.priceFactor === 100 ? 'Precio (cada 100 VN)' : 'Precio unitario'}
+                {opTarget.currency ? ` (${opTarget.currency})` : ''}
                 <input
                   type="number"
                   min="0.00000001"
@@ -1031,7 +1201,9 @@ function DetailBody({
         </div>
         {chart === null ? (
           <p className="muted" style={{ fontSize: 12.5 }}>
-            Actualizá el precio al menos dos veces para ver la evolución.
+            {detail.providerMarket === 'notes' || detail.providerMarket === 'corp'
+              ? 'Este instrumento no tiene histórico en data912: el gráfico se va completando con la actualización diaria.'
+              : 'Actualizá el precio al menos dos veces para ver la evolución.'}
           </p>
         ) : (
           <>
@@ -1098,7 +1270,7 @@ function DetailBody({
                 </div>
               </div>
               <span className="mono" style={{ fontWeight: 600 }}>
-                {formatAsset(op.quantity * op.unitPrice, detail.currency)}
+                {formatAsset((op.quantity * op.unitPrice) / detail.priceFactor, detail.currency)}
               </span>
               <button
                 type="button"

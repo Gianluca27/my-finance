@@ -39,7 +39,7 @@ Mobile app is a separate workspace, not part of root `npm install`/scripts:
 cd apps/mobile && npm install && npm start
 ```
 
-**No test suite exists in this repo currently** (no test runner configured, no `*.test.*`/`*.spec.*` files). Don't assume Jest/Vitest conventions — check before adding tests.
+Tests: `npm test` (root) runs Vitest in `apps/api` only. Coverage is deliberately narrow — pure functions with no DB or network (`lib/investments.test.ts`, `services/providers/data912.test.ts`). There's no test runner in `apps/web`/`apps/mobile` and no integration/route tests; don't assume they exist. `apps/api/tsconfig.json` excludes `src/**/*.test.ts` so `tsc` never emits them to `dist/`.
 
 ## Architecture
 
@@ -54,6 +54,22 @@ Prisma returns `Decimal` for money fields and `Date` objects; routes pass respon
 `packages/shared` is the single source of truth for request/response shapes and is imported unbuilt by both frontends. There's no OpenAPI spec or codegen — `ApiClient` methods in `packages/shared/src/api.ts` are the manually-maintained mirror of the Express routes. A route change is three edits: `packages/shared/src/types.ts` (+ `api.ts` method signature if the endpoint shape changed) -> `apps/api/src/routes/*.ts` -> callers in `apps/web`/`apps/mobile`.
 
 `apps/web/src/api.ts` and `apps/mobile/src/api.ts` each instantiate their own `ApiClient` with platform-specific token storage (`localStorage` vs `AsyncStorage`) and `onUnauthorized` handling — the client class itself is platform-agnostic (plain `fetch`).
+
+### Investment price providers
+
+`services/providers/` holds one adapter per price source behind the `PriceProvider` interface (`types.ts`), resolved through a registry (`index.ts`) — the cron (`jobs/prices.ts`) and `routes/investments.ts` never name a provider directly, they dispatch on the `Investment.providerSource` column.
+
+- **`twelveData.ts`** — US stocks/ETFs + crypto. Needs `TWELVE_DATA_API_KEY`; the free plan meters market endpoints (8 credits/min), so `fetchPrices` chunks and sleeps. Also owns the official USD rate.
+- **`data912.ts`** — Argentine market (`stocks`, `cedears`, `bonds`, `notes`, `corp`) + implied MEP/CCL. Public, no key, on unless `DATA912_ENABLED=false`. One request returns a whole market, so the five live lists are cached in memory and both search and price are `Map` lookups. Only `stocks`/`cedears`/`bonds` have an OHLC endpoint — `notes`/`corp` return `[]` from `fetchDailyCloses` and their charts fill up from the daily cron instead.
+
+Both are optional and fail independently: each block of `runPricesJob` has its own try/catch, and a missing provider degrades that asset class to manual pricing rather than throwing.
+
+Two invariants that are easy to break:
+
+- **`Investment.priceFactor`** is the number of nominals one quoted price covers: `1` everywhere except Argentine fixed income (`bonds`/`notes`/`corp`), which quotes per 100 VN. `investmentMetrics()` divides only the *monetary* outputs (`investedCost`, `currentValue`) by it — `avgCost` stays in quoted-price space so it remains comparable with `currentPrice`, and the factor cancels out of `pnlPercent`. The server derives it from `providerMarket` for linked assets and never trusts the client's value.
+- **Currency of a data912 symbol is a suggestion, not data.** The same instrument trades in pesos and dollars under different tickers (`AL30` / `AL30D` / `AL30C`), but a peso ticker can itself end in `D` (`YPFD` is YPF Clase D; `AMD`, `C`, `HSBC` are CEDEARs). `suggestCurrency()` only calls a symbol USD when its base species exists *and* the price ratio looks like a MEP/CCL — see its doc comment before touching it.
+
+`ExchangeRate` rows for `USD` (Twelve Data), `USDMEP` and `USDCCL` (data912) are cron-owned and rejected by `assertRateEditable`.
 
 ### Recurring expenses & notifications
 

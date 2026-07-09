@@ -7,34 +7,75 @@ import { requireAuth } from '../middleware/auth';
 import { asyncHandler, HttpError } from '../middleware/error';
 import { prisma } from '../prisma';
 import {
-  fetchDailyCloses,
-  fetchPrice,
+  DOLAR_CURRENCIES,
+  data912Enabled,
+  getProvider,
+  priceFactorFor,
+  providerAvailability,
+  providersFor,
   searchSymbols,
   twelveDataEnabled,
   type DailyClose,
-} from '../services/twelveData';
+  type ProviderMarket,
+  type ProviderSource,
+  type SymbolRef,
+} from '../services/providers';
 
 const router = Router();
 router.use(requireAuth);
 
 const typeEnum = z.enum(['ACCION', 'ETF', 'CEDEAR', 'CRIPTO', 'FCI', 'PLAZO_FIJO', 'BONO', 'OTRO']);
+const sourceEnum = z.enum(['TWELVE_DATA', 'DATA912']);
+const marketEnum = z.enum(['stocks', 'cedears', 'bonds', 'notes', 'corp']);
 
-const createSchema = z.object({
+const baseSchema = z.object({
   name: z.string().min(1).max(100),
   type: typeEnum,
   symbol: z.string().trim().max(20).nullable().optional(),
   currency: z.string().trim().max(8).nullable().optional(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   icon: z.string().max(16).nullable().optional(),
-  /// Símbolo de Twelve Data (ej: AAPL, BTC/USD). Con valor = precio automático.
+  /// Símbolo del proveedor (ej: AAPL, BTC/USD, AL30D). Con valor = precio automático.
   providerSymbol: z.string().trim().max(30).nullable().optional(),
+  providerSource: sourceEnum.nullable().optional(),
+  providerMarket: marketEnum.nullable().optional(),
   providerExchange: z.string().trim().max(40).nullable().optional(),
+  /// Solo para activos manuales; en los vinculados lo deriva el mercado.
+  priceFactor: z.union([z.literal(1), z.literal(100)]).optional(),
 });
 
-const updateSchema = createSchema.partial().extend({
-  /// true archiva (setea archivedAt), false desarchiva.
-  archived: z.boolean().optional(),
-});
+/** Un símbolo vinculado no sirve sin saber a qué proveedor (y mercado) pedirle el precio. */
+function refineProviderLink(
+  input: { providerSymbol?: string | null; providerSource?: ProviderSource | null; providerMarket?: ProviderMarket | null },
+  ctx: z.RefinementCtx,
+): void {
+  if (!input.providerSymbol?.trim()) return;
+  if (!input.providerSource) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['providerSource'],
+      message: 'providerSource es obligatorio cuando se envía providerSymbol',
+    });
+    return;
+  }
+  if (input.providerSource === 'DATA912' && !input.providerMarket) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['providerMarket'],
+      message: 'providerMarket es obligatorio cuando providerSource es DATA912',
+    });
+  }
+}
+
+const createSchema = baseSchema.superRefine(refineProviderLink);
+
+const updateSchema = baseSchema
+  .partial()
+  .extend({
+    /// true archiva (setea archivedAt), false desarchiva.
+    archived: z.boolean().optional(),
+  })
+  .superRefine(refineProviderLink);
 
 const operationSchema = z.object({
   type: z.enum(['COMPRA', 'VENTA']),
@@ -91,8 +132,18 @@ function fetchOps(investmentId: string) {
 function toInvestmentJson(investment: Investment, ops: PositionOp[]) {
   return {
     ...(serialize(investment) as Record<string, unknown>),
-    ...investmentMetrics(investment.currentPrice?.toNumber() ?? null, ops),
+    ...investmentMetrics(investment.currentPrice?.toNumber() ?? null, ops, investment.priceFactor),
   };
+}
+
+/** El `providerSource` viaja como String en la DB; acá se valida contra el registry. */
+function providerLabel(source: string | null): string {
+  const parsed = sourceEnum.safeParse(source);
+  return parsed.success ? getProvider(parsed.data).label : 'el proveedor';
+}
+
+function toRef(symbol: string, market: string | null): SymbolRef {
+  return { symbol, market: market as ProviderMarket | null };
 }
 
 /** Detalle completo: métricas + operaciones (recientes primero) + histórico de precios. */
@@ -118,20 +169,40 @@ async function findOwned(userId: string, id: string): Promise<Investment> {
 }
 
 /**
- * Datos de Twelve Data para vincular un activo: precio actual + 1 año de
- * cierres diarios (backfill del histórico). Se pide ANTES de escribir, así un
- * símbolo inválido o un límite de créditos no deja el activo a medio vincular.
+ * Datos del proveedor para vincular un activo: precio actual + 1 año de cierres
+ * diarios (backfill del histórico). Se pide ANTES de escribir, así un símbolo
+ * inválido o un límite de créditos no deja el activo a medio vincular.
+ *
+ * El precio es obligatorio; el histórico es best-effort: `notes` y `corp` no lo
+ * tienen y algún ticker suelto puede no estar en el endpoint OHLC. En esos casos
+ * el gráfico arranca vacío y se llena con los snapshots del cron.
  */
-async function fetchProviderData(providerSymbol: string): Promise<{ price: number; closes: DailyClose[] }> {
-  if (!twelveDataEnabled) {
-    throw new HttpError(400, 'La integración con Twelve Data no está configurada.');
+async function fetchProviderData(
+  source: ProviderSource,
+  ref: SymbolRef,
+): Promise<{ price: number; closes: DailyClose[] }> {
+  const provider = getProvider(source);
+  if (!provider.enabled) {
+    throw new HttpError(400, `La integración con ${provider.label} no está configurada.`);
   }
-  try {
-    const [price, closes] = await Promise.all([fetchPrice(providerSymbol), fetchDailyCloses(providerSymbol)]);
-    return { price, closes };
-  } catch (err) {
-    throw new HttpError(400, `No se pudo vincular ${providerSymbol}: ${err instanceof Error ? err.message : 'error inesperado'}`);
+  const [priceResult, closesResult] = await Promise.allSettled([
+    provider.fetchPrice(ref),
+    provider.fetchDailyCloses(ref),
+  ]);
+  if (priceResult.status === 'rejected') {
+    const reason = priceResult.reason;
+    throw new HttpError(
+      400,
+      `No se pudo vincular ${ref.symbol}: ${reason instanceof Error ? reason.message : 'error inesperado'}`,
+    );
   }
+  if (closesResult.status === 'rejected') {
+    console.warn(`[investments] Sin histórico para ${ref.symbol}:`, closesResult.reason);
+  }
+  return {
+    price: priceResult.value,
+    closes: closesResult.status === 'fulfilled' ? closesResult.value : [],
+  };
 }
 
 /** Reemplaza el histórico del rango backfilleado por los cierres oficiales. */
@@ -150,18 +221,19 @@ function replaceSnapshotsWithCloses(investmentId: string, closes: DailyClose[]) 
 // --- Búsqueda de símbolos (antes de '/:id' para que 'symbols' no matchee como id) ---
 
 const searchQuerySchema = z.object({
-  type: z.enum(['ACCION', 'ETF', 'CRIPTO']),
+  type: z.enum(['ACCION', 'ETF', 'CRIPTO', 'CEDEAR', 'BONO']),
   q: z.string().trim().min(1).max(40),
 });
 
 router.get(
   '/symbols/search',
   asyncHandler(async (req, res) => {
-    if (!twelveDataEnabled) {
+    const { type, q } = searchQuerySchema.parse(req.query);
+    // ACCION consulta los dos proveedores (NASDAQ y BYMA); el resto, uno solo.
+    if (providersFor(type).length === 0) {
       res.json({ enabled: false, items: [] });
       return;
     }
-    const { type, q } = searchQuerySchema.parse(req.query);
     const items = await searchSymbols(type, q);
     res.json({ enabled: true, items });
   }),
@@ -169,10 +241,13 @@ router.get(
 
 // --- Cotizaciones (antes de '/:id' para que 'rates' no matchee como id) ---
 
-/** El USD (oficial) lo mantiene el cron de Twelve Data: no se toca a mano. */
+/** El dólar oficial (Twelve Data) y el MEP/CCL (data912) los mantiene el cron: no se tocan a mano. */
 function assertRateEditable(currency: string): void {
   if (twelveDataEnabled && currency === 'USD') {
-    throw new HttpError(400, 'La cotización USD (oficial) se actualiza automáticamente. Para otro valor (MEP, blue) creá otra moneda, ej: USDMEP.');
+    throw new HttpError(400, 'La cotización USD (oficial) se actualiza automáticamente desde Twelve Data.');
+  }
+  if (data912Enabled && (currency === DOLAR_CURRENCIES.mep || currency === DOLAR_CURRENCIES.ccl)) {
+    throw new HttpError(400, `La cotización ${currency} se actualiza automáticamente desde data912.`);
   }
 }
 
@@ -250,7 +325,7 @@ router.get(
       items: items.map(({ json }) => json),
       rates: serialize(rates),
       summary,
-      providerEnabled: twelveDataEnabled,
+      providers: providerAvailability(),
     });
   }),
 );
@@ -268,15 +343,28 @@ router.post(
   asyncHandler(async (req, res) => {
     const input = createSchema.parse(req.body);
     const providerSymbol = normalizeCode(input.providerSymbol) ?? null;
-    const provider = providerSymbol ? await fetchProviderData(providerSymbol) : null;
+    // El esquema garantiza que con símbolo viene source, y con DATA912 viene market.
+    const providerSource = providerSymbol ? input.providerSource! : null;
+    const providerMarket = providerSource === 'DATA912' ? input.providerMarket! : null;
+    const provider =
+      providerSymbol && providerSource
+        ? await fetchProviderData(providerSource, toRef(providerSymbol, providerMarket))
+        : null;
 
     const investment = await prisma.investment.create({
       data: {
-        ...input,
+        name: input.name,
+        type: input.type,
+        color: input.color,
+        icon: input.icon ?? null,
         symbol: normalizeCode(input.symbol) ?? null,
         currency: normalizeCode(input.currency) ?? null,
         providerSymbol,
+        providerSource,
+        providerMarket,
         providerExchange: providerSymbol ? input.providerExchange?.trim() || null : null,
+        // Vinculado: lo manda el mercado. Manual: lo elige el usuario (bonos cotizan cada 100 VN).
+        priceFactor: providerSymbol ? priceFactorFor(providerMarket) : input.priceFactor ?? 1,
         ...(provider ? { currentPrice: provider.price, priceUpdatedAt: new Date() } : {}),
         userId: req.auth!.userId,
       },
@@ -294,7 +382,16 @@ router.put(
     const input = updateSchema.parse(req.body);
     const existing = await findOwned(req.auth!.userId, req.params.id);
 
-    const { archived, ...fields } = input;
+    // Los campos de proveedor y el factor se manejan aparte: nunca se copian crudos.
+    const {
+      archived,
+      providerSymbol: _symbol,
+      providerSource: _source,
+      providerMarket: _market,
+      providerExchange: _exchange,
+      priceFactor: _factor,
+      ...fields
+    } = input;
     const data: Record<string, unknown> = { ...fields };
     if ('symbol' in input) data.symbol = normalizeCode(input.symbol) ?? null;
     if ('currency' in input) data.currency = normalizeCode(input.currency) ?? null;
@@ -302,18 +399,36 @@ router.put(
       data.archivedAt = archived ? existing.archivedAt ?? new Date() : null;
     }
 
-    // Vinculación/desvinculación con Twelve Data.
+    // Vinculación/desvinculación con un proveedor.
     let backfill: DailyClose[] | null = null;
     if ('providerSymbol' in input) {
       const providerSymbol = normalizeCode(input.providerSymbol) ?? null;
+      const providerSource = providerSymbol ? input.providerSource! : null;
+      const providerMarket = providerSource === 'DATA912' ? input.providerMarket! : null;
       data.providerSymbol = providerSymbol;
+      data.providerSource = providerSource;
+      data.providerMarket = providerMarket;
       data.providerExchange = providerSymbol ? input.providerExchange?.trim() || null : null;
-      if (providerSymbol && providerSymbol !== existing.providerSymbol) {
-        const provider = await fetchProviderData(providerSymbol);
-        data.currentPrice = provider.price;
-        data.priceUpdatedAt = new Date();
-        backfill = provider.closes;
+
+      if (providerSymbol && providerSource) {
+        data.priceFactor = priceFactorFor(providerMarket);
+        const rebind =
+          providerSymbol !== existing.providerSymbol ||
+          providerSource !== existing.providerSource ||
+          providerMarket !== existing.providerMarket;
+        if (rebind) {
+          const provider = await fetchProviderData(providerSource, toRef(providerSymbol, providerMarket));
+          data.currentPrice = provider.price;
+          data.priceUpdatedAt = new Date();
+          backfill = provider.closes;
+        }
+      } else {
+        // Desvinculado: el factor vuelve a ser del usuario (un bono manual sigue cotizando cada 100 VN).
+        data.priceFactor = input.priceFactor ?? existing.priceFactor;
       }
+    } else if (input.priceFactor !== undefined && existing.providerSymbol === null) {
+      // En un activo vinculado el factor lo manda el mercado: se ignora lo que llegue.
+      data.priceFactor = input.priceFactor;
     }
 
     const investment = await prisma.investment.update({ where: { id: existing.id }, data });
@@ -402,7 +517,10 @@ router.patch(
     const { price } = priceSchema.parse(req.body);
     const existing = await findOwned(req.auth!.userId, req.params.id);
     if (existing.providerSymbol) {
-      throw new HttpError(400, 'El precio de este activo se actualiza automáticamente desde Twelve Data. Desvinculalo para cargarlo a mano.');
+      throw new HttpError(
+        400,
+        `El precio de este activo se actualiza automáticamente desde ${providerLabel(existing.providerSource)}. Desvinculalo para cargarlo a mano.`,
+      );
     }
     const now = new Date();
     const [investment] = await prisma.$transaction([

@@ -16,4 +16,8 @@ export const config = {
   pricesCron: process.env.PRICES_CRON ?? '30 22 * * *',
   /// Par de forex para la cotización automática del dólar oficial en moneda base.
   twelveDataUsdPair: process.env.TWELVE_DATA_USD_PAIR ?? 'USD/ARS',
+  /// data912 (mercado argentino + dólar MEP/CCL) — pública y sin API key, así
+  /// que va activa por defecto. `DATA912_ENABLED=false` la apaga.
+  data912Enabled: process.env.DATA912_ENABLED !== 'false',
+  data912BaseUrl: process.env.DATA912_BASE_URL ?? 'https://data912.com',
 };

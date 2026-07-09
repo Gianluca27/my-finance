@@ -12,6 +12,7 @@
     "build": "npm run build -w @myfinance/shared && npm run build -w @myfinance/api && npm run build -w @myfinance/web",
     "dev:api": "npm run dev -w @myfinance/api",
     "dev:web": "npm run dev -w @myfinance/web",
+    "test": "npm run test -w @myfinance/api",
     "typecheck": "npm run typecheck -w @myfinance/shared && npm run typecheck -w @myfinance/api && npm run typecheck -w @myfinance/web",
     "db:migrate": "npm run db:migrate -w @myfinance/api",
     "db:seed": "npm run db:seed -w @myfinance/api"

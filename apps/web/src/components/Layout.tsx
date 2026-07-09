@@ -21,7 +21,6 @@ import {
   IcoTarget,
   IcoTrend,
   IcoWallet,
-  LogoMark,
 } from './icons';
 
 const NAV_ITEMS = [
@@ -113,12 +112,12 @@ export function Layout({ children }: { children: ReactNode }) {
     <div className="mf-app">
       <aside className="mf-side">
         <div className="mf-brand">
-          <span className="mf-brand-mark">
-            <LogoMark />
+          <span className="mf-brand-mark" aria-hidden="true">
+            $
           </span>
           <span className="mf-brand-titles">
             <span className="mf-brand-name">MyFinance</span>
-            <span className="mf-brand-tag">gestión privada</span>
+            <span className="mf-brand-tag">gestión // privada</span>
           </span>
         </div>
         {navList()}
@@ -160,6 +159,9 @@ export function Layout({ children }: { children: ReactNode }) {
               aria-label="Buscar movimientos"
             />
           </form>
+          <div className="mf-syschip" aria-hidden="true">
+            SYS.OK
+          </div>
           <button type="button" className="mf-add-btn" onClick={() => setTxModalOpen(true)}>
             <IcoPlus />
             <span className="mf-add-label">Registrar</span>

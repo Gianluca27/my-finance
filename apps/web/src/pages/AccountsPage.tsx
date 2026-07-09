@@ -18,6 +18,19 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('es-AR', { timeZone: 'UTC' });
 }
 
+/** Sigla de la cuenta para el avatar: "Banco Galicia" → BAN, "Mercado Pago" → MP. */
+function shortCode(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length >= 2) return words.slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+  return (words[0] ?? '?').slice(0, 3).toUpperCase();
+}
+
+function isThisMonth(iso: string): boolean {
+  const d = new Date(iso);
+  const now = new Date();
+  return d.getUTCFullYear() === now.getUTCFullYear() && d.getUTCMonth() === now.getUTCMonth();
+}
+
 export function AccountsPage() {
   const [error, setError] = useState<string | null>(null);
 
@@ -47,6 +60,7 @@ export function AccountsPage() {
 
   const list = accounts ?? [];
   const netWorth = list.reduce((sum, a) => sum + a.balance, 0);
+  const transfersThisMonth = (transfers ?? []).filter((t) => isThisMonth(t.date)).length;
 
   function invalidateAll() {
     invalidate('accounts');
@@ -178,32 +192,48 @@ export function AccountsPage() {
     <>
       {(error ?? loadError) && <div className="error-banner">{error ?? loadError}</div>}
 
-      <div className="card mf-recur-total-card" style={{ marginBottom: 16 }}>
-        <div className="mf-serif-title">Patrimonio neto</div>
-        <div className="mf-hero-balance" style={{ color: netWorth < 0 ? 'var(--neg)' : undefined }}>
-          {formatMoney(netWorth)}
+      <div className="mf-hero-card mf-accounts-hero">
+        <div className="mf-hero-glow" />
+        <div className="mf-hero-body">
+          <div className="mf-label">Patrimonio neto</div>
+          <div className="mf-hero-balance" style={{ color: netWorth < 0 ? 'var(--neg)' : undefined }}>
+            {formatMoney(netWorth)}
+          </div>
+          <div className="muted" style={{ fontSize: 13 }}>
+            Suma del saldo de todas tus cuentas
+          </div>
         </div>
-        <div className="muted" style={{ fontSize: 12.5 }}>Suma del saldo de todas tus cuentas</div>
+        <div className="mf-accounts-hero-stats">
+          <div>
+            <div className="mf-statfig">{list.length}</div>
+            <div className="mf-statcap">{list.length === 1 ? 'cuenta' : 'cuentas'}</div>
+          </div>
+          <div>
+            <div className="mf-statfig">{transfersThisMonth}</div>
+            <div className="mf-statcap">transfer · mes</div>
+          </div>
+        </div>
       </div>
 
       {!accounts ? (
         <p className="muted">Cargando…</p>
-      ) : list.length === 0 ? (
-        <p className="muted">Todavía no tenés cuentas.</p>
       ) : (
         <div className="mf-grid-2">
           {list.map((a) => (
-            <div className="card mf-budget-card" key={a.id}>
-              <div className="mf-budget-head">
-                <div className="mf-budget-icon" style={{ background: `${a.color}26` }}>
-                  {a.icon ?? TYPE_ICON[a.type]}
+            <div className="card mf-account-card" key={a.id}>
+              <div className="mf-account-head">
+                <div
+                  className="mf-mark"
+                  style={{ background: `${a.color}26`, borderColor: `${a.color}4d`, color: a.color }}
+                >
+                  {a.icon ?? shortCode(a.name)}
                 </div>
-                <div className="mf-budget-titles">
-                  <div className="mf-budget-name">
+                <div className="mf-account-titles">
+                  <div className="mf-account-name">
                     {a.name}
-                    {a.isDefault && <span className="muted"> · predeterminada</span>}
+                    {a.isDefault && <span className="mf-account-default"> · predet.</span>}
                   </div>
-                  <div className="mf-budget-status">{TYPE_LABEL[a.type]}</div>
+                  <div className="mf-caption">{TYPE_LABEL[a.type]}</div>
                 </div>
                 <button type="button" className="mf-icon-btn" aria-label="Editar cuenta" onClick={() => openEdit(a)}>
                   ✎
@@ -212,35 +242,39 @@ export function AccountsPage() {
                   <IcoTrash size={15} />
                 </button>
               </div>
-              <div className="mf-hero-balance" style={{ fontSize: 26, color: a.balance < 0 ? 'var(--neg)' : undefined }}>
+              <div className="mf-figure" style={{ color: a.balance < 0 ? 'var(--neg)' : undefined }}>
                 {formatMoney(a.balance)}
               </div>
-              <div className="mf-budget-foot">
-                <span className="muted">Saldo inicial {formatMoney(a.initialBalance)}</span>
+              <div className="mf-account-foot">
+                <span className="muted">
+                  Saldo inicial <span className="mono">{formatMoney(a.initialBalance)}</span>
+                </span>
                 {!a.isDefault && (
-                  <button type="button" className="ghost" onClick={() => onSetDefault(a)}>
+                  <button type="button" className="mf-link-btn" onClick={() => onSetDefault(a)}>
                     Predeterminar
                   </button>
                 )}
               </div>
             </div>
           ))}
+
+          <div className="mf-dashed-tile mf-dashed-tile--block">
+            <button type="button" className="mf-dashed-main" onClick={openCreate}>
+              <span className="mf-dashed-mark" aria-hidden="true">
+                <IcoPlus />
+              </span>
+              <span className="mf-dashed-title">Nueva cuenta</span>
+            </button>
+            <button type="button" className="mf-dashed-sub" onClick={openTransfer}>
+              o transferí entre cuentas existentes
+            </button>
+          </div>
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 12, marginTop: 16, flexWrap: 'wrap' }}>
-        <button type="button" className="mf-add-btn" onClick={openCreate}>
-          <IcoPlus />
-          <span className="mf-add-label">Nueva Cuenta</span>
-        </button>
-        <button type="button" className="mf-add-btn" onClick={openTransfer}>
-          <span className="mf-add-label">Transferir entre cuentas</span>
-        </button>
-      </div>
-
       {transfers && transfers.length > 0 && (
-        <div className="card" style={{ marginTop: 16 }}>
-          <div className="mf-serif-title" style={{ marginBottom: 12 }}>
+        <div className="card" style={{ marginTop: 14 }}>
+          <div className="mf-label mf-label--dot" style={{ marginBottom: 8 }}>
             Transferencias recientes
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

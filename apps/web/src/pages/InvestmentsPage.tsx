@@ -370,21 +370,24 @@ export function InvestmentsPage() {
   function renderAssetCard(inv: Investment) {
     const missingRate = inv.currency !== null && !rateMap.has(inv.currency);
     return (
-      <div className="card mf-budget-card" key={inv.id}>
-        <div className="mf-budget-head">
-          <div className="mf-budget-icon" style={{ background: `${inv.color}26` }}>
-            {inv.icon ?? TYPE_FALLBACK_ICON[inv.type]}
+      <div className="card mf-asset-card" key={inv.id}>
+        <div className="mf-account-head">
+          <div
+            className="mf-mark"
+            style={{ background: `${inv.color}26`, borderColor: `${inv.color}4d`, color: inv.color }}
+          >
+            {inv.icon ?? inv.symbol?.slice(0, 4) ?? TYPE_FALLBACK_ICON[inv.type]}
           </div>
-          <div className="mf-budget-titles">
-            <div className="mf-budget-name">
+          <div className="mf-account-titles">
+            <div className="mf-account-name">
               {inv.name}
               {inv.symbol && (
-                <span className="mono muted" style={{ marginLeft: 6, fontSize: 12 }}>
+                <span className="mono" style={{ marginLeft: 6, fontSize: 11, color: 'var(--text-4)' }}>
                   {inv.symbol}
                 </span>
               )}
             </div>
-            <div className="mf-budget-status">
+            <div className="mf-caption">
               {TYPE_LABELS[inv.type]}
               {inv.currency ? ` · ${inv.currency}` : ''}
             </div>
@@ -410,15 +413,15 @@ export function InvestmentsPage() {
           </div>
         )}
 
-        <div className="mf-budget-foot">
+        <div className="mf-asset-row">
           <span className="muted">Tenencia</span>
           <span className="mono">{formatQty(inv.quantity)}</span>
         </div>
-        <div className="mf-budget-foot">
+        <div className="mf-asset-row">
           <span className="muted">Costo promedio</span>
           <span className="mono">{formatPrice(inv.avgCost, inv.currency)}</span>
         </div>
-        <div className="mf-budget-foot">
+        <div className="mf-asset-row">
           <span className="muted">Precio actual</span>
           {priceEditId === inv.id ? (
             <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -469,13 +472,13 @@ export function InvestmentsPage() {
             </span>
           )}
         </div>
-        <div className="mf-budget-foot">
+        <div className="mf-asset-row">
           <span className="muted">Valor actual</span>
           <span className="mono" style={{ fontWeight: 600 }}>
             {formatAsset(inv.currentValue, inv.currency)}
           </span>
         </div>
-        <div className="mf-budget-foot">
+        <div className="mf-asset-row">
           <span className="muted">Resultado</span>
           <span className="mono" style={{ color: pnlColor(inv.pnl), fontWeight: 600 }}>
             {inv.pnl >= 0 ? '+' : ''}
@@ -524,27 +527,30 @@ export function InvestmentsPage() {
         </div>
       )}
 
-      <div className="mf-grid-3" style={{ marginBottom: 16 }}>
-        <div className="card">
-          <div className="mf-serif-title">Valor del portafolio</div>
-          <div className="mf-hero-balance" style={{ fontSize: 32 }}>
-            {formatMoney(summary?.totalValue ?? 0)}
+      <div className="mf-grid-3" style={{ marginBottom: 14 }}>
+        <div className="mf-hero-card">
+          <div className="mf-hero-glow" />
+          <div className="mf-hero-body">
+            <div className="mf-label">Valor del portafolio</div>
+            <div className="mf-figure mf-figure--stat" style={{ fontSize: 32 }}>
+              {formatMoney(summary?.totalValue ?? 0)}
+            </div>
           </div>
         </div>
         <div className="card">
-          <div className="mf-serif-title">Invertido</div>
-          <div className="mf-hero-balance" style={{ fontSize: 32 }}>
+          <div className="mf-label">Invertido</div>
+          <div className="mf-figure mf-figure--stat" style={{ fontSize: 32 }}>
             {formatMoney(summary?.totalInvested ?? 0)}
           </div>
         </div>
         <div className="card">
-          <div className="mf-serif-title">Resultado</div>
-          <div className="mf-hero-balance" style={{ fontSize: 32, color: pnlColor(summary?.pnl ?? 0) }}>
+          <div className="mf-label">Resultado</div>
+          <div className="mf-figure mf-figure--stat" style={{ fontSize: 32, color: pnlColor(summary?.pnl ?? 0) }}>
             {(summary?.pnl ?? 0) >= 0 ? '+' : ''}
             {formatMoney(summary?.pnl ?? 0)}
           </div>
           {summary && summary.totalInvested > 0 && (
-            <div className="muted" style={{ fontSize: 12.5 }}>
+            <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>
               {summary.pnlPercent >= 0 ? '+' : ''}
               {summary.pnlPercent}% sobre lo invertido
             </div>
@@ -552,9 +558,9 @@ export function InvestmentsPage() {
         </div>
       </div>
 
-      <div className="mf-grid-2" style={{ marginBottom: 16 }}>
+      <div className="mf-grid-2" style={{ marginBottom: 14 }}>
         <div className="card">
-          <div className="mf-serif-title" style={{ marginBottom: 16 }}>
+          <div className="mf-label mf-label--dot" style={{ marginBottom: 14 }}>
             Distribución por tipo
           </div>
           {distribution.segments.length === 0 ? (
@@ -599,7 +605,7 @@ export function InvestmentsPage() {
         </div>
 
         <div className="card">
-          <div className="mf-serif-title" style={{ marginBottom: 12 }}>
+          <div className="mf-label mf-label--dot" style={{ marginBottom: 6 }}>
             Cotizaciones
           </div>
           <p className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
@@ -1011,7 +1017,7 @@ function DetailBody({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div>
-        <div className="mf-serif-title" style={{ marginBottom: 8 }}>
+        <div className="mf-label" style={{ marginBottom: 8 }}>
           Precio
         </div>
         {chart === null ? (
@@ -1056,7 +1062,7 @@ function DetailBody({
       </div>
 
       <div>
-        <div className="mf-serif-title" style={{ marginBottom: 8 }}>
+        <div className="mf-label" style={{ marginBottom: 8 }}>
           Operaciones
         </div>
         {detail.operations.length === 0 ? (

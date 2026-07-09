@@ -142,7 +142,7 @@ export function DashboardPage() {
       <div className="mf-hero-card mf-b-balance">
         <div className="mf-hero-glow" />
         <div className="mf-hero-body">
-          <div className="mf-serif-title">Balance total</div>
+          <div className="mf-label" data-n="01">Balance total</div>
           <div className="mf-hero-balance">{formatMoney(data.balance)}</div>
           {prevTotal && balDelta !== null && (
             <div className="mf-hero-delta">
@@ -180,15 +180,13 @@ export function DashboardPage() {
       </div>
 
       <div className="card mf-insight-card mf-b-proj">
-        <div className="mf-serif-title">Proyección del mes</div>
+        <div className="mf-label" data-n="02">Proyección del mes</div>
         {projected === null ? (
           <p className="muted">Necesitás más historial para proyectar.</p>
         ) : (
           <>
             <div className="mf-projection-row">
-              <div className="mf-hero-balance" style={{ fontSize: 26 }}>
-                {formatMoney(projected)}
-              </div>
+              <div className="mf-figure">{formatMoney(projected)}</div>
               <div className="muted">gasto estimado</div>
             </div>
             <div className="mf-progress">
@@ -204,7 +202,6 @@ export function DashboardPage() {
         <div className="mf-anomaly-list">
           {data.insights.anomalies.length === 0 ? (
             <div className="mf-anomaly-row mf-anomaly-ok">
-              <span>✅</span>
               <span style={{ flex: 1 }}>
                 <strong>Todo en orden</strong> — tus gastos siguen tu patrón habitual
               </span>
@@ -212,9 +209,8 @@ export function DashboardPage() {
           ) : (
             data.insights.anomalies.map((a) => (
               <div className="mf-anomaly-row" key={a.categoryId}>
-                <span>⚠</span>
                 <span style={{ flex: 1 }}>
-                  <strong>{a.name}</strong> está por encima de tu promedio
+                  <strong>{a.name}</strong> por encima de tu promedio
                 </span>
                 <span className="mf-anomaly-pct">+{a.percentOfAvg - 100}%</span>
               </div>
@@ -225,30 +221,33 @@ export function DashboardPage() {
 
       <div className="mf-b-side">
         <div className="card">
-          <div className="mf-serif-title">Disponible para gastar</div>
+          <div className="mf-label" data-n="03">Disponible</div>
           <div
-            className="mf-hero-balance"
-            style={{ fontSize: 26, color: data.safeToSpend.available < 0 ? 'var(--neg)' : 'var(--pos)' }}
+            className="mf-figure"
+            style={{
+              fontSize: 23,
+              marginTop: 6,
+              color: data.safeToSpend.available < 0 ? 'var(--neg)' : 'var(--pos)',
+            }}
           >
             {formatMoney(data.safeToSpend.available)}
           </div>
-          <div className="muted" style={{ fontSize: 12.5 }}>
-            Balance {formatMoney(data.safeToSpend.balance)} − gastos fijos por venir{' '}
-            {formatMoney(data.safeToSpend.committedExpenses)}
+          <div className="mf-caption" title="Balance menos los gastos fijos que faltan pagar este mes">
+            Tras fijos · {formatMoney(data.safeToSpend.committedExpenses)}
           </div>
         </div>
 
         <div className="card mf-debt-strip">
           <div style={{ flex: 1 }}>
             <div className="mf-eyebrow">Debo</div>
-            <div className="mf-hero-balance" style={{ fontSize: 20, color: 'var(--neg)' }}>
+            <div className="mf-figure" style={{ fontSize: 17, marginTop: 3, color: 'var(--neg)' }}>
               {formatMoney(data.debtsSummary.totalIOwe)}
             </div>
           </div>
           <div className="mf-debt-divider" />
           <div style={{ flex: 1 }}>
             <div className="mf-eyebrow">Me deben</div>
-            <div className="mf-hero-balance" style={{ fontSize: 20, color: 'var(--pos)' }}>
+            <div className="mf-figure" style={{ fontSize: 17, marginTop: 3, color: 'var(--pos)' }}>
               {formatMoney(data.debtsSummary.totalOwedToMe)}
             </div>
           </div>
@@ -259,7 +258,7 @@ export function DashboardPage() {
 
         <div className="card">
           <div className="mf-card-head">
-            <div className="mf-serif-title">Inversiones</div>
+            <div className="mf-label mf-label--dot">Inversiones</div>
             <Link to="/inversiones" className="mf-link">
               Ver →
             </Link>
@@ -271,7 +270,7 @@ export function DashboardPage() {
           ) : (
             <>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-                <div className="mf-hero-balance" style={{ fontSize: 20 }}>
+                <div className="mf-figure" style={{ fontSize: 18 }}>
                   {formatMoney(data.investmentsSummary.totalValue)}
                 </div>
                 {data.investmentsSummary.totalInvested > 0 && (
@@ -298,13 +297,11 @@ export function DashboardPage() {
 
       <div className="card mf-b-networth">
         <div className="mf-card-head" style={{ marginBottom: 6 }}>
-          <div className="mf-serif-title">Patrimonio neto</div>
+          <div className="mf-label" data-n="04">Patrimonio neto</div>
           <span className="chip">Últimos 12 meses</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 10 }}>
-          <div className="mf-hero-balance" style={{ fontSize: 26 }}>
-            {formatMoney(netWorthCurrent)}
-          </div>
+          <div className="mf-figure" style={{ fontSize: 26 }}>{formatMoney(netWorthCurrent)}</div>
           {netWorthDelta !== null && (
             <span
               className="mf-delta-badge"
@@ -360,7 +357,7 @@ export function DashboardPage() {
       </div>
 
       <div className="card mf-b-donut">
-        <div className="mf-serif-title" style={{ marginBottom: 16 }}>
+        <div className="mf-label" data-n="05" style={{ marginBottom: 14 }}>
           Gastos por categoría
         </div>
         {data.expensesByCategory.length === 0 ? (
@@ -410,14 +407,14 @@ export function DashboardPage() {
 
       <div className="card mf-b-bars">
         <div className="mf-card-head">
-          <div className="mf-serif-title">Ingresos vs. gastos · {data.monthlyComparison.length} meses</div>
+          <div className="mf-label" data-n="06">Ingresos vs. gastos · {data.monthlyComparison.length} meses</div>
           <div className="chip-legend">
             <span className="chip">
               <span className="chip-swatch" style={{ background: 'var(--pos)' }} />
               Ingresos
             </span>
             <span className="chip">
-              <span className="chip-swatch" style={{ background: 'var(--neg)' }} />
+              <span className="chip-swatch" style={{ background: 'var(--bar-expense)' }} />
               Gastos
             </span>
           </div>
@@ -471,7 +468,7 @@ export function DashboardPage() {
 
       <div className="card mf-b-upcoming">
         <div className="mf-card-head" style={{ marginBottom: 14 }}>
-          <div className="mf-serif-title">Próximos pagos</div>
+          <div className="mf-label" data-n="07">Próximos pagos</div>
           <Link to="/recurrentes" className="mf-link">
             Ver todos →
           </Link>
@@ -501,7 +498,7 @@ export function DashboardPage() {
 
       <div className="card mf-b-budgets">
         <div className="mf-card-head" style={{ marginBottom: 14 }}>
-          <div className="mf-serif-title">Presupuestos del mes</div>
+          <div className="mf-label" data-n="08">Presupuestos del mes</div>
           <Link to="/presupuestos" className="mf-link">
             Gestionar →
           </Link>

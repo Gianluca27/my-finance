@@ -280,19 +280,19 @@ export function DebtsPage() {
 
       <div className="mf-grid-3" style={{ marginBottom: 16 }}>
         <div className="card">
-          <div className="mf-serif-title">Debo</div>
+          <div className="mf-label">Debo</div>
           <div className="mf-hero-balance" style={{ fontSize: 32, color: 'var(--neg)' }}>
             {formatMoney(totalIOwe)}
           </div>
         </div>
         <div className="card">
-          <div className="mf-serif-title">Me deben</div>
+          <div className="mf-label">Me deben</div>
           <div className="mf-hero-balance" style={{ fontSize: 32, color: 'var(--pos)' }}>
             {formatMoney(totalOwedToMe)}
           </div>
         </div>
         <div className="card">
-          <div className="mf-serif-title">Balance neto</div>
+          <div className="mf-label">Balance neto</div>
           <div
             className="mf-hero-balance"
             style={{ fontSize: 32, color: netBalance < 0 ? 'var(--neg)' : 'var(--pos)' }}

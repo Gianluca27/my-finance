@@ -204,24 +204,24 @@ export function TransactionsPage() {
       />
 
       {dash && (
-        <div className="mf-grid-3" style={{ marginBottom: 22 }}>
+        <div className="mf-grid-3" style={{ marginBottom: 14 }}>
           <div className="card">
-            <div className="mf-serif-title">Ingresos del mes</div>
-            <div className="mf-hero-balance" style={{ fontSize: 26, color: 'var(--pos)' }}>
+            <div className="mf-label">Ingresos del mes</div>
+            <div className="mf-figure mf-figure--stat" style={{ color: 'var(--pos)' }}>
               {formatMoney(dash.monthIncome)}
             </div>
           </div>
           <div className="card">
-            <div className="mf-serif-title">Gastos del mes</div>
-            <div className="mf-hero-balance" style={{ fontSize: 26, color: 'var(--neg)' }}>
+            <div className="mf-label">Gastos del mes</div>
+            <div className="mf-figure mf-figure--stat" style={{ color: 'var(--neg)' }}>
               {formatMoney(dash.monthExpense)}
             </div>
           </div>
-          <div className="card">
-            <div className="mf-serif-title">Neto del mes</div>
+          <div className="mf-hero-card">
+            <div className="mf-label">Neto del mes</div>
             <div
-              className="mf-hero-balance"
-              style={{ fontSize: 26, color: monthNet < 0 ? 'var(--neg)' : 'var(--text)' }}
+              className="mf-figure mf-figure--stat"
+              style={{ color: monthNet < 0 ? 'var(--neg)' : 'var(--text)' }}
             >
               {monthNet >= 0 ? '+ ' : '− '}
               {formatMoney(Math.abs(monthNet))}
@@ -379,7 +379,7 @@ export function TransactionsPage() {
         )}
 
         <div className="mf-tx-pagination">
-          <span>
+          <span className="mono">
             Página {page} de {totalPages}
           </span>
           <div className="mf-tx-pagebtns">

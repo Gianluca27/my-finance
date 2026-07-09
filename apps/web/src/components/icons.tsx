@@ -108,14 +108,3 @@ export function IcoSearch(p: IconProps) {
     </svg>
   );
 }
-
-export function LogoMark(p: IconProps) {
-  const sz = p.size ?? 18;
-  return (
-    <svg width={sz} height={sz} viewBox="0 0 20 20" fill="none">
-      <rect x="2.5" y="4.5" width="15" height="11" rx="2.4" stroke="var(--accent-ink)" strokeWidth="1.8" />
-      <path d="M2.5 8.2h15" stroke="var(--accent-ink)" strokeWidth="1.8" />
-      <circle cx="13.6" cy="12" r="1.1" fill="var(--accent-ink)" />
-    </svg>
-  );
-}

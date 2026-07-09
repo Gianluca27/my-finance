@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
-import { LogoMark } from '../components/icons';
 
 export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const { login, register } = useAuth();
@@ -36,41 +35,46 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
     <div className="mf-authgrid">
       <div className="mf-authhero">
         <div className="mf-authhero-glow" />
+        <span className="mf-authhero-bracket tl" />
+        <span className="mf-authhero-bracket tr" />
+        <span className="mf-authhero-bracket br" />
         <div className="mf-authhero-brand">
-          <span className="mf-brand-mark">
-            <LogoMark />
+          <span className="mf-brand-mark" aria-hidden="true">
+            $
           </span>
           <span className="mf-brand-titles">
             <span className="mf-brand-name">MyFinance</span>
-            <span className="mf-brand-tag">gestión privada</span>
+            <span className="mf-brand-tag">gestión // privada</span>
           </span>
         </div>
         <div className="mf-authhero-copy">
-          <h2>
-            Tus finanzas, con <em>claridad y precisión</em>.
-          </h2>
+          <div className="mf-authhero-eyebrow">Panel financiero</div>
+          <h2>Tus finanzas, con claridad y precisión.</h2>
           <p>
             Balance, presupuestos, gastos fijos y deudas en un solo lugar. Sin ruido, sin banca
             conectada — solo control.
           </p>
-          <div className="mf-authhero-stats">
-            <div>
-              <div className="mf-authhero-stat-value">7</div>
-              <div className="mf-authhero-stat-label">módulos</div>
-            </div>
-            <div>
-              <div className="mf-authhero-stat-value">CSV·PDF</div>
-              <div className="mf-authhero-stat-label">exportables</div>
-            </div>
-            <div>
-              <div className="mf-authhero-stat-value">2</div>
-              <div className="mf-authhero-stat-label">alertas</div>
-            </div>
+        </div>
+        <div className="mf-authhero-stats">
+          <div>
+            <div className="mf-statfig">7</div>
+            <div className="mf-statcap">módulos</div>
+          </div>
+          <div>
+            <div className="mf-statfig">CSV·PDF</div>
+            <div className="mf-statcap">exportables</div>
+          </div>
+          <div>
+            <div className="mf-statfig">2</div>
+            <div className="mf-statcap">alertas</div>
           </div>
         </div>
       </div>
 
       <div className="mf-authform-wrap">
+        <div className="mf-authform-sys" aria-hidden="true">
+          SYS ONLINE · CIFRADO
+        </div>
         <form className="mf-authform" onSubmit={onSubmit}>
           <h1>{title}</h1>
           <p className="muted">{subtitle}</p>
@@ -116,6 +120,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
               </>
             )}
           </p>
+          <div className="mf-authform-note">Sin banca conectada · Solo control</div>
         </form>
       </div>
     </div>

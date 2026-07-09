@@ -47,7 +47,7 @@ export function SettingsPage() {
       {error && <div className="error-banner">{error}</div>}
 
       <div className="card" style={{ marginBottom: 16 }}>
-        <div className="mf-serif-title" style={{ marginBottom: 4 }}>
+        <div className="mf-label" style={{ marginBottom: 4 }}>
           Alertas
         </div>
         <div className="settings-row">
@@ -103,7 +103,7 @@ export function SettingsPage() {
       </div>
 
       <div className="card">
-        <div className="mf-serif-title" style={{ marginBottom: 4 }}>
+        <div className="mf-label" style={{ marginBottom: 4 }}>
           Cuenta
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

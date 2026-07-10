@@ -18,6 +18,7 @@ const InvestmentsPage = lazy(() => import('./pages/InvestmentsPage').then((m) =>
 const RecurringPage = lazy(() => import('./pages/RecurringPage').then((m) => ({ default: m.RecurringPage })));
 const ReportsPage = lazy(() => import('./pages/ReportsPage').then((m) => ({ default: m.ReportsPage })));
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+const SuggestionsPage = lazy(() => import('./pages/SuggestionsPage').then((m) => ({ default: m.SuggestionsPage })));
 const TransactionsPage = lazy(() => import('./pages/TransactionsPage').then((m) => ({ default: m.TransactionsPage })));
 
 export default function App() {
@@ -56,6 +57,7 @@ export default function App() {
           <Route path="/cuentas" element={<AccountsPage />} />
           <Route path="/transacciones" element={<TransactionsPage />} />
           <Route path="/recurrentes" element={<RecurringPage />} />
+          <Route path="/sugerencias" element={<SuggestionsPage />} />
           <Route path="/presupuestos" element={<BudgetsPage />} />
           <Route path="/deudas" element={<DebtsPage />} />
           <Route path="/metas" element={<GoalsPage />} />

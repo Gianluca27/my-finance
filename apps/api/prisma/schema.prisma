@@ -55,6 +55,19 @@ enum InvestmentOperationType {
   VENTA
 }
 
+enum SuggestionType {
+  /// Patrón de gasto/ingreso repetido: propone crear un RecurringExpense.
+  RECURRING
+  /// Token categorizado consistentemente: propone crear una CategoryRule.
+  RULE
+}
+
+enum SuggestionStatus {
+  PENDING
+  ACCEPTED
+  DISMISSED
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -83,6 +96,7 @@ model User {
   investments          Investment[]
   investmentOperations InvestmentOperation[]
   exchangeRates        ExchangeRate[]
+  suggestions          Suggestion[]
 }
 
 model FcmToken {
@@ -363,6 +377,25 @@ model ExchangeRate {
   updatedAt DateTime @updatedAt
 
   @@unique([userId, currency])
+}
+
+/// Sugerencia detectada del historial (recurrente o regla de categorización).
+/// DISMISSED persiste para no volver a sugerir el mismo patrón (fingerprint).
+model Suggestion {
+  id          String           @id @default(cuid())
+  type        SuggestionType
+  status      SuggestionStatus @default(PENDING)
+  /// Clave estable del patrón detectado (ej: "EXPENSE:netflix" o el keyword).
+  fingerprint String
+  /// Datos del patrón: nombre, monto, frecuencia, dueDay, categoryId, keyword, ocurrencias.
+  payload     Json
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@unique([userId, type, fingerprint])
+  @@index([userId, status])
 }
 
 /// Movimiento de dinero entre dos cuentas del usuario. No cuenta como ingreso ni gasto.

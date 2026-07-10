@@ -1,4 +1,6 @@
 import type {
+  AcceptSuggestionInput,
+  AcceptSuggestionResult,
   Account,
   AccountInput,
   AccountUpdateInput,
@@ -10,6 +12,7 @@ import type {
   CategoryInput,
   CategoryRule,
   CategoryRuleInput,
+  CategorySuggestion,
   DashboardData,
   Debt,
   DigestFrequency,
@@ -31,11 +34,14 @@ import type {
   Paginated,
   RecurringExpense,
   RecurringExpenseInput,
+  Suggestion,
+  SuggestionsRefreshResult,
   SymbolSearchKind,
   SymbolSearchResponse,
   Transaction,
   TransactionFilters,
   TransactionInput,
+  TransactionType,
   Transfer,
   TransferInput,
   User,
@@ -315,6 +321,32 @@ export class ApiClient {
   }
   deleteExchangeRate(currency: string) {
     return this.request<void>('DELETE', `/api/investments/rates/${encodeURIComponent(currency)}`);
+  }
+
+  // --- Sugerencias ---
+  /** Sugerencia de categoría para una nota (regla del usuario o historial). Null si no hay señal. */
+  suggestCategory(note: string, type: TransactionType) {
+    const params = new URLSearchParams({ note, type });
+    return this.request<CategorySuggestion | null>(
+      'GET',
+      `/api/transactions/suggest-category?${params.toString()}`,
+    );
+  }
+  /** Sugerencias pendientes (recurrentes y reglas detectadas). */
+  listSuggestions() {
+    return this.request<Suggestion[]>('GET', '/api/suggestions');
+  }
+  /** Corre la detección sobre el historial y devuelve las pendientes actualizadas. */
+  refreshSuggestions() {
+    return this.request<SuggestionsRefreshResult>('POST', '/api/suggestions/refresh');
+  }
+  /** Acepta la sugerencia creando el recurrente o la regla; `edits` pisa campos del patrón detectado. */
+  acceptSuggestion(id: string, edits?: AcceptSuggestionInput) {
+    return this.request<AcceptSuggestionResult>('POST', `/api/suggestions/${id}/accept`, edits ?? {});
+  }
+  /** Descarta la sugerencia; el mismo patrón no se vuelve a sugerir. */
+  dismissSuggestion(id: string) {
+    return this.request<void>('POST', `/api/suggestions/${id}/dismiss`);
   }
 
   // --- Dashboard ---

@@ -1,4 +1,4 @@
-import type { RecurringExpense } from '@myfinance/shared';
+import type { RecurringExpense, Suggestion } from '@myfinance/shared';
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api';
@@ -17,6 +17,7 @@ import {
   IcoRepeat,
   IcoSearch,
   IcoSettings,
+  IcoSpark,
   IcoTag,
   IcoTarget,
   IcoTrend,
@@ -27,7 +28,8 @@ const NAV_ITEMS = [
   { to: '/', label: 'Resumen', icon: IcoGrid },
   { to: '/cuentas', label: 'Cuentas', icon: IcoWallet },
   { to: '/transacciones', label: 'Movimientos', icon: IcoList },
-  { to: '/recurrentes', label: 'Gastos fijos', icon: IcoRepeat, badge: true },
+  { to: '/recurrentes', label: 'Gastos fijos', icon: IcoRepeat, badge: 'recurring' as const },
+  { to: '/sugerencias', label: 'Sugerencias', icon: IcoSpark, badge: 'suggestions' as const },
   { to: '/presupuestos', label: 'Presupuestos', icon: IcoMeter },
   { to: '/deudas', label: 'Deudas', icon: IcoDebt },
   { to: '/metas', label: 'Metas', icon: IcoTarget },
@@ -49,6 +51,7 @@ const TITLES: Record<string, [string, string]> = {
   '/cuentas': ['Dinero', 'Cuentas'],
   '/transacciones': ['Registro', 'Movimientos'],
   '/recurrentes': ['Automático', 'Gastos fijos'],
+  '/sugerencias': ['Automático', 'Sugerencias'],
   '/presupuestos': ['Control', 'Presupuestos'],
   '/deudas': ['Balance', 'Deudas'],
   '/metas': ['Ahorro', 'Metas'],
@@ -81,7 +84,11 @@ export function Layout({ children }: { children: ReactNode }) {
   const [search, setSearch] = useState('');
 
   const { data: recurring } = useCached<RecurringExpense[]>('recurring', () => api.listRecurring());
-  const badgeCount = useMemo(() => dueSoonCount(recurring), [recurring]);
+  const { data: suggestions } = useCached<Suggestion[]>('suggestions', () => api.listSuggestions());
+  const badgeCounts = useMemo(
+    () => ({ recurring: dueSoonCount(recurring), suggestions: suggestions?.length ?? 0 }),
+    [recurring, suggestions],
+  );
 
   const [crumb, pageTitle] = TITLES[location.pathname] ?? ['', ''];
   const initials = (user?.name ?? '?').slice(0, 1).toUpperCase();
@@ -101,7 +108,9 @@ export function Layout({ children }: { children: ReactNode }) {
               <item.icon />
             </span>
             <span className="mf-nav-label">{item.label}</span>
-            {item.badge && badgeCount > 0 && <span className="mf-nav-badge">{badgeCount}</span>}
+            {item.badge && badgeCounts[item.badge] > 0 && (
+              <span className="mf-nav-badge">{badgeCounts[item.badge]}</span>
+            )}
           </NavLink>
         ))}
       </nav>

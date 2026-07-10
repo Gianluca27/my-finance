@@ -1,4 +1,4 @@
-import type { Account, Category, Transaction, TransactionType } from '@myfinance/shared';
+import type { Account, Category, CategorySuggestion, Transaction, TransactionType } from '@myfinance/shared';
 import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import { invalidate, useCached } from '../cache';
@@ -23,6 +23,7 @@ export function AddTransactionModal({
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [suggestion, setSuggestion] = useState<CategorySuggestion | null>(null);
 
   const { data: categoriesData } = useCached<Category[]>('categories', () => api.listCategories());
   const categories = (categoriesData ?? []).filter((c) => c.type === type);
@@ -49,6 +50,25 @@ export function AddTransactionModal({
       setAccountId(accounts.find((a) => a.isDefault)?.id ?? accounts[0].id);
     }
   }, [accountsData, accountId, accounts, editing]);
+
+  // Con nota escrita y sin categoría elegida, pedir una sugerencia (con debounce).
+  useEffect(() => {
+    if (!open || categoryId || note.trim().length < 3) {
+      setSuggestion(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      api
+        .suggestCategory(note.trim(), type)
+        .then(setSuggestion)
+        .catch(() => setSuggestion(null));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [open, note, type, categoryId]);
+
+  const suggestedCategory = suggestion
+    ? (categories.find((c) => c.id === suggestion.categoryId) ?? null)
+    : null;
 
   function reset() {
     setType('EXPENSE');
@@ -152,6 +172,17 @@ export function AddTransactionModal({
             ))}
           </select>
         </label>
+        {suggestedCategory && (
+          <button
+            type="button"
+            className="mf-suggest-chip"
+            onClick={() => setCategoryId(suggestedCategory.id)}
+            title={suggestion?.source === 'rule' ? 'Por una regla tuya' : 'Por tu historial de movimientos'}
+          >
+            ✨ Sugerida: {suggestedCategory.icon ? `${suggestedCategory.icon} ` : ''}
+            {suggestedCategory.name}
+          </button>
+        )}
         {accounts.length > 0 && (
           <label className="field">
             Cuenta

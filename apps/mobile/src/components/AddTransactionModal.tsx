@@ -1,10 +1,11 @@
-import type { Account, Category, Transaction, TransactionType } from '@myfinance/shared';
+import type { Account, Category, CategorySuggestion, Transaction, TransactionType } from '@myfinance/shared';
 import React, { useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
 import { api } from '../api';
 import { todayISODate } from '../theme';
 import {
   BottomSheet,
+  Chip,
   ErrorText,
   Field,
   Input,
@@ -41,6 +42,7 @@ export function AddTransactionModal({
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [suggestion, setSuggestion] = useState<CategorySuggestion | null>(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -74,6 +76,29 @@ export function AddTransactionModal({
     const def = accounts.find((a) => a.isDefault) ?? accounts[0];
     if (def) setAccountId(def.id);
   }, [accounts, editing, accountId]);
+
+  // Con nota escrita y sin categoría elegida, pedir una sugerencia (con debounce).
+  useEffect(() => {
+    if (!visible || categoryId || note.trim().length < 3) {
+      setSuggestion(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      api
+        .suggestCategory(note.trim(), type)
+        .then(setSuggestion)
+        .catch(() => setSuggestion(null));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [visible, note, type, categoryId]);
+
+  const suggestedCategory = useMemo(
+    () =>
+      suggestion
+        ? (categories.find((c) => c.id === suggestion.categoryId && c.type === type) ?? null)
+        : null,
+    [suggestion, categories, type],
+  );
 
   const catOptions: Option[] = [
     { label: 'Sin categoría', value: '' },
@@ -139,6 +164,14 @@ export function AddTransactionModal({
           placeholder="Sin categoría"
         />
       </Field>
+      {suggestedCategory && (
+        <View style={{ flexDirection: 'row' }}>
+          <Chip
+            label={`✨ Sugerida: ${suggestedCategory.icon ? `${suggestedCategory.icon} ` : ''}${suggestedCategory.name}`}
+            onPress={() => setCategoryId(suggestedCategory.id)}
+          />
+        </View>
+      )}
       {accounts.length > 0 && (
         <Field label="Cuenta">
           <Select

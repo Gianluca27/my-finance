@@ -15,6 +15,7 @@ import notificationsRouter from './routes/notifications';
 import recurringRouter from './routes/recurring';
 import reportsRouter from './routes/reports';
 import rulesRouter from './routes/rules';
+import suggestionsRouter from './routes/suggestions';
 import transactionsRouter from './routes/transactions';
 import transfersRouter from './routes/transfers';
 
@@ -31,6 +32,7 @@ export function createApp() {
   app.use('/api/accounts', accountsRouter);
   app.use('/api/categories', categoriesRouter);
   app.use('/api/rules', rulesRouter);
+  app.use('/api/suggestions', suggestionsRouter);
   app.use('/api/transactions', transactionsRouter);
   app.use('/api/transfers', transfersRouter);
   app.use('/api/recurring', recurringRouter);

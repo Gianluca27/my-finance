@@ -516,3 +516,86 @@ export interface ImportResult {
   /** Detalle de errores por fila (línea 1-indexada + motivo), acotado. */
   errors: Array<{ line: number; reason: string }>;
 }
+
+export type SuggestionType = 'RECURRING' | 'RULE';
+export type SuggestionStatus = 'PENDING' | 'ACCEPTED' | 'DISMISSED';
+
+/** Patrón repetido detectado en el historial: propone crear un gasto/ingreso recurrente. */
+export interface RecurringSuggestionPayload {
+  name: string;
+  type: TransactionType;
+  /** Último monto observado (no promedio: sigue aumentos de precio). */
+  amount: number;
+  frequency: Frequency;
+  dueDay: number;
+  dueMonth: number | null;
+  categoryId: string | null;
+  /** Nombre de la categoría al momento de detectar (para mostrar sin otra consulta). */
+  categoryName: string | null;
+  occurrences: number;
+  /** Fecha (ISO) de la última ocurrencia observada. */
+  lastDate: string;
+}
+
+/** Keyword categorizado consistentemente: propone crear una regla de categorización. */
+export interface RuleSuggestionPayload {
+  keyword: string;
+  categoryId: string;
+  categoryName: string | null;
+  occurrences: number;
+}
+
+interface SuggestionBase {
+  id: string;
+  status: SuggestionStatus;
+  /** Clave estable del patrón; una sugerencia descartada no vuelve a aparecer. */
+  fingerprint: string;
+  createdAt: string;
+}
+
+export interface RecurringSuggestion extends SuggestionBase {
+  type: 'RECURRING';
+  payload: RecurringSuggestionPayload;
+}
+
+export interface RuleSuggestion extends SuggestionBase {
+  type: 'RULE';
+  payload: RuleSuggestionPayload;
+}
+
+export type Suggestion = RecurringSuggestion | RuleSuggestion;
+
+export interface SuggestionsRefreshResult {
+  /** Sugerencias nuevas creadas en esta corrida. */
+  created: number;
+  /** Todas las pendientes tras la corrida. */
+  items: Suggestion[];
+}
+
+/** Ediciones opcionales al aceptar una sugerencia: pisan los valores detectados. */
+export interface AcceptSuggestionInput {
+  name?: string;
+  amount?: number;
+  frequency?: Frequency;
+  dueDay?: number;
+  dueMonth?: number | null;
+  reminderDaysBefore?: number;
+  categoryId?: string | null;
+  keyword?: string;
+}
+
+/** Respuesta al aceptar: la entidad creada según el tipo de sugerencia. */
+export interface AcceptSuggestionResult {
+  suggestion: Suggestion;
+  recurring?: RecurringExpense;
+  rule?: CategoryRule;
+}
+
+/** Sugerencia de categoría para el formulario de transacción. */
+export interface CategorySuggestion {
+  categoryId: string;
+  /** 'rule' si la decidió una regla del usuario, 'history' si el análisis del historial. */
+  source: 'rule' | 'history';
+  /** 0-1. Las reglas son deterministas: 1. */
+  confidence: number;
+}

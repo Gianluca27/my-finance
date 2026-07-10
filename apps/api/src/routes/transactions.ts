@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { resolveAccountId } from '../lib/accounts';
 import { loadRules, matchRule } from '../lib/categoryRules';
 import { serialize } from '../lib/serialize';
+import { suggestCategoryFromHistory } from '../lib/suggestions';
 import { requireAuth } from '../middleware/auth';
 import { asyncHandler, HttpError } from '../middleware/error';
 import { prisma } from '../prisma';
@@ -37,6 +38,44 @@ async function assertCategoryOwned(userId: string, categoryId: string | null | u
   const category = await prisma.category.findFirst({ where: { id: categoryId, userId } });
   if (!category) throw new HttpError(400, 'Categoría inválida');
 }
+
+const suggestCategorySchema = z.object({
+  note: z.string().min(1).max(500),
+  type: z.enum(['INCOME', 'EXPENSE']),
+});
+
+/**
+ * Sugerencia de categoría para el formulario: primero las reglas del usuario
+ * (deterministas), después el análisis del historial reciente. Devuelve null
+ * si no hay señal suficiente.
+ */
+router.get(
+  '/suggest-category',
+  asyncHandler(async (req, res) => {
+    const { note, type } = suggestCategorySchema.parse(req.query);
+    const userId = req.auth!.userId;
+
+    const rules = await loadRules(userId);
+    const ruleMatch = matchRule(rules, note, type);
+    if (ruleMatch) return res.json({ categoryId: ruleMatch, source: 'rule', confidence: 1 });
+
+    const since = new Date();
+    since.setUTCMonth(since.getUTCMonth() - 6);
+    const history = await prisma.transaction.findMany({
+      where: { userId, type, date: { gte: since }, categoryId: { not: null }, note: { not: null } },
+      select: { note: true, amount: true, date: true, type: true, categoryId: true },
+      orderBy: { date: 'desc' },
+      take: 500,
+    });
+    const suggestion = suggestCategoryFromHistory(
+      note,
+      type,
+      history.map((t) => ({ ...t, amount: t.amount.toNumber() })),
+    );
+    if (!suggestion) return res.json(null);
+    res.json({ categoryId: suggestion.categoryId, source: 'history', confidence: suggestion.confidence });
+  }),
+);
 
 router.get(
   '/',

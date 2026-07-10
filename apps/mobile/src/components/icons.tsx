@@ -104,6 +104,12 @@ export const IcoTrash = (p: IconProps) => (
     paths={[{ d: 'M4 6h12M8 6V4.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1V6M6 6l.7 9.2a1 1 0 0 0 1 .8h4.6a1 1 0 0 0 1-.8L14 6' }]}
   />
 );
+export const IcoSpark = (p: IconProps) => (
+  <PathIcon
+    {...p}
+    paths={[{ d: 'M10 2.5l1.8 5.7 5.7 1.8-5.7 1.8L10 17.5l-1.8-5.7-5.7-1.8 5.7-1.8z' }, { d: 'M16 2.5v3M17.5 4h-3', w: 1.4 }]}
+  />
+);
 export const IcoPencil = (p: IconProps) => (
   <PathIcon {...p} paths={[{ d: 'M13.5 4.5l2 2M12.5 3.5l4 4L7 17H3v-4z' }]} />
 );

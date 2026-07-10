@@ -31,6 +31,7 @@ import { LoginScreen } from './src/screens/LoginScreen';
 import { RecurringScreen } from './src/screens/RecurringScreen';
 import { ReportsScreen } from './src/screens/ReportsScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
+import { SuggestionsScreen } from './src/screens/SuggestionsScreen';
 import { TransactionsScreen } from './src/screens/TransactionsScreen';
 import { Sidebar } from './src/components/Sidebar';
 import { IcoMenu } from './src/components/icons';
@@ -48,6 +49,7 @@ const SCREENS: Record<string, React.ComponentType<any>> = {
   Movimientos: TransactionsScreen,
   Presupuestos: BudgetsScreen,
   Fijos: RecurringScreen,
+  Sugerencias: SuggestionsScreen,
   Cuentas: AccountsScreen,
   Deudas: DebtsScreen,
   Metas: GoalsScreen,

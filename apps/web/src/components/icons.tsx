@@ -99,6 +99,13 @@ export const IcoPencil = (p: IconProps) => (
   <PathIcon {...p} paths={[{ d: 'M13.5 4.5l2 2M12.5 3.5l4 4L7 17H3v-4z' }]} />
 );
 
+export const IcoSpark = (p: IconProps) => (
+  <PathIcon
+    {...p}
+    paths={[{ d: 'M10 2.5l1.8 5.7 5.7 1.8-5.7 1.8L10 17.5l-1.8-5.7-5.7-1.8 5.7-1.8z' }, { d: 'M16 2.5v3M17.5 4h-3', w: 1.4 }]}
+  />
+);
+
 export function IcoSearch(p: IconProps) {
   const sz = p.size ?? 16;
   return (

@@ -3138,3 +3138,41 @@ select option {
   color: var(--text-3);
   margin-top: 16px;
 }
+
+/* ===== Sugerencias ===== */
+
+/* Chip en el formulario de movimiento: aplicar la categoría sugerida con un click. */
+.mf-suggest-chip {
+  align-self: flex-start;
+  margin-top: -6px;
+  background: var(--accent-weak);
+  border: 1px solid var(--accent-line);
+  color: var(--accent);
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.mf-suggest-chip:hover {
+  border-color: var(--accent);
+}
+
+.mf-suggest-hint {
+  margin: -4px 0 12px;
+}
+
+/* Botón secundario para descartar una sugerencia. */
+.mf-btn-ghost {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--ink-mut);
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: var(--r-sm);
+}
+
+.mf-btn-ghost:hover {
+  border-color: var(--border-2);
+  color: var(--text);
+}

@@ -10,6 +10,8 @@ export const config = {
   firebaseServiceAccountJson: process.env.FIREBASE_SERVICE_ACCOUNT_JSON || null,
   remindersCron: process.env.REMINDERS_CRON ?? '0 9 * * *',
   digestsCron: process.env.DIGESTS_CRON ?? '0 9 * * *',
+  /// Cron de detección de sugerencias (recurrentes y reglas desde el historial).
+  suggestionsCron: process.env.SUGGESTIONS_CRON ?? '30 9 * * *',
   /// API key de Twelve Data — opcional, si falta los precios quedan manuales.
   twelveDataApiKey: process.env.TWELVE_DATA_API_KEY || null,
   /// Cron de actualización de precios (default 22:30 UTC, post-cierre de Wall Street).

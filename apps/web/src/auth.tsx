@@ -34,6 +34,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (err instanceof ApiError && err.status === 401) {
           setToken(null);
           setCachedUser(null);
+          // El cache persiste en sessionStorage: limpiarlo para que otro usuario
+          // que entre en esta pestaña no vea datos de la sesión expirada.
+          invalidate();
           setUser(null);
         }
       })
@@ -42,6 +45,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function login(email: string, password: string) {
     const res = await api.login({ email, password });
+    // Descartar cualquier dato cacheado de una sesión anterior en esta pestaña.
+    invalidate();
     setToken(res.token);
     setCachedUser(res.user);
     setUser(res.user);
@@ -49,6 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function register(name: string, email: string, password: string) {
     const res = await api.register({ name, email, password });
+    invalidate();
     setToken(res.token);
     setCachedUser(res.user);
     setUser(res.user);

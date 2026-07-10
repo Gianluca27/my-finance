@@ -1,6 +1,8 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { api } from './api';
 import { useAuth } from './auth';
+import { prefetch } from './cache';
 import { Layout } from './components/Layout';
 
 // Cada página se carga bajo demanda: el bundle inicial no arrastra Recharts
@@ -20,6 +22,15 @@ const TransactionsPage = lazy(() => import('./pages/TransactionsPage').then((m) 
 
 export default function App() {
   const { user, loading } = useAuth();
+
+  // Apenas hay usuario: bajar el chunk del Dashboard (ruta inicial) y disparar
+  // sus datos en paralelo, en vez de esperar chunk -> montaje -> fetch en serie.
+  useEffect(() => {
+    if (!user) return;
+    import('./pages/DashboardPage');
+    prefetch('dashboard', () => api.dashboard());
+    prefetch('budgets', () => api.listBudgets());
+  }, [user]);
 
   if (loading) {
     return <div className="auth-wrap muted">Cargando…</div>;

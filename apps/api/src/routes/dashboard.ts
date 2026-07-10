@@ -54,6 +54,14 @@ router.get(
 
     const anomalyRangeStart = monthRange(shiftMonth(month, -ANOMALY_WINDOW_MONTHS)).start;
 
+    // Ventana de la tendencia de patrimonio neto (12 meses), calculada acá para
+    // poder despachar sus queries junto con el resto en una sola tanda.
+    const nwMonths = Array.from({ length: 12 }, (_, i) => shiftMonth(month, i - 11));
+    const nwWindowStart = monthRange(nwMonths[0]).start;
+    const nwWindowEnd = monthRange(nwMonths[nwMonths.length - 1]).end;
+
+    // Todas las consultas salen en una sola tanda: ninguna depende del resultado
+    // de otra, así la latencia total es ~1 ida y vuelta a la base en vez de varias.
     const [
       totals,
       monthTotals,
@@ -67,6 +75,14 @@ router.get(
       anomalyWindowRows,
       activeDebts,
       debtPaymentSums,
+      categories,
+      committedAgg,
+      initialBalancesAgg,
+      activeInvestments,
+      investmentOps,
+      exchangeRates,
+      deltaBeforeRows,
+      nwMonthlyRows,
     ] = await Promise.all([
       // Balance histórico (todos los ingresos - todos los gastos)
       prisma.transaction.groupBy({
@@ -138,6 +154,42 @@ router.get(
         where: { userId, debtId: { not: null } },
         _sum: { amount: true },
       }),
+      // Todas las categorías del usuario (pocas filas): evita una segunda tanda
+      // dependiente de los categoryId que aparecen en los agregados.
+      prisma.category.findMany({ where: { userId } }),
+      // Gastos fijos comprometidos hasta fin del mes seleccionado (safe-to-spend)
+      prisma.recurringExpense.aggregate({
+        where: { userId, active: true, type: 'EXPENSE', nextDueDate: { gte: today, lt: end } },
+        _sum: { amount: true },
+      }),
+      // Saldos iniciales de todas las cuentas
+      prisma.account.aggregate({ where: { userId }, _sum: { initialBalance: true } }),
+      // Inversiones activas para el resumen del portafolio
+      prisma.investment.findMany({
+        where: { userId, archivedAt: null },
+        select: { id: true, currency: true, currentPrice: true },
+      }),
+      // Operaciones solo de inversiones activas (las archivadas no entran al resumen)
+      prisma.investmentOperation.findMany({
+        where: { userId, investment: { archivedAt: null } },
+        orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+        select: { investmentId: true, type: true, quantity: true, unitPrice: true },
+      }),
+      prisma.exchangeRate.findMany({ where: { userId } }),
+      // Delta acumulado (ingresos - gastos) previo a la ventana de patrimonio neto
+      prisma.$queryRaw<Array<{ delta: number }>>`
+        SELECT COALESCE(SUM(CASE WHEN "type" = 'INCOME' THEN "amount" ELSE -"amount" END), 0)::float8 AS delta
+        FROM "Transaction"
+        WHERE "userId" = ${userId} AND "date" < ${nwWindowStart}
+      `,
+      // Delta mensual dentro de la ventana de patrimonio neto
+      prisma.$queryRaw<Array<{ month: string; delta: number }>>`
+        SELECT to_char("date", 'YYYY-MM') AS month,
+               SUM(CASE WHEN "type" = 'INCOME' THEN "amount" ELSE -"amount" END)::float8 AS delta
+        FROM "Transaction"
+        WHERE "userId" = ${userId} AND "date" >= ${nwWindowStart} AND "date" < ${nwWindowEnd}
+        GROUP BY 1
+      `,
     ]);
 
     const totalIncome = totals.find((t) => t.type === 'INCOME')?._sum.amount?.toNumber() ?? 0;
@@ -145,14 +197,6 @@ router.get(
     const monthIncome = monthTotals.find((t) => t.type === 'INCOME')?._sum.amount?.toNumber() ?? 0;
     const monthExpense = monthTotals.find((t) => t.type === 'EXPENSE')?._sum.amount?.toNumber() ?? 0;
 
-    const categoryIds = Array.from(
-      new Set(
-        [...byCategory, ...prevWindowByCategory, ...anomalyWindowRows]
-          .map((row) => row.categoryId)
-          .filter((id): id is string => id !== null),
-      ),
-    );
-    const categories = await prisma.category.findMany({ where: { id: { in: categoryIds } } });
     const categoryMap = new Map(categories.map((c) => [c.id, c]));
     const expensesByCategory = byCategory
       .map((row) => {
@@ -277,13 +321,6 @@ router.get(
 
     // --- Disponible para gastar (Safe-to-spend) ---
     // Balance real menos gastos fijos activos que todavía vencen antes de fin del mes seleccionado.
-    const [committedAgg, initialBalancesAgg] = await Promise.all([
-      prisma.recurringExpense.aggregate({
-        where: { userId, active: true, type: 'EXPENSE', nextDueDate: { gte: today, lt: end } },
-        _sum: { amount: true },
-      }),
-      prisma.account.aggregate({ where: { userId }, _sum: { initialBalance: true } }),
-    ]);
     // Patrimonio neto = saldos iniciales + ingresos - gastos (las transferencias se cancelan globalmente).
     const initialBalances = initialBalancesAgg._sum.initialBalance?.toNumber() ?? 0;
     const balance = round2(initialBalances + totalIncome - totalExpense);
@@ -295,18 +332,6 @@ router.get(
     };
 
     // --- Resumen de inversiones (portafolio en moneda base, al TC vigente) ---
-    const [activeInvestments, investmentOps, exchangeRates] = await Promise.all([
-      prisma.investment.findMany({
-        where: { userId, archivedAt: null },
-        select: { id: true, currency: true, currentPrice: true },
-      }),
-      prisma.investmentOperation.findMany({
-        where: { userId },
-        orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
-        select: { investmentId: true, type: true, quantity: true, unitPrice: true },
-      }),
-      prisma.exchangeRate.findMany({ where: { userId } }),
-    ]);
     const invOpsById = new Map<string, Array<{ type: 'COMPRA' | 'VENTA'; quantity: number; unitPrice: number }>>();
     for (const op of investmentOps) {
       const list = invOpsById.get(op.investmentId) ?? [];
@@ -324,23 +349,6 @@ router.get(
     // --- Tendencia de patrimonio neto (12 meses) ---
     // Se reconstruye desde el historial: patrimonio a fin de mes = saldos iniciales
     // + (ingresos - gastos) acumulados hasta ese mes. Las transferencias se cancelan globalmente.
-    const nwMonths = Array.from({ length: 12 }, (_, i) => shiftMonth(month, i - 11));
-    const nwWindowStart = monthRange(nwMonths[0]).start;
-    const nwWindowEnd = monthRange(nwMonths[nwMonths.length - 1]).end;
-    const [deltaBeforeRows, nwMonthlyRows] = await Promise.all([
-      prisma.$queryRaw<Array<{ delta: number }>>`
-        SELECT COALESCE(SUM(CASE WHEN "type" = 'INCOME' THEN "amount" ELSE -"amount" END), 0)::float8 AS delta
-        FROM "Transaction"
-        WHERE "userId" = ${userId} AND "date" < ${nwWindowStart}
-      `,
-      prisma.$queryRaw<Array<{ month: string; delta: number }>>`
-        SELECT to_char("date", 'YYYY-MM') AS month,
-               SUM(CASE WHEN "type" = 'INCOME' THEN "amount" ELSE -"amount" END)::float8 AS delta
-        FROM "Transaction"
-        WHERE "userId" = ${userId} AND "date" >= ${nwWindowStart} AND "date" < ${nwWindowEnd}
-        GROUP BY 1
-      `,
-    ]);
     const nwDeltaByMonth = new Map(nwMonthlyRows.map((r) => [r.month, r.delta]));
     let runningNetWorth = initialBalances + (deltaBeforeRows[0]?.delta ?? 0);
     const netWorthTrend = nwMonths.map((m) => {

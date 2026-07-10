@@ -98,10 +98,11 @@ export function ReportsPage() {
       const csv = await file.text();
       const result = await api.importTransactions(csv, importAccountId || undefined);
       setImportResult(result);
-      // Los movimientos importados afectan resumen, presupuestos y listados.
+      // Los movimientos importados afectan resumen, presupuestos, listados y saldos.
       invalidate('transactions');
       invalidate('dashboard');
       invalidate('budgets');
+      invalidate('accounts');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error inesperado');
     } finally {

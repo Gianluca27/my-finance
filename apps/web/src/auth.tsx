@@ -1,7 +1,7 @@
 import { ApiError, type User } from '@myfinance/shared';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { api, getCachedUser, getToken, setCachedUser, setToken } from './api';
-import { invalidate } from './cache';
+import { clear } from './cache';
 
 interface AuthContextValue {
   user: User | null;
@@ -36,7 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setCachedUser(null);
           // El cache persiste en sessionStorage: limpiarlo para que otro usuario
           // que entre en esta pestaña no vea datos de la sesión expirada.
-          invalidate();
+          clear();
           setUser(null);
         }
       })
@@ -46,7 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function login(email: string, password: string) {
     const res = await api.login({ email, password });
     // Descartar cualquier dato cacheado de una sesión anterior en esta pestaña.
-    invalidate();
+    clear();
     setToken(res.token);
     setCachedUser(res.user);
     setUser(res.user);
@@ -54,7 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function register(name: string, email: string, password: string) {
     const res = await api.register({ name, email, password });
-    invalidate();
+    clear();
     setToken(res.token);
     setCachedUser(res.user);
     setUser(res.user);
@@ -63,7 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   function logout() {
     setToken(null);
     setCachedUser(null);
-    invalidate();
+    clear();
     setUser(null);
   }
 

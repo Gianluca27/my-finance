@@ -75,6 +75,8 @@ export function DebtsPage() {
     invalidate('transactions');
     invalidate('dashboard');
     invalidate('budgets');
+    // El pago de una deuda impacta el saldo de la cuenta por defecto.
+    invalidate('accounts');
     refresh();
   }
 

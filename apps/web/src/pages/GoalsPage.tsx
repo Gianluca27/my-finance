@@ -37,6 +37,8 @@ export function GoalsPage() {
     invalidate('goals');
     invalidate('transactions');
     invalidate('dashboard');
+    // El aporte a una meta crea una transacción contra la cuenta por defecto.
+    invalidate('accounts');
     refresh();
   }
 

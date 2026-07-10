@@ -90,6 +90,7 @@ export function AddTransactionModal({
       invalidate('transactions');
       invalidate('dashboard');
       invalidate('budgets');
+      invalidate('accounts');
       close();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error inesperado');

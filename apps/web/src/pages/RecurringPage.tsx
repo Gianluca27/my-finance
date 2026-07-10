@@ -76,6 +76,8 @@ export function RecurringPage() {
       setAmount('');
       setFormOpen(false);
       invalidate('recurring');
+      // El dashboard muestra próximos vencimientos y descuenta los fijos del safe-to-spend.
+      invalidate('dashboard');
       refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error inesperado');
@@ -89,11 +91,12 @@ export function RecurringPage() {
     if (!confirm(`¿Registrar ${verb} de "${item.name}" por ${formatMoney(item.amount)}?`)) return;
     try {
       await api.payRecurring(item.id);
-      // El pago crea una transacción: además del listado, cambian resumen y presupuestos.
+      // El pago crea una transacción: además del listado, cambian resumen, presupuestos y saldos.
       invalidate('recurring');
       invalidate('transactions');
       invalidate('dashboard');
       invalidate('budgets');
+      invalidate('accounts');
       refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error inesperado');

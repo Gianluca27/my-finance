@@ -41,20 +41,61 @@ const inflight = new Map<string, Promise<unknown>>();
 /** Ventana durante la cual un dato cacheado se considera fresco (no se re-consulta). */
 const FRESH_MS = 30_000;
 
-/** Invalida las entradas cuya clave empieza con `prefix` (sin argumento: todas). */
+/**
+ * Suscriptores por clave: cada `useCached` montado registra su refetch acá,
+ * así una mutación que invalida la clave refresca la pantalla al instante
+ * (sin esperar a un remount).
+ */
+const listeners = new Map<string, Set<() => void>>();
+
+function subscribe(key: string, onInvalidate: () => void): () => void {
+  let subs = listeners.get(key);
+  if (!subs) {
+    subs = new Set();
+    listeners.set(key, subs);
+  }
+  subs.add(onInvalidate);
+  return () => {
+    subs.delete(onInvalidate);
+    if (subs.size === 0) listeners.delete(key);
+  };
+}
+
+function notify(prefix?: string): void {
+  for (const [key, subs] of listeners) {
+    if (prefix !== undefined && !key.startsWith(prefix)) continue;
+    for (const onInvalidate of subs) onInvalidate();
+  }
+}
+
+/**
+ * Invalida las entradas cuya clave empieza con `prefix` (sin argumento: todas)
+ * y dispara el refetch de los hooks montados que las consumen.
+ */
 export function invalidate(prefix?: string): void {
   if (prefix === undefined) {
     store.clear();
     inflight.clear();
-    persist();
-    return;
+  } else {
+    for (const key of store.keys()) {
+      if (key.startsWith(prefix)) store.delete(key);
+    }
+    for (const key of inflight.keys()) {
+      if (key.startsWith(prefix)) inflight.delete(key);
+    }
   }
-  for (const key of store.keys()) {
-    if (key.startsWith(prefix)) store.delete(key);
-  }
-  for (const key of inflight.keys()) {
-    if (key.startsWith(prefix)) inflight.delete(key);
-  }
+  persist();
+  notify(prefix);
+}
+
+/**
+ * Vacía el cache SIN notificar suscriptores: para cambios de sesión
+ * (login/logout/401), donde refetchear con el token viejo o ausente solo
+ * generaría requests espurios que terminan en 401.
+ */
+export function clear(): void {
+  store.clear();
+  inflight.clear();
   persist();
 }
 
@@ -91,17 +132,28 @@ export function useCached<T>(key: string, fetcher: () => Promise<T>) {
   const [data, setData] = useState<T | null>(initial ? (initial.data as T) : null);
   const [error, setError] = useState<string | null>(null);
 
+  // Generación de fetch: si un invalidate dispara un refresh mientras otro
+  // sigue en vuelo, la respuesta vieja (pre-mutación) se descarta.
+  const genRef = useRef(0);
+
   const refresh = useCallback(async () => {
+    const gen = ++genRef.current;
     try {
       const result = await fetcherRef.current();
+      if (gen !== genRef.current) return;
       store.set(key, { data: result, time: Date.now() });
       persist();
       setData(result);
       setError(null);
     } catch (err) {
+      if (gen !== genRef.current) return;
       setError(err instanceof Error ? err.message : 'Error inesperado');
     }
   }, [key]);
+
+  // Refetch inmediato cuando una mutación invalida esta clave. El dato viejo
+  // queda en pantalla mientras llega el nuevo (stale-while-revalidate).
+  useEffect(() => subscribe(key, refresh), [key, refresh]);
 
   useEffect(() => {
     const entry = store.get(key);

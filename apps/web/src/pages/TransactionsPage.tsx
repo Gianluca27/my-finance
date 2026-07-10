@@ -95,11 +95,12 @@ export function TransactionsPage() {
   const accounts = accountsData ?? [];
   const accountName = (id: string) => accounts.find((a) => a.id === id)?.name ?? '';
 
-  /** Un movimiento nuevo/borrado cambia listados, resumen y presupuestos. */
+  /** Un movimiento nuevo/borrado cambia listados, resumen, presupuestos y saldos. */
   function invalidateAfterMutation() {
     invalidate('transactions');
     invalidate('dashboard');
     invalidate('budgets');
+    invalidate('accounts');
     refresh();
   }
 

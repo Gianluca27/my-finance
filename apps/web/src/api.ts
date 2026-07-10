@@ -1,5 +1,5 @@
 import { ApiClient, type User } from '@myfinance/shared';
-import { invalidate } from './cache';
+import { clear } from './cache';
 
 const TOKEN_KEY = 'myfinance.token';
 const USER_KEY = 'myfinance.user';
@@ -34,7 +34,7 @@ export const api = new ApiClient({
   onUnauthorized: () => {
     setToken(null);
     setCachedUser(null);
-    invalidate();
+    clear();
     if (!window.location.pathname.startsWith('/login')) {
       window.location.href = '/login';
     }

@@ -4,8 +4,12 @@ import { api, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
 import { IcoPlus, IcoTrash } from '../components/icons';
 import { Modal } from '../components/Modal';
+import { currentMonthKey, monthLabel, MonthPicker } from '../components/MonthPicker';
 
 export function BudgetsPage() {
+  const [month, setMonth] = useState(currentMonthKey());
+  const isCurrentMonth = month === currentMonthKey();
+
   const [error, setError] = useState<string | null>(null);
 
   const [categoryId, setCategoryId] = useState('');
@@ -14,17 +18,17 @@ export function BudgetsPage() {
   const [busy, setBusy] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
 
-  const { data: budgets, error: loadError, refresh } = useCached<BudgetStatus[]>('budgets', () =>
-    api.listBudgets(),
+  const { data: budgets, error: loadError, refresh } = useCached<BudgetStatus[]>(`budgets:${month}`, () =>
+    api.listBudgets(month),
   );
   const { data: categoriesData } = useCached<Category[]>('categories', () => api.listCategories());
   const categories = (categoriesData ?? []).filter((c) => c.type === 'EXPENSE');
 
   const totalBudgeted = (budgets ?? []).reduce((sum, b) => sum + b.amount, 0);
   const totalSpent = (budgets ?? []).reduce((sum, b) => sum + b.spent, 0);
-  const monthLabel = new Date().toLocaleDateString('es-AR', { month: 'long' });
 
-  // Días que quedan en el mes (incluyendo hoy) para repartir lo que resta del presupuesto.
+  // Días que quedan en el mes en curso (incluyendo hoy) para repartir lo que resta del
+  // presupuesto. Solo tiene sentido para el mes actual: en uno pasado ya no queda nada por repartir.
   const now = new Date();
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const daysLeft = Math.max(1, daysInMonth - now.getDate() + 1);
@@ -64,6 +68,14 @@ export function BudgetsPage() {
 
   return (
     <>
+      <div style={{ marginBottom: 14 }}>
+        <MonthPicker month={month} onChange={setMonth} />
+      </div>
+
+      {!isCurrentMonth && (
+        <div className="mf-readonly-banner">Viendo {monthLabel(month)} — solo lectura</div>
+      )}
+
       {(error ?? loadError) && <div className="error-banner">{error ?? loadError}</div>}
 
       <div className="mf-grid-3" style={{ marginBottom: 14 }}>
@@ -74,7 +86,7 @@ export function BudgetsPage() {
           </div>
         </div>
         <div className="card">
-          <div className="mf-label">Gastado en {monthLabel}</div>
+          <div className="mf-label">Gastado en {monthLabel(month)}</div>
           <div className="mf-figure mf-figure--stat" style={{ color: 'var(--neg)' }}>
             {formatMoney(totalSpent)}
           </div>
@@ -114,14 +126,16 @@ export function BudgetsPage() {
                     <div className={`mf-budget-status ${over ? 'over' : near ? 'near' : ''}`}>{status}</div>
                   </div>
                   <div className="mf-budget-pct">{budget.percentUsed}%</div>
-                  <button
-                    type="button"
-                    className="mf-icon-btn"
-                    aria-label="Eliminar presupuesto"
-                    onClick={() => onDelete(budget.id)}
-                  >
-                    <IcoTrash size={15} />
-                  </button>
+                  {isCurrentMonth && (
+                    <button
+                      type="button"
+                      className="mf-icon-btn"
+                      aria-label="Eliminar presupuesto"
+                      onClick={() => onDelete(budget.id)}
+                    >
+                      <IcoTrash size={15} />
+                    </button>
+                  )}
                 </div>
                 <div className="mf-progress">
                   <div
@@ -136,10 +150,18 @@ export function BudgetsPage() {
                   <span className="muted">Quedan {formatMoney(remainingBudget)}</span>
                 </div>
                 <div className="mf-budget-foot" style={{ marginTop: 4 }}>
-                  <span className="muted">{daysLeft} días para fin de mes</span>
-                  <span className={over ? '' : 'mono'} style={{ color: over ? 'var(--neg)' : 'var(--pos)' }}>
-                    {over ? 'Presupuesto superado' : `${formatMoney(perDay)}/día disponible`}
-                  </span>
+                  {isCurrentMonth ? (
+                    <>
+                      <span className="muted">{daysLeft} días para fin de mes</span>
+                      <span className={over ? '' : 'mono'} style={{ color: over ? 'var(--neg)' : 'var(--pos)' }}>
+                        {over ? 'Presupuesto superado' : `${formatMoney(perDay)}/día disponible`}
+                      </span>
+                    </>
+                  ) : (
+                    <span className={over ? '' : 'mono'} style={{ color: over ? 'var(--neg)' : 'var(--pos)' }}>
+                      {over ? 'Presupuesto superado' : 'Presupuesto cumplido'}
+                    </span>
+                  )}
                 </div>
               </div>
             );
@@ -147,14 +169,16 @@ export function BudgetsPage() {
         </div>
       )}
 
-      <div className="mf-dashed-tile mf-dashed-tile--row">
-        <button type="button" className="mf-dashed-main" onClick={() => setFormOpen(true)}>
-          <span className="mf-dashed-mark" aria-hidden="true">
-            <IcoPlus />
-          </span>
-          <span className="mf-dashed-title">Nuevo presupuesto</span>
-        </button>
-      </div>
+      {isCurrentMonth && (
+        <div className="mf-dashed-tile mf-dashed-tile--row">
+          <button type="button" className="mf-dashed-main" onClick={() => setFormOpen(true)}>
+            <span className="mf-dashed-mark" aria-hidden="true">
+              <IcoPlus />
+            </span>
+            <span className="mf-dashed-title">Nuevo presupuesto</span>
+          </button>
+        </div>
+      )}
 
       <Modal open={formOpen} onClose={() => setFormOpen(false)} title="Nuevo presupuesto">
         <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

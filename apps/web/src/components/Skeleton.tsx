@@ -14,5 +14,5 @@ interface SkeletonProps {
 }
 
 export function Skeleton({ width = '100%', height = 14, style }: SkeletonProps) {
-  return <span className="mf-skeleton" style={{ width, height, ...style }} />;
+  return <span className="mf-skeleton" aria-hidden="true" style={{ width, height, ...style }} />;
 }

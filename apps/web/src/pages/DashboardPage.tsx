@@ -89,7 +89,8 @@ function DashboardSkeleton({ isCurrentMonth }: { isCurrentMonth: boolean }) {
     </>
   );
   return (
-    <div className={isCurrentMonth ? 'mf-dashboard' : 'mf-dashboard mf-dashboard--past'}>
+    <div className={isCurrentMonth ? 'mf-dashboard' : 'mf-dashboard mf-dashboard--past'} role="status">
+      <span className="mf-sr-only">Cargando…</span>
       <div className="mf-hero-card mf-b-balance">{cardBody(90)}</div>
       {isCurrentMonth && <div className="card mf-b-proj">{cardBody(70)}</div>}
       <div className="mf-b-side">

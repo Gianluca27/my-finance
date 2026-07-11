@@ -147,9 +147,17 @@ export function TransactionsPage() {
   }
 
   // Debounce de la búsqueda: recién comprometemos a la URL cuando el usuario deja de tipear.
+  // Este efecto también corre al montar (deps [searchInput]): si no hiciera nada cuando el
+  // texto ya coincide con el `q` de la URL, un mount con ?page=3 perdería la página al
+  // reescribirse con page=undefined pese a no haber una búsqueda nueva.
   useEffect(() => {
     const handle = setTimeout(() => {
       const trimmed = searchInput.trim();
+      const urlQ = searchParamsRef.current.get('q') ?? '';
+      if (trimmed === urlQ) {
+        setSearch(trimmed);
+        return;
+      }
       setSearch(trimmed);
       setFilter({ q: trimmed || undefined, page: undefined }, { replace: true });
     }, SEARCH_DEBOUNCE_MS);

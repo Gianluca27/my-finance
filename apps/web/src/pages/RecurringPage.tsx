@@ -226,6 +226,7 @@ export function RecurringPage() {
     setHistoryItem(item);
     setHistoryPayments(null);
     setHistoryLoading(true);
+    setError(null);
     try {
       setHistoryPayments(await api.listRecurringPayments(item.id));
     } catch (err) {
@@ -547,6 +548,8 @@ export function RecurringPage() {
         {historyItem &&
           (historyLoading ? (
             <p className="muted">Cargando…</p>
+          ) : error ? (
+            <div className="error-banner">{error}</div>
           ) : !historyPayments || historyPayments.length === 0 ? (
             <p className="muted">
               Todavía no hay pagos vinculados a este recurrente. El historial arranca a partir de esta

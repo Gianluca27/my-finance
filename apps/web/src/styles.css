@@ -1590,6 +1590,12 @@ td.num {
   .mf-b-budgets {
     grid-column: 4 / 7;
   }
+  /* La regla base --past (fuera de media query) usa columnas de la grilla de 12;
+     acá la grilla es de 6, así que hay que re-mapear las tres cards o el 1/8 del
+     balance crearía una séptima columna fantasma. */
+  .mf-dashboard--past .mf-b-balance {
+    grid-column: 1 / 7;
+  }
   .mf-dashboard--past .mf-b-side {
     grid-column: 1 / 7;
   }

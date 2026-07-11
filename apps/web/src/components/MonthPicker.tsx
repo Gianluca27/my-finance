@@ -4,10 +4,16 @@
  * mes mostrado no es el actual, para volver rápido.
  */
 
-/** Mes actual en formato YYYY-MM (fecha local: evita el corrimiento de huso horario de toISOString). */
+/**
+ * Mes actual en formato YYYY-MM, en UTC: la API define "mes actual" con getters
+ * UTC (`currentMonth()` en apps/api/src/lib/dates.ts), así que el cliente usa la
+ * misma vara. Con hora local, en UTC-3 las últimas ~3 h de cada mes el picker
+ * seguiría tratando al mes viejo como "actual" (mostrando las cards de estado
+ * presente y bloqueando avanzar) cuando el server ya pasó al siguiente.
+ */
 export function currentMonthKey(): string {
   const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
 function shiftMonthKey(month: string, delta: number): string {

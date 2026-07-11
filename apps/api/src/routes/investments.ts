@@ -1,4 +1,4 @@
-import type { Investment, InvestmentOperation } from '@prisma/client';
+import type { Investment, InvestmentOperation, Prisma } from '@prisma/client';
 import { Router } from 'express';
 import { z } from 'zod';
 import {
@@ -6,11 +6,13 @@ import {
   closestPriceMatch,
   computePosition,
   investmentMetrics,
+  operationCashAmount,
   positionAsOf,
   xirr,
   type CashFlow,
   type PositionOp,
 } from '../lib/investments';
+import { resolveAccountId } from '../lib/accounts';
 import { refreshPricesForUser } from '../jobs/prices';
 import { serialize } from '../lib/serialize';
 import { requireAuth } from '../middleware/auth';
@@ -87,13 +89,38 @@ const updateSchema = baseSchema
   })
   .superRefine(refineProviderLink);
 
-const operationSchema = z.object({
+/** Compra o venta: cantidad de unidades × precio unitario. */
+const tradeOpSchema = z.object({
   type: z.enum(['COMPRA', 'VENTA']),
   quantity: z.number().positive().max(999_999_999_999),
   unitPrice: z.number().positive().max(999_999_999_999),
   date: z.coerce.date().optional(),
   note: z.string().max(500).nullable().optional(),
 });
+
+/** Renta cobrada (dividendo/cupón/amortización): monto total, sin mover la tenencia. */
+const rentaOpSchema = z.object({
+  type: z.literal('RENTA'),
+  amount: z.number().positive().max(999_999_999_999),
+  date: z.coerce.date().optional(),
+  note: z.string().max(500).nullable().optional(),
+  /// true acredita además un INCOME en movimientos (default: no, desacopla inversiones del flujo de caja).
+  credit: z.boolean().optional(),
+  /// Cuenta destino del INCOME cuando credit=true. Default: cuenta por defecto del usuario.
+  accountId: z.string().nullable().optional(),
+});
+
+const operationSchema = z.discriminatedUnion('type', [tradeOpSchema, rentaOpSchema]);
+type OperationInput = z.infer<typeof operationSchema>;
+
+/**
+ * Campos que persiste la DB para una operación. La RENTA no mueve tenencia: se
+ * guarda con quantity 0 y el monto total cobrado en unitPrice (ver schema.prisma).
+ */
+function opStorageFields(input: OperationInput): { type: OperationInput['type']; quantity: number; unitPrice: number } {
+  if (input.type === 'RENTA') return { type: 'RENTA', quantity: 0, unitPrice: input.amount };
+  return { type: input.type, quantity: input.quantity, unitPrice: input.unitPrice };
+}
 
 const priceSchema = z.object({
   price: z.number().positive().max(999_999_999_999),
@@ -145,16 +172,13 @@ function round2(n: number): number {
 }
 
 /**
- * TIR anualizada del activo, en %: compras negativas, ventas positivas y el
- * valor actual como flujo final positivo. Los importes van en espacio monetario
- * (divididos por el factor, igual que `currentValue`). Null si no hay señal.
+ * TIR anualizada del activo, en %: compras negativas, ventas y rentas positivas
+ * y el valor actual como flujo final positivo. Los importes van en espacio
+ * monetario (compras/ventas divididas por el factor; la renta ya es efectivo
+ * real). Null si no hay señal.
  */
 function assetTir(ops: DatedOp[], priceFactor: number, currentValue: number, now: Date): number | null {
-  const factor = priceFactor > 0 ? priceFactor : 1;
-  const flows: CashFlow[] = ops.map((op) => ({
-    date: op.date,
-    amount: ((op.type === 'COMPRA' ? -1 : 1) * (op.quantity * op.unitPrice)) / factor,
-  }));
+  const flows: CashFlow[] = ops.map((op) => ({ date: op.date, amount: operationCashAmount(op, priceFactor) }));
   if (currentValue > 0) flows.push({ date: now, amount: currentValue });
   const rate = xirr(flows);
   return rate === null ? null : round2(rate * 100);
@@ -367,12 +391,9 @@ router.get(
       if (investment.archivedAt !== null) continue;
       const rate = investment.currency === null ? 1 : rateMap.get(investment.currency);
       if (rate === undefined) continue;
-      const factor = investment.priceFactor > 0 ? investment.priceFactor : 1;
       for (const op of toDatedOps(opsByInvestment.get(investment.id) ?? [])) {
-        portfolioFlows.push({
-          date: op.date,
-          amount: (((op.type === 'COMPRA' ? -1 : 1) * (op.quantity * op.unitPrice)) / factor) * rate,
-        });
+        // La renta suma como flujo positivo a su fecha (igual que en assetTir).
+        portfolioFlows.push({ date: op.date, amount: operationCashAmount(op, investment.priceFactor) * rate });
       }
     }
     if (summary.totalValue > 0) portfolioFlows.push({ date: now, amount: summary.totalValue });
@@ -736,37 +757,111 @@ router.get(
 
 // --- Operaciones ---
 
+/**
+ * Valida una operación (nueva o editada) contra la secuencia completa: ninguna
+ * venta puede exceder la tenencia a su fecha, y una RENTA exige tenencia > 0 a la
+ * suya (no se cobra renta de lo que no se tiene). `others` son las operaciones sin
+ * la que se está creando/editando; `createdAt` desempata el orden a igual fecha.
+ */
+function assertOperationValid(input: OperationInput, opDate: Date, others: DatedOp[], createdAt: Date): void {
+  const stored = opStorageFields(input);
+  const candidate = sortOps([
+    ...others,
+    { type: stored.type, quantity: stored.quantity, unitPrice: stored.unitPrice, date: opDate, createdAt },
+  ]);
+  if (computePosition(candidate) === null) {
+    throw new HttpError(400, 'La venta supera la tenencia disponible a esa fecha.');
+  }
+  if (input.type === 'RENTA') {
+    const pos = positionAsOf(candidate, opDate);
+    if (!pos || pos.quantity <= 0) {
+      throw new HttpError(400, 'No tenés tenencia de este activo a esa fecha: no se puede registrar renta.');
+    }
+  }
+}
+
 router.post(
   '/:id/operations',
   asyncHandler(async (req, res) => {
     const input = operationSchema.parse(req.body);
     const existing = await findOwned(req.auth!.userId, req.params.id);
+    const userId = req.auth!.userId;
 
     const now = new Date();
     const opDate = input.date ?? now;
     const ops = toDatedOps(await fetchOps(existing.id));
-    const candidate = sortOps([
-      ...ops,
-      { type: input.type, quantity: input.quantity, unitPrice: input.unitPrice, date: opDate, createdAt: now },
-    ]);
-    // Valida toda la secuencia: una venta (incluso retroactiva) nunca puede
-    // superar la tenencia disponible a esa fecha.
-    if (computePosition(candidate) === null) {
-      throw new HttpError(400, 'La venta supera la tenencia disponible a esa fecha.');
-    }
+    assertOperationValid(input, opDate, ops, now);
 
-    await prisma.investmentOperation.create({
+    const stored = opStorageFields(input);
+    // Acreditar la renta como INCOME en una cuenta (opcional, default off). Sin
+    // categoría: `checkBudgetAlert` sólo mira gastos con categoría, así que nunca dispara alerta.
+    const credit =
+      input.type === 'RENTA' && input.credit
+        ? { accountId: await resolveAccountId(userId, input.accountId), amount: input.amount }
+        : null;
+
+    const writes: Prisma.PrismaPromise<unknown>[] = [
+      prisma.investmentOperation.create({
+        data: {
+          type: stored.type,
+          quantity: stored.quantity,
+          unitPrice: stored.unitPrice,
+          date: opDate,
+          note: input.note ?? null,
+          investmentId: existing.id,
+          userId,
+        },
+      }),
+    ];
+    if (credit) {
+      writes.push(
+        prisma.transaction.create({
+          data: {
+            type: 'INCOME',
+            amount: credit.amount,
+            date: opDate,
+            note: `Renta: ${existing.name}`,
+            accountId: credit.accountId,
+            userId,
+          },
+        }),
+      );
+    }
+    await prisma.$transaction(writes);
+    res.status(201).json(await buildDetail(existing));
+  }),
+);
+
+router.put(
+  '/:id/operations/:operationId',
+  asyncHandler(async (req, res) => {
+    const input = operationSchema.parse(req.body);
+    const existing = await findOwned(req.auth!.userId, req.params.id);
+    const operation = await prisma.investmentOperation.findFirst({
+      where: { id: req.params.operationId, investmentId: existing.id },
+    });
+    if (!operation) throw new HttpError(404, 'Operación no encontrada');
+
+    const opDate = input.date ?? operation.date;
+    const ops = await fetchOps(existing.id);
+    const others = toDatedOps(ops.filter((op) => op.id !== operation.id));
+    // Revalida la secuencia completa con el cambio aplicado (createdAt intacto para el desempate).
+    assertOperationValid(input, opDate, others, operation.createdAt);
+
+    const stored = opStorageFields(input);
+    // La edición no toca el INCOME que se hubiera acreditado al alta: no hay vínculo
+    // persistido entre operación y movimiento (acreditar es una conveniencia del alta).
+    await prisma.investmentOperation.update({
+      where: { id: operation.id },
       data: {
-        type: input.type,
-        quantity: input.quantity,
-        unitPrice: input.unitPrice,
+        type: stored.type,
+        quantity: stored.quantity,
+        unitPrice: stored.unitPrice,
         date: opDate,
         note: input.note ?? null,
-        investmentId: existing.id,
-        userId: req.auth!.userId,
       },
     });
-    res.status(201).json(await buildDetail(existing));
+    res.json(await buildDetail(existing));
   }),
 );
 

@@ -370,9 +370,13 @@ export class ApiClient {
   deleteInvestment(id: string) {
     return this.request<void>('DELETE', `/api/investments/${id}`);
   }
-  /** Registra compra/venta. La venta no puede superar la tenencia. */
+  /** Registra compra/venta/renta. La venta no puede superar la tenencia; la renta exige tenencia > 0. */
   addInvestmentOperation(id: string, input: InvestmentOperationInput) {
     return this.request<InvestmentDetail>('POST', `/api/investments/${id}/operations`, input);
+  }
+  /** Edita una operación revalidando la secuencia completa (400 si dejaría ventas en descubierto). */
+  updateInvestmentOperation(id: string, operationId: string, input: InvestmentOperationInput) {
+    return this.request<InvestmentDetail>('PUT', `/api/investments/${id}/operations/${operationId}`, input);
   }
   deleteInvestmentOperation(id: string, operationId: string) {
     return this.request<InvestmentDetail>('DELETE', `/api/investments/${id}/operations/${operationId}`);

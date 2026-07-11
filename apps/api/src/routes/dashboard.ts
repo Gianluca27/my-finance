@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { currentMonth, isValidMonth, monthLength, monthRange, shiftMonth, startOfTodayUTC } from '../lib/dates';
-import { buildInvestmentsSummary, investmentMetrics } from '../lib/investments';
+import { buildInvestmentsSummary, investmentMetrics, type PositionOp } from '../lib/investments';
 import { serialize } from '../lib/serialize';
 import { requireAuth } from '../middleware/auth';
 import { asyncHandler } from '../middleware/error';
@@ -351,7 +351,7 @@ router.get(
     };
 
     // --- Resumen de inversiones (portafolio en moneda base, al TC vigente) ---
-    const invOpsById = new Map<string, Array<{ type: 'COMPRA' | 'VENTA'; quantity: number; unitPrice: number }>>();
+    const invOpsById = new Map<string, PositionOp[]>();
     for (const op of investmentOps) {
       const list = invOpsById.get(op.investmentId) ?? [];
       list.push({ type: op.type, quantity: op.quantity.toNumber(), unitPrice: op.unitPrice.toNumber() });

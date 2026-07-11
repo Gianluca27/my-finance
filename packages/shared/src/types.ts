@@ -123,7 +123,8 @@ export interface DebtDetail extends Debt {
 }
 
 export type InvestmentType = 'ACCION' | 'ETF' | 'CEDEAR' | 'CRIPTO' | 'FCI' | 'PLAZO_FIJO' | 'BONO' | 'OTRO';
-export type InvestmentOperationType = 'COMPRA' | 'VENTA';
+/** COMPRA/VENTA mueven la tenencia; RENTA (dividendo/cupón/amortización) es sólo un cobro. */
+export type InvestmentOperationType = 'COMPRA' | 'VENTA' | 'RENTA';
 
 /** Proveedor de precios automáticos de un activo vinculado. */
 export type ProviderSource = 'TWELVE_DATA' | 'DATA912';
@@ -170,9 +171,14 @@ export interface Investment {
   investedCost: number;
   /** quantity * (currentPrice ?? avgCost) / priceFactor. */
   currentValue: number;
-  /** currentValue - investedCost (no realizado). */
+  /** currentValue - investedCost (no realizado). P&L de precio ("pnlPrice"). */
   pnl: number;
   pnlPercent: number;
+  /** Renta cobrada acumulada (Σ RENTA): dividendos, cupones y amortizaciones.
+   * Opcional: puede faltar en clientes/respuestas viejas. Default a tratar como 0. */
+  incomeCollected?: number;
+  /** Resultado total: pnl (precio) + incomeCollected (renta). Opcional (ver incomeCollected). */
+  pnlTotal?: number;
   /** TIR anualizada (money-weighted) del activo, en %. Null si no converge o hay
    * poco historial (<2 flujos o <30 días). Opcional: no lo devuelven todos los endpoints. */
   tir?: number | null;
@@ -182,7 +188,9 @@ export interface Investment {
 export interface InvestmentOperation {
   id: string;
   type: InvestmentOperationType;
+  /** COMPRA/VENTA: unidades operadas. RENTA: 0 (no mueve la tenencia). */
   quantity: number;
+  /** COMPRA/VENTA: precio unitario. RENTA: monto total cobrado (efectivo real). */
   unitPrice: number;
   date: string;
   note: string | null;
@@ -309,14 +317,31 @@ export interface SymbolSearchResponse {
 /** Edición; `archived` mapea a archivedAt (patrón Account). */
 export type InvestmentUpdateInput = Partial<InvestmentInput> & { archived?: boolean };
 
-export interface InvestmentOperationInput {
-  type: InvestmentOperationType;
+/** Compra o venta: cantidad de unidades × precio unitario. */
+export interface InvestmentTradeInput {
+  type: 'COMPRA' | 'VENTA';
   quantity: number;
   unitPrice: number;
   /** Default: ahora. */
   date?: string;
   note?: string | null;
 }
+
+/** Renta cobrada (dividendo/cupón/amortización): monto total, sin mover la tenencia. */
+export interface InvestmentRentaInput {
+  type: 'RENTA';
+  /** Monto total cobrado (no por unidad). Debe ser > 0 y exige tenencia > 0 a esa fecha. */
+  amount: number;
+  /** Default: ahora. */
+  date?: string;
+  note?: string | null;
+  /** Si true, además registra un INCOME en movimientos. Default: no (inversiones desacopladas del flujo de caja). */
+  credit?: boolean;
+  /** Cuenta destino del INCOME cuando credit=true. Default: cuenta por defecto del usuario. */
+  accountId?: string | null;
+}
+
+export type InvestmentOperationInput = InvestmentTradeInput | InvestmentRentaInput;
 
 /** Precio para una fecha pasada (autocompleta el formulario de compra/venta). */
 export interface InvestmentPriceAtDate {

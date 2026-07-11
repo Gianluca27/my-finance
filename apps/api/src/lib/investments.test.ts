@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   closestPriceMatch,
+  computePosition,
   investmentMetrics,
+  operationCashAmount,
   positionAsOf,
   xirr,
   type CashFlow,
@@ -58,6 +60,110 @@ describe('investmentMetrics con priceFactor', () => {
     expect(m.avgCost).toBe(85_600);
     expect(m.investedCost).toBe(5_136_000); // 6.000 × 85.600 / 100
     expect(m.currentValue).toBe(5_400_000); // 6.000 × 90.000 / 100
+  });
+});
+
+describe('renta (RENTA)', () => {
+  it('no altera la tenencia ni el costo promedio', () => {
+    const ops: PositionOp[] = [
+      { type: 'COMPRA', quantity: 100, unitPrice: 50 },
+      { type: 'RENTA', quantity: 0, unitPrice: 1200 }, // dividendo total cobrado
+    ];
+    const m = investmentMetrics(60, ops);
+    expect(m.quantity).toBe(100);
+    expect(m.avgCost).toBe(50);
+    expect(m.investedCost).toBe(5000);
+    expect(m.currentValue).toBe(6000);
+  });
+
+  it('acumula incomeCollected y pnlTotal = pnlPrice + renta', () => {
+    const ops: PositionOp[] = [
+      { type: 'COMPRA', quantity: 100, unitPrice: 50 },
+      { type: 'RENTA', quantity: 0, unitPrice: 800 },
+      { type: 'RENTA', quantity: 0, unitPrice: 400 },
+    ];
+    const m = investmentMetrics(60, ops); // pnl de precio = 6000 - 5000 = 1000
+    expect(m.pnl).toBe(1000);
+    expect(m.incomeCollected).toBe(1200);
+    expect(m.pnlTotal).toBe(2200);
+  });
+
+  it('sin RENTA, incomeCollected es 0 y pnlTotal coincide con pnl', () => {
+    const m = investmentMetrics(60, [{ type: 'COMPRA', quantity: 100, unitPrice: 50 }]);
+    expect(m.incomeCollected).toBe(0);
+    expect(m.pnlTotal).toBe(m.pnl);
+  });
+
+  it('en renta fija el monto de renta NO se divide por el factor', () => {
+    // Bono cada 100 VN: el cupón cobrado (30.000) es efectivo real, no un precio cotizado.
+    const ops: PositionOp[] = [
+      { type: 'COMPRA', quantity: 10_000, unitPrice: 85_600 },
+      { type: 'RENTA', quantity: 0, unitPrice: 30_000 },
+    ];
+    const m = investmentMetrics(90_000, ops, 100);
+    expect(m.incomeCollected).toBe(30_000);
+    expect(m.investedCost).toBe(8_560_000);
+    expect(m.currentValue).toBe(9_000_000);
+    expect(m.pnl).toBe(440_000);
+    expect(m.pnlTotal).toBe(470_000);
+  });
+
+  it('computePosition ignora RENTA sin romper una venta posterior', () => {
+    const pos = computePosition([
+      { type: 'COMPRA', quantity: 10, unitPrice: 100 },
+      { type: 'RENTA', quantity: 0, unitPrice: 50 },
+      { type: 'VENTA', quantity: 10, unitPrice: 120 },
+    ]);
+    expect(pos).toEqual({ quantity: 0, investedCost: 0, avgCost: 0 });
+  });
+
+  it('positionAsOf no cuenta la RENTA como tenencia', () => {
+    const ops: DatedPositionOp[] = [
+      { type: 'COMPRA', quantity: 10, unitPrice: 100, date: new Date('2024-01-01T00:00:00.000Z') },
+      { type: 'RENTA', quantity: 0, unitPrice: 40, date: new Date('2024-02-01T00:00:00.000Z') },
+    ];
+    const pos = positionAsOf(ops, new Date('2024-03-01T00:00:00.000Z'));
+    expect(pos).toEqual({ quantity: 10, investedCost: 1000, avgCost: 100 });
+  });
+
+  it('una compra reducida que deja una venta en descubierto invalida la secuencia', () => {
+    // Base de la revalidación al editar: bajar la compra a 5 deja la venta de 8 sin tenencia.
+    expect(
+      computePosition([
+        { type: 'COMPRA', quantity: 5, unitPrice: 100 },
+        { type: 'VENTA', quantity: 8, unitPrice: 120 },
+      ]),
+    ).toBeNull();
+  });
+});
+
+describe('operationCashAmount', () => {
+  it('compra negativa y venta positiva, escaladas por el factor', () => {
+    expect(operationCashAmount({ type: 'COMPRA', quantity: 10_000, unitPrice: 85_600 }, 100)).toBe(-8_560_000);
+    expect(operationCashAmount({ type: 'VENTA', quantity: 4_000, unitPrice: 90_000 }, 100)).toBe(3_600_000);
+  });
+
+  it('RENTA entra positiva por su monto total, sin dividir por el factor', () => {
+    expect(operationCashAmount({ type: 'RENTA', quantity: 0, unitPrice: 30_000 }, 100)).toBe(30_000);
+  });
+
+  it('un factor inválido cae a 1', () => {
+    expect(operationCashAmount({ type: 'COMPRA', quantity: 10, unitPrice: 100 }, 0)).toBe(-1000);
+  });
+
+  it('la TIR sube al sumar una RENTA como flujo positivo intermedio', () => {
+    const buy: CashFlow = {
+      date: new Date('2023-01-01T00:00:00.000Z'),
+      amount: operationCashAmount({ type: 'COMPRA', quantity: 100, unitPrice: 10 }),
+    };
+    const end: CashFlow = { date: new Date('2024-01-01T00:00:00.000Z'), amount: 1100 };
+    const withoutRenta = xirr([buy, end])!;
+    const renta: CashFlow = {
+      date: new Date('2023-07-01T00:00:00.000Z'),
+      amount: operationCashAmount({ type: 'RENTA', quantity: 0, unitPrice: 50 }),
+    };
+    const withRenta = xirr([buy, renta, end])!;
+    expect(withRenta).toBeGreaterThan(withoutRenta);
   });
 });
 

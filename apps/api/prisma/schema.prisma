@@ -53,6 +53,10 @@ enum InvestmentType {
 enum InvestmentOperationType {
   COMPRA
   VENTA
+  /// Renta cobrada: dividendo, cupón o amortización. No mueve la tenencia.
+  /// Se persiste con quantity 0 y el monto total cobrado en unitPrice (ver
+  /// InvestmentOperation y lib/investments.ts).
+  RENTA
 }
 
 enum SuggestionType {
@@ -341,8 +345,11 @@ model Investment {
   @@index([userId])
 }
 
-/// Compra o venta de un activo. Cantidad y precio en la moneda del activo.
+/// Compra, venta o renta de un activo. Cantidad y precio en la moneda del activo.
 /// Para plazo fijo/bono se usa cantidad 1 y precio = capital.
+/// RENTA (dividendo/cupón/amortización) no mueve la tenencia: se guarda con
+/// quantity 0 y el monto total cobrado en unitPrice (efectivo real, sin dividir
+/// por priceFactor). Reusar unitPrice evita una columna nueva; ver lib/investments.ts.
 model InvestmentOperation {
   id           String                  @id @default(cuid())
   type         InvestmentOperationType

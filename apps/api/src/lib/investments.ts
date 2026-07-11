@@ -9,9 +9,16 @@ function round8(n: number): number {
   return Math.round(n * 1e8) / 1e8;
 }
 
+/**
+ * Tipo de operación. RENTA (dividendo/cupón/amortización) no mueve la tenencia:
+ * se persiste con `quantity` 0 y el monto total cobrado en `unitPrice` (efectivo
+ * real, no un precio cotizado). Reusar `unitPrice` evita agregar una columna.
+ */
+export type OperationType = 'COMPRA' | 'VENTA' | 'RENTA';
+
 /** Operación en números planos (los Decimal de Prisma se convierten antes). */
 export interface PositionOp {
-  type: 'COMPRA' | 'VENTA';
+  type: OperationType;
   quantity: number;
   unitPrice: number;
 }
@@ -33,6 +40,8 @@ export function computePosition(ops: PositionOp[]): Position | null {
   let qty = 0;
   let cost = 0;
   for (const op of ops) {
+    // RENTA no compra ni vende: no toca tenencia ni costo (ver InvestmentMetrics).
+    if (op.type === 'RENTA') continue;
     if (op.type === 'COMPRA') {
       cost += op.quantity * op.unitPrice;
       qty += op.quantity;
@@ -56,8 +65,14 @@ export interface InvestmentMetrics {
   avgCost: number;
   investedCost: number;
   currentValue: number;
+  /** P&L por precio (no realizado): currentValue − investedCost. Es el "pnlPrice". */
   pnl: number;
+  /** pnl sobre lo invertido, en %. Base precio (la renta no entra acá). */
   pnlPercent: number;
+  /** Renta cobrada acumulada (Σ RENTA): dividendos, cupones y amortizaciones, en efectivo real. */
+  incomeCollected: number;
+  /** Resultado total: pnl (precio) + incomeCollected (renta). */
+  pnlTotal: number;
   operationCount: number;
 }
 
@@ -83,6 +98,10 @@ export function investmentMetrics(
   const investedCost = position.investedCost / factor;
   const currentValue = (position.quantity * effectivePrice) / factor;
   const pnl = currentValue - investedCost;
+  // La renta cobrada es efectivo real ya recibido: se suma tal cual, sin dividir
+  // por el factor (a diferencia de investedCost/currentValue, que vienen de un precio cotizado).
+  let incomeCollected = 0;
+  for (const op of ops) if (op.type === 'RENTA') incomeCollected += op.unitPrice;
   return {
     quantity: round8(position.quantity),
     avgCost: round8(position.avgCost),
@@ -90,6 +109,8 @@ export function investmentMetrics(
     currentValue: round2(currentValue),
     pnl: round2(pnl),
     pnlPercent: investedCost > 0 ? round2((pnl / investedCost) * 100) : 0,
+    incomeCollected: round2(incomeCollected),
+    pnlTotal: round2(pnl + incomeCollected),
     operationCount: ops.length,
   };
 }
@@ -117,6 +138,18 @@ export function positionAsOf(ops: DatedPositionOp[], asOf: Date): Position | nul
 export interface CashFlow {
   date: Date;
   amount: number;
+}
+
+/**
+ * Importe de caja de una operación (en moneda del activo) para la TIR: compra
+ * negativa, venta positiva, ambas divididas por `priceFactor` (espacio monetario,
+ * igual que `currentValue`). La RENTA entra positiva por su monto total cobrado,
+ * sin dividir por el factor (ya es efectivo real, no un precio cotizado).
+ */
+export function operationCashAmount(op: Pick<PositionOp, 'type' | 'quantity' | 'unitPrice'>, priceFactor = 1): number {
+  if (op.type === 'RENTA') return op.unitPrice;
+  const factor = priceFactor > 0 ? priceFactor : 1;
+  return ((op.type === 'COMPRA' ? -1 : 1) * (op.quantity * op.unitPrice)) / factor;
 }
 
 const XIRR_TOLERANCE = 1e-6;

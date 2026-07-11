@@ -37,6 +37,7 @@ import type {
   Paginated,
   RecurringExpense,
   RecurringExpenseInput,
+  RecurringPayInput,
   ResetPasswordInput,
   Suggestion,
   SuggestionsRefreshResult,
@@ -232,12 +233,23 @@ export class ApiClient {
   deleteRecurring(id: string) {
     return this.request<void>('DELETE', `/api/recurring/${id}`);
   }
-  /** Registra el pago del período actual: crea la transacción y avanza el vencimiento. */
-  payRecurring(id: string) {
+  /** Registra el pago del período actual: crea la transacción (monto/cuenta/fecha indicados,
+   * o los defaults del recurrente) y avanza el vencimiento. */
+  payRecurring(id: string, body?: RecurringPayInput) {
     return this.request<{ transaction: Transaction; recurring: RecurringExpense }>(
       'POST',
       `/api/recurring/${id}/pay`,
+      body,
     );
+  }
+  /** Salta el período actual sin registrar pago: solo avanza el vencimiento. */
+  skipRecurring(id: string) {
+    return this.request<RecurringExpense>('POST', `/api/recurring/${id}/skip`);
+  }
+  /** Últimos pagos vinculados a este recurrente (orden desc, máx. 24). El historial arranca
+   * desde que existe el vínculo `recurringId`; pagos anteriores no aparecen acá. */
+  listRecurringPayments(id: string) {
+    return this.request<Transaction[]>('GET', `/api/recurring/${id}/payments`);
   }
 
   // --- Presupuestos ---

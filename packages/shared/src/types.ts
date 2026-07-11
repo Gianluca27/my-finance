@@ -60,6 +60,7 @@ export interface Transaction {
   accountId: string;
   debtId: string | null;
   goalId: string | null;
+  recurringId: string | null;
   /** MIME del recibo adjunto, o null si no tiene. Los bytes se sirven aparte. */
   receiptMime: string | null;
   createdAt: string;
@@ -467,6 +468,17 @@ export interface RecurringExpenseInput {
   reminderDaysBefore?: number;
   active?: boolean;
   categoryId?: string | null;
+}
+
+/** Body opcional de POST /:id/pay. Todo opcional; sin body = comportamiento previo (monto y
+ * categoría del recurrente, cuenta por defecto, fecha de hoy). Pagar con otro monto no
+ * modifica el `amount` del recurrente. */
+export interface RecurringPayInput {
+  amount?: number;
+  /** Cuenta donde se registra el movimiento. Default: cuenta por defecto del usuario. */
+  accountId?: string | null;
+  /** Fecha del movimiento (ISO o YYYY-MM-DD). Default: ahora. */
+  date?: string;
 }
 
 export interface BudgetInput {

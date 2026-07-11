@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { getDefaultAccountId } from '../lib/accounts';
+import { resolveAccountId } from '../lib/accounts';
 import { advanceDueDate, nextDueDate } from '../lib/dates';
 import { serialize } from '../lib/serialize';
 import { requireAuth } from '../middleware/auth';
@@ -40,6 +40,13 @@ async function assertCategoryOwned(userId: string, categoryId: string | null | u
   const category = await prisma.category.findFirst({ where: { id: categoryId, userId } });
   if (!category) throw new HttpError(400, 'Categoría inválida');
 }
+
+/** Body opcional de /:id/pay: todos los campos opcionales, default = comportamiento actual. */
+const paySchema = z.object({
+  amount: z.number().positive().max(999_999_999).optional(),
+  accountId: z.string().nullable().optional(),
+  date: z.coerce.date().optional(),
+});
 
 router.get(
   '/',
@@ -115,26 +122,33 @@ router.delete(
   }),
 );
 
-/** Registra el pago del período actual: crea la transacción y avanza el vencimiento. */
+/**
+ * Registra el pago del período actual: crea la transacción (vinculada vía recurringId) y avanza
+ * el vencimiento. El body es opcional; monto, cuenta y fecha por defecto reproducen el
+ * comportamiento previo. Pagar con un monto distinto no modifica el `amount` del recurrente
+ * (queda solo como referencia para el próximo período).
+ */
 router.post(
   '/:id/pay',
   asyncHandler(async (req, res) => {
+    const input = paySchema.parse(req.body ?? {});
     const existing = await prisma.recurringExpense.findFirst({
       where: { id: req.params.id, userId: req.auth!.userId },
     });
     if (!existing) throw new HttpError(404, 'Gasto recurrente no encontrado');
 
+    const accountId = await resolveAccountId(req.auth!.userId, input.accountId);
     const notePrefix = existing.type === 'INCOME' ? 'Cobro recurrente' : 'Pago recurrente';
-    const accountId = await getDefaultAccountId(req.auth!.userId);
     const [transaction, recurring] = await prisma.$transaction([
       prisma.transaction.create({
         data: {
           type: existing.type,
-          amount: existing.amount,
-          date: new Date(),
+          amount: input.amount ?? existing.amount,
+          date: input.date ?? new Date(),
           note: `${notePrefix}: ${existing.name}`,
           categoryId: existing.categoryId,
           accountId,
+          recurringId: existing.id,
           userId: req.auth!.userId,
         },
         include: { category: true },
@@ -148,13 +162,53 @@ router.post(
       }),
     ]);
 
-    // Las alertas de presupuesto sólo aplican a gastos.
+    // Las alertas de presupuesto sólo aplican a gastos; usan el monto real pagado (ya persistido).
     if (existing.type === 'EXPENSE') {
       checkBudgetAlert(req.auth!.userId, existing.categoryId).catch((err) =>
         console.error('[budgets] Error evaluando alerta:', err),
       );
     }
     res.status(201).json({ transaction: serialize(transaction), recurring: serialize(recurring) });
+  }),
+);
+
+/** Salta el período actual sin registrar pago: solo avanza el vencimiento. */
+router.post(
+  '/:id/skip',
+  asyncHandler(async (req, res) => {
+    const existing = await prisma.recurringExpense.findFirst({
+      where: { id: req.params.id, userId: req.auth!.userId },
+    });
+    if (!existing) throw new HttpError(404, 'Gasto recurrente no encontrado');
+
+    const recurring = await prisma.recurringExpense.update({
+      where: { id: existing.id },
+      data: {
+        nextDueDate: advanceDueDate(existing.frequency, existing.dueDay, existing.dueMonth, existing.nextDueDate),
+      },
+      include: { category: true },
+    });
+    res.json(serialize(recurring));
+  }),
+);
+
+/** Últimos pagos vinculados a este recurrente (orden desc, máx. 24). Los pagos previos a la
+ * introducción de `recurringId` no quedaron vinculados: el historial arranca desde ahora. */
+router.get(
+  '/:id/payments',
+  asyncHandler(async (req, res) => {
+    const existing = await prisma.recurringExpense.findFirst({
+      where: { id: req.params.id, userId: req.auth!.userId },
+    });
+    if (!existing) throw new HttpError(404, 'Gasto recurrente no encontrado');
+
+    const payments = await prisma.transaction.findMany({
+      where: { recurringId: existing.id, userId: req.auth!.userId },
+      include: { category: true },
+      orderBy: { date: 'desc' },
+      take: 24,
+    });
+    res.json(serialize(payments));
   }),
 );
 

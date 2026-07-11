@@ -1,8 +1,8 @@
-import type { Category, Frequency, RecurringExpense, TransactionType } from '@myfinance/shared';
+import type { Account, Category, Frequency, RecurringExpense, Transaction, TransactionType } from '@myfinance/shared';
 import { useState, type FormEvent } from 'react';
-import { api, formatMoney } from '../api';
+import { api, formatDate, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
-import { IcoPause, IcoPencil, IcoPlay, IcoPlus, IcoTrash } from '../components/icons';
+import { IcoPause, IcoPencil, IcoPlay, IcoPlus, IcoTrash, IcoTrend } from '../components/icons';
 import { Modal } from '../components/Modal';
 
 const WEEKDAYS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
@@ -32,6 +32,42 @@ function dueBadge(item: RecurringExpense): { text: string; urgent: boolean } {
   return { text, urgent: daysLeft <= 3 };
 }
 
+function daysInMonth(year: number, monthIndex: number): number {
+  return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+}
+
+function utcDateClamped(year: number, monthIndex: number, day: number): Date {
+  return new Date(Date.UTC(year, monthIndex, Math.min(day, daysInMonth(year, monthIndex))));
+}
+
+/**
+ * Réplica liviana de `advanceDueDate` (apps/api/src/lib/dates.ts), solo para anticipar la
+ * fecha en el confirm de "Saltar". El cálculo autoritativo (y el que se persiste) lo hace
+ * siempre el servidor.
+ */
+function previewSkipDate(item: RecurringExpense): Date {
+  const current = new Date(item.nextDueDate);
+  const from = new Date(
+    Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), current.getUTCDate() + 1),
+  );
+
+  if (item.frequency === 'WEEKLY') {
+    const diff = (item.dueDay - from.getUTCDay() + 7) % 7;
+    const result = new Date(from);
+    result.setUTCDate(from.getUTCDate() + diff);
+    return result;
+  }
+  if (item.frequency === 'MONTHLY') {
+    const thisMonth = utcDateClamped(from.getUTCFullYear(), from.getUTCMonth(), item.dueDay);
+    if (thisMonth >= from) return thisMonth;
+    return utcDateClamped(from.getUTCFullYear(), from.getUTCMonth() + 1, item.dueDay);
+  }
+  const monthIndex = (item.dueMonth ?? 1) - 1;
+  const thisYear = utcDateClamped(from.getUTCFullYear(), monthIndex, item.dueDay);
+  if (thisYear >= from) return thisYear;
+  return utcDateClamped(from.getUTCFullYear() + 1, monthIndex, item.dueDay);
+}
+
 export function RecurringPage() {
   const [error, setError] = useState<string | null>(null);
 
@@ -47,10 +83,22 @@ export function RecurringPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
+  const [payItem, setPayItem] = useState<RecurringExpense | null>(null);
+  const [payAmount, setPayAmount] = useState('');
+  const [payAccountId, setPayAccountId] = useState('');
+  const [payDate, setPayDate] = useState('');
+  const [payBusy, setPayBusy] = useState(false);
+
+  const [historyItem, setHistoryItem] = useState<RecurringExpense | null>(null);
+  const [historyPayments, setHistoryPayments] = useState<Transaction[] | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
   const { data: items, error: loadError, refresh } = useCached<RecurringExpense[]>('recurring', () =>
     api.listRecurring(),
   );
   const { data: categoriesData } = useCached<Category[]>('categories', () => api.listCategories());
+  const { data: accountsData } = useCached<Account[]>('accounts', () => api.listAccounts());
+  const accounts = accountsData ?? [];
   // Las categorías del formulario siguen el tipo elegido (gasto fijo vs ingreso fijo).
   const categories = (categoriesData ?? []).filter((c) => c.type === type);
 
@@ -118,21 +166,78 @@ export function RecurringPage() {
     }
   }
 
-  async function onPay(item: RecurringExpense) {
-    const verb = item.type === 'INCOME' ? 'el cobro' : 'el pago';
-    if (!confirm(`¿Registrar ${verb} de "${item.name}" por ${formatMoney(item.amount)}?`)) return;
+  function invalidateAfterPayment() {
+    // El pago crea una transacción: además del listado, cambian resumen, presupuestos y saldos.
+    invalidate('recurring');
+    invalidate('transactions');
+    invalidate('dashboard');
+    invalidate('budgets');
+    invalidate('accounts');
+    refresh();
+  }
+
+  function onStartPay(item: RecurringExpense) {
+    setPayItem(item);
+    setPayAmount(String(item.amount));
+    setPayAccountId(accounts.find((a) => a.isDefault)?.id ?? accounts[0]?.id ?? '');
+    setPayDate(new Date().toISOString().slice(0, 10));
+    setError(null);
+  }
+
+  function onClosePay() {
+    if (payBusy) return;
+    setPayItem(null);
+  }
+
+  async function onConfirmPay(e: FormEvent) {
+    e.preventDefault();
+    if (!payItem) return;
+    setError(null);
+    setPayBusy(true);
     try {
-      await api.payRecurring(item.id);
-      // El pago crea una transacción: además del listado, cambian resumen, presupuestos y saldos.
+      await api.payRecurring(payItem.id, {
+        amount: Number(payAmount),
+        accountId: payAccountId || undefined,
+        date: payDate || undefined,
+      });
+      setPayItem(null);
+      invalidateAfterPayment();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error inesperado');
+    } finally {
+      setPayBusy(false);
+    }
+  }
+
+  async function onSkip(item: RecurringExpense) {
+    const preview = formatDate(previewSkipDate(item).toISOString());
+    if (!confirm(`Avanza el vencimiento al ${preview} sin registrar pago.`)) return;
+    try {
+      await api.skipRecurring(item.id);
       invalidate('recurring');
-      invalidate('transactions');
       invalidate('dashboard');
-      invalidate('budgets');
-      invalidate('accounts');
       refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error inesperado');
     }
+  }
+
+  async function onOpenHistory(item: RecurringExpense) {
+    setHistoryItem(item);
+    setHistoryPayments(null);
+    setHistoryLoading(true);
+    try {
+      setHistoryPayments(await api.listRecurringPayments(item.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error inesperado');
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  function onCloseHistory() {
+    setHistoryItem(null);
+    setHistoryPayments(null);
   }
 
   async function onToggle(item: RecurringExpense) {
@@ -205,8 +310,19 @@ export function RecurringPage() {
                     {formatMoney(item.amount)}
                   </div>
                   <div className="mf-recur-actions">
-                    <button className="mf-recur-pay" onClick={() => onPay(item)}>
+                    <button className="mf-recur-pay" onClick={() => onStartPay(item)}>
                       {isIncome ? 'Cobrar' : 'Pagar'}
+                    </button>
+                    <button type="button" className="ghost" onClick={() => onSkip(item)}>
+                      Saltar
+                    </button>
+                    <button
+                      type="button"
+                      className="mf-icon-btn"
+                      aria-label="Ver historial de pagos"
+                      onClick={() => onOpenHistory(item)}
+                    >
+                      <IcoTrend size={15} />
                     </button>
                     <button
                       type="button"
@@ -241,8 +357,9 @@ export function RecurringPage() {
       </div>
 
       <p className="mf-recur-footnote">
-        Al registrar el pago se crea un movimiento y el próximo vencimiento avanza al mes siguiente. Recibís un
-        recordatorio por push y email según tus preferencias.
+        Al registrar el pago se crea un movimiento vinculado y el vencimiento avanza al próximo período; podés
+        ajustar el monto, la cuenta y la fecha antes de confirmar. Si no corresponde este período usá "Saltar".
+        Recibís un recordatorio por push y email según tus preferencias.
       </p>
 
       <div className="mf-dashed-tile mf-dashed-tile--row">
@@ -376,6 +493,86 @@ export function RecurringPage() {
           </label>
           <button disabled={busy}>{busy ? 'Guardando…' : editingId ? 'Guardar cambios' : 'Agregar'}</button>
         </form>
+      </Modal>
+
+      <Modal
+        open={payItem !== null}
+        onClose={onClosePay}
+        title={payItem ? `${payItem.type === 'INCOME' ? 'Registrar cobro' : 'Registrar pago'}: ${payItem.name}` : ''}
+      >
+        {payItem && (
+          <form onSubmit={onConfirmPay} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {error && <div className="error-banner">{error}</div>}
+            <label className="field">
+              Monto
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={payAmount}
+                onChange={(e) => setPayAmount(e.target.value)}
+                autoFocus
+                required
+              />
+            </label>
+            {accounts.length > 0 && (
+              <label className="field">
+                Cuenta
+                <select value={payAccountId} onChange={(e) => setPayAccountId(e.target.value)}>
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.icon ? `${a.icon} ` : ''}
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <label className="field">
+              Fecha
+              <input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} required />
+            </label>
+            <button disabled={payBusy}>
+              {payBusy ? 'Guardando…' : payItem.type === 'INCOME' ? 'Confirmar cobro' : 'Confirmar pago'}
+            </button>
+          </form>
+        )}
+      </Modal>
+
+      <Modal
+        open={historyItem !== null}
+        onClose={onCloseHistory}
+        title={historyItem ? `Historial de pagos: ${historyItem.name}` : ''}
+      >
+        {historyItem &&
+          (historyLoading ? (
+            <p className="muted">Cargando…</p>
+          ) : !historyPayments || historyPayments.length === 0 ? (
+            <p className="muted">
+              Todavía no hay pagos vinculados a este recurrente. El historial arranca a partir de esta
+              actualización: los pagos registrados antes no quedaron asociados.
+            </p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div className="mf-label" style={{ marginBottom: 6 }}>
+                Promedio de los últimos {Math.min(6, historyPayments.length)}:{' '}
+                {formatMoney(
+                  historyPayments.slice(0, 6).reduce((sum, p) => sum + p.amount, 0) /
+                    Math.min(6, historyPayments.length),
+                )}
+              </div>
+              {historyPayments.map((p) => (
+                <div className="mf-list-row" key={p.id}>
+                  <span className="muted" style={{ flex: 1 }}>
+                    {formatDate(p.date)}
+                  </span>
+                  <span className="mono" style={{ fontWeight: 600 }}>
+                    {formatMoney(p.amount)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ))}
       </Modal>
     </>
   );

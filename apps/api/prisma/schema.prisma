@@ -132,32 +132,35 @@ model Category {
 }
 
 model Transaction {
-  id         String          @id @default(cuid())
-  type       TransactionType
-  amount     Decimal         @db.Decimal(12, 2)
-  date       DateTime
-  note       String?
-  userId     String
-  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  categoryId String?
-  category   Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  accountId  String
-  account    Account         @relation(fields: [accountId], references: [id], onDelete: Restrict)
-  debtId     String?
-  debt       Debt?           @relation(fields: [debtId], references: [id], onDelete: SetNull)
-  goalId     String?
-  goal       Goal?           @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  id          String            @id @default(cuid())
+  type        TransactionType
+  amount      Decimal           @db.Decimal(12, 2)
+  date        DateTime
+  note        String?
+  userId      String
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoryId  String?
+  category    Category?         @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  accountId   String
+  account     Account           @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  debtId      String?
+  debt        Debt?             @relation(fields: [debtId], references: [id], onDelete: SetNull)
+  goalId      String?
+  goal        Goal?             @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  recurringId String?
+  recurring   RecurringExpense? @relation(fields: [recurringId], references: [id], onDelete: SetNull)
   /// MIME del recibo adjunto (flag liviano). Los bytes viven en el modelo Receipt aparte.
   receiptMime String?
-  receipt    Receipt?
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
+  receipt     Receipt?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
 
   @@index([userId, date])
   @@index([userId, categoryId])
   @@index([userId, accountId])
   @@index([debtId])
   @@index([goalId])
+  @@index([recurringId])
 }
 
 /// Bytes del recibo adjunto, en tabla aparte para no cargarlos en las lecturas normales de Transaction.
@@ -192,6 +195,8 @@ model RecurringExpense {
   category           Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
+
+  payments Transaction[]
 
   @@index([userId])
   @@index([active, nextDueDate])

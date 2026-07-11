@@ -564,6 +564,16 @@ button:disabled {
   font-size: 14px;
 }
 
+.success-banner {
+  background: color-mix(in srgb, var(--pos) 10%, transparent);
+  color: var(--pos);
+  border: 1px solid color-mix(in srgb, var(--pos) 35%, transparent);
+  padding: 10px 14px;
+  border-radius: var(--r-sm);
+  margin-bottom: 14px;
+  font-size: 14px;
+}
+
 /* ---------- Ledger tables ---------- */
 table {
   width: 100%;
@@ -2157,6 +2167,23 @@ td.num {
 .mf-authform-switch a {
   color: var(--accent);
   font-weight: 600;
+}
+
+/* Link de texto dentro del form de auth (ej: "¿Olvidaste tu contraseña?", "Volver a inicio de sesión") */
+.mf-authform-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  margin: -6px 0 0;
+}
+
+.mf-authform-link:hover {
+  text-decoration: underline;
 }
 
 .mf-authform-note {

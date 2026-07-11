@@ -13,6 +13,7 @@ import type {
   CategoryRule,
   CategoryRuleInput,
   CategorySuggestion,
+  ChangePasswordInput,
   DashboardData,
   Debt,
   DigestFrequency,
@@ -20,6 +21,7 @@ import type {
   DebtUpdateInput,
   ExchangeRate,
   ExchangeRateInput,
+  ForgotPasswordInput,
   Goal,
   GoalInput,
   GoalUpdateInput,
@@ -31,9 +33,11 @@ import type {
   InvestmentPriceAtDate,
   InvestmentsOverview,
   InvestmentUpdateInput,
+  MessageResponse,
   Paginated,
   RecurringExpense,
   RecurringExpenseInput,
+  ResetPasswordInput,
   Suggestion,
   SuggestionsRefreshResult,
   SymbolSearchKind,
@@ -106,10 +110,22 @@ export class ApiClient {
   me() {
     return this.request<User>('GET', '/api/auth/me');
   }
+  changePassword(input: ChangePasswordInput) {
+    return this.request<MessageResponse>('POST', '/api/auth/change-password', input);
+  }
+  /** Siempre responde 200 con el mismo mensaje, exista o no el email — no filtra cuentas. */
+  forgotPassword(input: ForgotPasswordInput) {
+    return this.request<MessageResponse>('POST', '/api/auth/forgot-password', input);
+  }
+  resetPassword(input: ResetPasswordInput) {
+    return this.request<MessageResponse>('POST', '/api/auth/reset-password', input);
+  }
   updateAlertPreferences(input: {
     emailAlerts?: boolean;
     pushAlerts?: boolean;
     digestFrequency?: DigestFrequency;
+    /** Nombre del perfil — mismo endpoint, ya soportado por la API. */
+    name?: string;
   }) {
     return this.request<User>('PATCH', '/api/auth/me', input);
   }

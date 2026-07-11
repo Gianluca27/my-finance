@@ -97,6 +97,7 @@ model User {
   investmentOperations InvestmentOperation[]
   exchangeRates        ExchangeRate[]
   suggestions          Suggestion[]
+  passwordResetTokens  PasswordResetToken[]
 }
 
 model FcmToken {
@@ -396,6 +397,22 @@ model Suggestion {
 
   @@unique([userId, type, fingerprint])
   @@index([userId, status])
+}
+
+/// Token de recuperación de contraseña. Se guarda solo el hash (sha256) del token
+/// enviado por email; el token en claro nunca se persiste. Expira a la hora de
+/// creado; `usedAt` evita reutilización y se completa también al invalidar los
+/// demás tokens vivos del usuario cuando uno de ellos se usa.
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
 }
 
 /// Movimiento de dinero entre dos cuentas del usuario. No cuenta como ingreso ni gasto.

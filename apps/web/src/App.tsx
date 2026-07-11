@@ -9,6 +9,9 @@ import { Layout } from './components/Layout';
 // (solo lo usa el Dashboard) ni el resto de las vistas.
 const AccountsPage = lazy(() => import('./pages/AccountsPage').then((m) => ({ default: m.AccountsPage })));
 const AuthPage = lazy(() => import('./pages/AuthPage').then((m) => ({ default: m.AuthPage })));
+const ResetPasswordPage = lazy(() =>
+  import('./pages/AuthPage').then((m) => ({ default: m.ResetPasswordPage })),
+);
 const BudgetsPage = lazy(() => import('./pages/BudgetsPage').then((m) => ({ default: m.BudgetsPage })));
 const CategoriesPage = lazy(() => import('./pages/CategoriesPage').then((m) => ({ default: m.CategoriesPage })));
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })));
@@ -43,6 +46,7 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<AuthPage mode="login" />} />
           <Route path="/registro" element={<AuthPage mode="register" />} />
+          <Route path="/reset" element={<ResetPasswordPage />} />
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </Suspense>

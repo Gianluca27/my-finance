@@ -60,6 +60,33 @@ export async function sendPushToUser(userId: string, title: string, body: string
   }
 }
 
+/** Email transaccional de recuperación de contraseña. Ignora emailAlerts (no es una alerta opcional). */
+export async function sendPasswordResetEmail(to: string, resetUrl: string): Promise<void> {
+  if (!config.sendgridApiKey) {
+    console.warn(
+      `[notifications] SendGrid no configurado — no se envió el email de reset a ${to}. Link: ${resetUrl}`,
+    );
+  }
+  const html = `
+    <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:480px;margin:0 auto;color:#111827">
+      <h2 style="margin:0 0 12px">Recuperá tu contraseña</h2>
+      <p style="margin:0 0 20px;color:#6b7280">
+        Recibimos una solicitud para restablecer la contraseña de tu cuenta en MyFinance.
+        Si fuiste vos, hacé clic en el siguiente botón. El link vence en 1 hora.
+      </p>
+      <p style="text-align:center;margin:0 0 20px">
+        <a href="${resetUrl}" style="display:inline-block;background:#6366f1;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600">
+          Restablecer contraseña
+        </a>
+      </p>
+      <p style="margin:0;color:#9ca3af;font-size:13px">
+        Si no pediste este cambio, podés ignorar este email — tu contraseña actual sigue funcionando.
+      </p>
+    </div>
+  `;
+  await sendEmail(to, 'Recuperá tu contraseña — MyFinance', html);
+}
+
 export interface NotifyInput {
   title: string;
   body: string;

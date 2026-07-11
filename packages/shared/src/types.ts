@@ -20,6 +20,25 @@ export interface AuthResponse {
   user: User;
 }
 
+export interface ChangePasswordInput {
+  currentPassword: string;
+  newPassword: string;
+}
+
+export interface ForgotPasswordInput {
+  email: string;
+}
+
+export interface ResetPasswordInput {
+  token: string;
+  newPassword: string;
+}
+
+/** Respuesta genérica de los endpoints de contraseña (siempre 200, mensaje user-facing). */
+export interface MessageResponse {
+  message: string;
+}
+
 export interface Category {
   id: string;
   name: string;

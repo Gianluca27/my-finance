@@ -1,5 +1,5 @@
 import type { DigestFrequency } from '@myfinance/shared';
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { api, setCachedUser } from '../api';
 import { useAuth } from '../auth';
 
@@ -11,6 +11,9 @@ export function SettingsPage() {
     user?.digestFrequency ?? 'MONTHLY',
   );
   const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState(user?.name ?? '');
+  const [nameBusy, setNameBusy] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
 
   async function changeDigest(next: DigestFrequency) {
     const prev = digestFrequency;
@@ -40,7 +43,25 @@ export function SettingsPage() {
     }
   }
 
+  async function saveName(e: FormEvent) {
+    e.preventDefault();
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === user?.name) return;
+    setNameError(null);
+    setNameBusy(true);
+    try {
+      const updated = await api.updateAlertPreferences({ name: trimmed });
+      setCachedUser(updated);
+      setName(updated.name);
+    } catch (err) {
+      setNameError(err instanceof Error ? err.message : 'Error inesperado');
+    } finally {
+      setNameBusy(false);
+    }
+  }
+
   const initials = (user?.name ?? '?').slice(0, 1).toUpperCase();
+  const nameChanged = name.trim() !== '' && name.trim() !== user?.name;
 
   return (
     <>
@@ -102,14 +123,32 @@ export function SettingsPage() {
         </div>
       </div>
 
-      <div className="card">
+      <div className="card" style={{ marginBottom: 16 }}>
         <div className="mf-label" style={{ marginBottom: 4 }}>
           Cuenta
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div className="mf-avatar">{initials}</div>
           <div style={{ flex: 1 }}>
-            <div className="settings-row-title">{user?.name}</div>
+            <form onSubmit={saveName} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={100}
+                required
+                aria-label="Nombre"
+              />
+              {nameChanged && (
+                <button type="submit" className="secondary" disabled={nameBusy}>
+                  {nameBusy ? 'Guardando…' : 'Guardar'}
+                </button>
+              )}
+            </form>
+            {nameError && (
+              <div className="error-banner" style={{ marginTop: 8, marginBottom: 0 }}>
+                {nameError}
+              </div>
+            )}
             <div className="muted">{user?.email}</div>
           </div>
           <button className="secondary" onClick={logout}>
@@ -117,6 +156,87 @@ export function SettingsPage() {
           </button>
         </div>
       </div>
+
+      <ChangePasswordCard />
     </>
+  );
+}
+
+/** Sección "Seguridad": cambio de contraseña con sesión activa. */
+function ChangePasswordCard() {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSuccess(null);
+    if (newPassword !== confirmPassword) {
+      setError('Las contraseñas nuevas no coinciden');
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await api.changePassword({ currentPassword, newPassword });
+      setSuccess(res.message);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error inesperado');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card">
+      <div className="mf-label" style={{ marginBottom: 4 }}>
+        Seguridad
+      </div>
+      <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 360 }}>
+        {error && <div className="error-banner">{error}</div>}
+        {success && <div className="success-banner">{success}</div>}
+        <label className="field">
+          Contraseña actual
+          <input
+            type="password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            required
+            autoComplete="current-password"
+          />
+        </label>
+        <label className="field">
+          Nueva contraseña
+          <input
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            required
+            minLength={8}
+            autoComplete="new-password"
+          />
+        </label>
+        <label className="field">
+          Confirmar nueva contraseña
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            required
+            minLength={8}
+            autoComplete="new-password"
+          />
+        </label>
+        <button disabled={busy} style={{ alignSelf: 'flex-start' }}>
+          {busy ? 'Guardando…' : 'Cambiar contraseña'}
+        </button>
+      </form>
+    </div>
   );
 }

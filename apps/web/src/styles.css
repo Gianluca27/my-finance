@@ -3472,6 +3472,49 @@ select option {
   margin-top: 16px;
 }
 
+.mf-report-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.mf-report-filters .mf-select {
+  flex: 1;
+  min-width: 140px;
+}
+
+.mf-import-preview {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.mf-import-sample {
+  overflow-x: auto;
+  margin-top: 8px;
+}
+
+.mf-import-errors {
+  max-height: 200px;
+  overflow-y: auto;
+  margin: 8px 0 0;
+  padding: 8px 8px 8px 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+
+.mf-import-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.mf-import-actions .mf-report-btn {
+  margin-top: 0;
+}
+
 /* ===== Sugerencias ===== */
 
 /* Chip en el formulario de movimiento: aplicar la categoría sugerida con un click. */

@@ -119,6 +119,15 @@ export function TransactionsPage() {
     return r ? r.from === from && r.to === to : from === '' && to === '';
   })?.key;
 
+  // `setFilter` puede ejecutarse desde el setTimeout del debounce con un closure de un
+  // render viejo: si mergeara sobre el `searchParams` capturado, un filtro elegido durante
+  // los 350 ms de espera (ej: categoría) se pisaría al comprometer la búsqueda. El ref se
+  // reapunta en cada render, así el merge siempre parte de la URL vigente. (La forma
+  // funcional de `setSearchParams` no sirve acá: en react-router 6 su `prev` es también
+  // el snapshot del render que creó el callback.)
+  const searchParamsRef = useRef(searchParams);
+  searchParamsRef.current = searchParams;
+
   /**
    * Actualiza filtros en la URL — única fuente de verdad. Un valor '' / undefined borra
    * esa clave del query string. `replace: true` evita ensuciar el historial (se usa solo
@@ -126,13 +135,14 @@ export function TransactionsPage() {
    * nueva para que el botón "atrás" del navegador deshaga el último cambio.
    */
   function setFilter(patch: Record<string, string | undefined>, options?: { replace?: boolean }) {
-    const next = new URLSearchParams(searchParams);
+    const current = searchParamsRef.current;
+    const next = new URLSearchParams(current);
     for (const [key, value] of Object.entries(patch)) {
       if (value) next.set(key, value);
       else next.delete(key);
     }
     // Evita pushear una entrada de historial idéntica (ej: repetir clic en el chip ya activo).
-    if (next.toString() === searchParams.toString()) return;
+    if (next.toString() === current.toString()) return;
     setSearchParams(next, { replace: options?.replace ?? false });
   }
 

@@ -1,4 +1,4 @@
-import type { Prisma } from '@prisma/client';
+import type { Prisma, TransactionType } from '@prisma/client';
 import { Router } from 'express';
 import { z } from 'zod';
 import { resolveAccountId } from '../lib/accounts';
@@ -22,6 +22,17 @@ const transactionSchema = z.object({
   accountId: z.string().nullable().optional(),
 });
 
+const bulkSchema = z
+  .object({
+    ids: z.array(z.string().min(1)).min(1).max(100),
+    action: z.enum(['delete', 'setCategory']),
+    categoryId: z.string().min(1).nullable().optional(),
+  })
+  .refine((v) => v.action !== 'setCategory' || !!v.categoryId, {
+    message: 'categoryId es obligatorio para recategorizar',
+    path: ['categoryId'],
+  });
+
 const filtersSchema = z.object({
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),
@@ -33,10 +44,18 @@ const filtersSchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
 
-async function assertCategoryOwned(userId: string, categoryId: string | null | undefined) {
-  if (!categoryId) return;
-  const category = await prisma.category.findFirst({ where: { id: categoryId, userId } });
+/** Valida que la categoría exista y sea del usuario; devuelve la categoría (con su tipo) o null si no se pidió ninguna. */
+async function assertCategoryOwned(
+  userId: string,
+  categoryId: string | null | undefined,
+): Promise<{ id: string; type: TransactionType } | null> {
+  if (!categoryId) return null;
+  const category = await prisma.category.findFirst({
+    where: { id: categoryId, userId },
+    select: { id: true, type: true },
+  });
   if (!category) throw new HttpError(400, 'Categoría inválida');
+  return category;
 }
 
 const suggestCategorySchema = z.object({
@@ -135,6 +154,49 @@ router.post(
       );
     }
     res.status(201).json(serialize(transaction));
+  }),
+);
+
+/**
+ * Acción en lote sobre movimientos propios (máx. 100 ids). Todo o nada: si algún id no
+ * pertenece al usuario (o no existe), 404 sin ejecutar ningún cambio. `setCategory` además
+ * exige que el tipo de la categoría coincida con el de CADA transacción seleccionada.
+ */
+router.post(
+  '/bulk',
+  asyncHandler(async (req, res) => {
+    const input = bulkSchema.parse(req.body);
+    const userId = req.auth!.userId;
+    const ids = [...new Set(input.ids)];
+
+    const ownedCount = await prisma.transaction.count({ where: { id: { in: ids }, userId } });
+    if (ownedCount !== ids.length) {
+      throw new HttpError(404, 'Alguno de los movimientos seleccionados no existe o no te pertenece');
+    }
+
+    if (input.action === 'delete') {
+      const result = await prisma.transaction.deleteMany({ where: { id: { in: ids }, userId } });
+      return res.json({ affected: result.count });
+    }
+
+    // setCategory: la categoría debe existir y su tipo debe coincidir con el de cada movimiento.
+    const category = await assertCategoryOwned(userId, input.categoryId);
+    if (!category) throw new HttpError(400, 'Categoría inválida');
+    const mismatched = await prisma.transaction.count({
+      where: { id: { in: ids }, userId, type: { not: category.type } },
+    });
+    if (mismatched > 0) {
+      const tipo = category.type === 'INCOME' ? 'ingreso' : 'gasto';
+      throw new HttpError(
+        400,
+        `La categoría es de ${tipo} pero ${mismatched} de los ${ids.length} movimientos seleccionados son de otro tipo`,
+      );
+    }
+    const result = await prisma.transaction.updateMany({
+      where: { id: { in: ids }, userId },
+      data: { categoryId: category.id },
+    });
+    res.json({ affected: result.count });
   }),
 );
 

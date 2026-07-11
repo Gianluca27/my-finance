@@ -8,6 +8,8 @@ import type {
   Budget,
   BudgetInput,
   BudgetStatus,
+  BulkTransactionsInput,
+  BulkTransactionsResult,
   Category,
   CategoryInput,
   CategoryRule,
@@ -41,6 +43,7 @@ import type {
   RecurringExpenseInput,
   RecurringPayInput,
   ResetPasswordInput,
+  RuleApplyResult,
   Suggestion,
   SuggestionsRefreshResult,
   SymbolSearchKind,
@@ -185,6 +188,11 @@ export class ApiClient {
   deleteCategoryRule(id: string) {
     return this.request<void>('DELETE', `/api/rules/${id}`);
   }
+  /** Aplica las reglas a movimientos sin categoría (nunca pisa una ya asignada).
+   * `dryRun: true` solo simula y no escribe. */
+  applyRules(dryRun?: boolean) {
+    return this.request<RuleApplyResult>('POST', '/api/rules/apply', { dryRun });
+  }
 
   // --- Transacciones ---
   listTransactions(filters: TransactionFilters = {}) {
@@ -203,6 +211,10 @@ export class ApiClient {
   }
   deleteTransaction(id: string) {
     return this.request<void>('DELETE', `/api/transactions/${id}`);
+  }
+  /** Acción en lote sobre hasta 100 movimientos propios; todo o nada (un id ajeno rechaza todo). */
+  bulkTransactions(input: BulkTransactionsInput) {
+    return this.request<BulkTransactionsResult>('POST', '/api/transactions/bulk', input);
   }
   /** Adjunta un recibo (imagen en base64, sin prefijo data:). */
   uploadReceipt(id: string, data: string, mime: string) {

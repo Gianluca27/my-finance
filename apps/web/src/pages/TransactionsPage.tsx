@@ -1,10 +1,10 @@
 import type { Account, Category, DashboardData, Paginated, Transaction, TransactionType } from '@myfinance/shared';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
 import { AddTransactionModal } from '../components/AddTransactionModal';
-import { IcoClip, IcoPencil, IcoSearch, IcoTrash } from '../components/icons';
+import { IcoClip, IcoCopy, IcoPencil, IcoSearch, IcoTrash } from '../components/icons';
 import { Modal } from '../components/Modal';
 
 /** Reescala la imagen (máx 1280px) y la devuelve como JPEG base64 para no superar ~1 MB. */
@@ -184,10 +184,24 @@ export function TransactionsPage() {
   const [viewing, setViewing] = useState<{ id: string; url: string } | null>(null);
   const [viewBusy, setViewBusy] = useState(false);
 
-  // Edición vía modal (reutiliza el de "Nuevo movimiento")
+  // Edición y duplicado vía modal (reutilizan el de "Nuevo movimiento")
   const [editing, setEditing] = useState<Transaction | null>(null);
+  const [duplicating, setDuplicating] = useState<Transaction | null>(null);
+
+  // Selección múltiple: solo ids de la página visible (sin selección cross-página, ver spec).
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [recatOpen, setRecatOpen] = useState(false);
+  const [recatCategoryId, setRecatCategoryId] = useState('');
+  const [recatError, setRecatError] = useState<string | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const listKey = `transactions:${JSON.stringify([page, filterType, filterCategory, filterAccount, from, to, search])}`;
+
+  // Un cambio de página/filtro cambia qué ids son válidos: limpiar selección para no arrastrar
+  // ids que ya no están a la vista.
+  useEffect(() => {
+    setSelected(new Set());
+  }, [listKey]);
   const { data, error: loadError, refresh } = useCached<Paginated<Transaction>>(listKey, () =>
     api.listTransactions({
       page,
@@ -210,6 +224,29 @@ export function TransactionsPage() {
   const accounts = accountsData ?? [];
   const accountName = (id: string) => accounts.find((a) => a.id === id)?.name ?? '';
 
+  // Selección múltiple (solo página visible)
+  const pageIds = data?.items.map((tx) => tx.id) ?? [];
+  const allOnPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const selectedItems = (data?.items ?? []).filter((tx) => selected.has(tx.id));
+  const selectedTypes = new Set(selectedItems.map((tx) => tx.type));
+  // Si la selección mezcla ingresos y gastos no se puede filtrar por tipo: se muestran todas
+  // las categorías (con su tipo aclarado) y el backend rechaza igual si no coincide.
+  const homogeneousType: TransactionType | null = selectedTypes.size === 1 ? [...selectedTypes][0] : null;
+  const recatCategories = homogeneousType ? categories.filter((c) => c.type === homogeneousType) : categories;
+
+  function toggleOne(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAllOnPage() {
+    setSelected(allOnPageSelected ? new Set() : new Set(pageIds));
+  }
+
   /** Un movimiento nuevo/borrado cambia listados, resumen, presupuestos y saldos. */
   function invalidateAfterMutation() {
     invalidate('transactions');
@@ -223,9 +260,58 @@ export function TransactionsPage() {
     if (!confirm('¿Eliminar este movimiento?')) return;
     try {
       await api.deleteTransaction(id);
+      setSelected((prev) => {
+        if (!prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
       invalidateAfterMutation();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error inesperado');
+    }
+  }
+
+  async function onBulkDelete() {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    const plural = ids.length === 1 ? '' : 's';
+    if (!confirm(`¿Eliminar ${ids.length} movimiento${plural} seleccionado${plural}? Esta acción no se puede deshacer.`)) {
+      return;
+    }
+    setError(null);
+    setBulkBusy(true);
+    try {
+      await api.bulkTransactions({ ids, action: 'delete' });
+      setSelected(new Set());
+      invalidateAfterMutation();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error inesperado');
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  function openRecategorize() {
+    setRecatCategoryId('');
+    setRecatError(null);
+    setRecatOpen(true);
+  }
+
+  async function onConfirmRecategorize(e: FormEvent) {
+    e.preventDefault();
+    if (!recatCategoryId || selected.size === 0) return;
+    setRecatError(null);
+    setBulkBusy(true);
+    try {
+      await api.bulkTransactions({ ids: [...selected], action: 'setCategory', categoryId: recatCategoryId });
+      setSelected(new Set());
+      setRecatOpen(false);
+      invalidateAfterMutation();
+    } catch (err) {
+      setRecatError(err instanceof Error ? err.message : 'Error inesperado');
+    } finally {
+      setBulkBusy(false);
     }
   }
 
@@ -318,6 +404,44 @@ export function TransactionsPage() {
           refresh();
         }}
       />
+
+      <AddTransactionModal
+        open={duplicating !== null}
+        duplicateFrom={duplicating}
+        onClose={() => {
+          setDuplicating(null);
+          refresh();
+        }}
+      />
+
+      <Modal
+        open={recatOpen}
+        onClose={() => setRecatOpen(false)}
+        title={`Recategorizar ${selected.size} movimiento${selected.size === 1 ? '' : 's'}`}
+      >
+        <form onSubmit={onConfirmRecategorize} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {recatError && <div className="error-banner">{recatError}</div>}
+          <label className="field">
+            Categoría
+            <select
+              value={recatCategoryId}
+              onChange={(e) => setRecatCategoryId(e.target.value)}
+              required
+              autoFocus
+            >
+              <option value="">Elegir…</option>
+              {recatCategories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.icon ? `${c.icon} ` : ''}
+                  {c.name}
+                  {!homogeneousType ? ` (${c.type === 'INCOME' ? 'ingreso' : 'gasto'})` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button disabled={bulkBusy || !recatCategoryId}>{bulkBusy ? 'Aplicando…' : 'Recategorizar'}</button>
+        </form>
+      </Modal>
 
       {dash && (
         <div className="mf-grid-3" style={{ marginBottom: 14 }}>
@@ -445,14 +569,23 @@ export function TransactionsPage() {
         ) : (
           <table className="mf-tx-table">
             <colgroup>
-              <col style={{ width: '10%' }} />
-              <col style={{ width: '32%' }} />
-              <col style={{ width: '22%' }} />
-              <col style={{ width: '22%' }} />
-              <col style={{ width: '14%' }} />
+              <col style={{ width: '4%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '29%' }} />
+              <col style={{ width: '20%' }} />
+              <col style={{ width: '20%' }} />
+              <col style={{ width: '18%' }} />
             </colgroup>
             <thead>
               <tr>
+                <th>
+                  <input
+                    type="checkbox"
+                    aria-label="Seleccionar todos los de esta página"
+                    checked={allOnPageSelected}
+                    onChange={toggleSelectAllOnPage}
+                  />
+                </th>
                 <th>Fecha</th>
                 <th>Detalle</th>
                 <th>Categoría</th>
@@ -463,6 +596,14 @@ export function TransactionsPage() {
             <tbody>
               {data.items.map((tx) => (
                 <tr key={tx.id} className="mf-tx-row">
+                  <td>
+                    <input
+                      type="checkbox"
+                      aria-label="Seleccionar movimiento"
+                      checked={selected.has(tx.id)}
+                      onChange={() => toggleOne(tx.id)}
+                    />
+                  </td>
                   <td className="mf-tx-date">{formatRowDate(tx.date)}</td>
                   <td className="mf-tx-detail">
                     {tx.note || '—'}
@@ -508,6 +649,15 @@ export function TransactionsPage() {
                       <button
                         type="button"
                         className="mf-icon-btn"
+                        aria-label="Duplicar movimiento"
+                        title="Duplicar movimiento"
+                        onClick={() => setDuplicating(tx)}
+                      >
+                        <IcoCopy size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        className="mf-icon-btn"
                         aria-label="Eliminar movimiento"
                         title="Eliminar movimiento"
                         onClick={() => onDelete(tx.id)}
@@ -548,6 +698,31 @@ export function TransactionsPage() {
           </div>
         </div>
       </div>
+
+      {selected.size > 0 && (
+        <div className="mf-bulkbar">
+          <span className="mf-bulkbar-count">
+            {selected.size} seleccionado{selected.size === 1 ? '' : 's'}
+          </span>
+          <div className="mf-bulkbar-actions">
+            <button type="button" className="secondary" disabled={bulkBusy} onClick={openRecategorize}>
+              Recategorizar
+            </button>
+            <button type="button" className="danger" disabled={bulkBusy} onClick={onBulkDelete}>
+              Eliminar
+            </button>
+          </div>
+          <button
+            type="button"
+            className="mf-icon-btn"
+            aria-label="Cancelar selección"
+            title="Cancelar selección"
+            onClick={() => setSelected(new Set())}
+          >
+            ✕
+          </button>
+        </div>
+      )}
     </>
   );
 }

@@ -28,10 +28,19 @@ export function matchRule(
   note: string | null | undefined,
   type: TransactionType,
 ): string | null {
+  return matchRuleDetailed(rules, note, type)?.categoryId ?? null;
+}
+
+/** Como `matchRule`, pero devuelve la regla completa (útil para reportar qué keyword matcheó). */
+export function matchRuleDetailed(
+  rules: LoadedRule[],
+  note: string | null | undefined,
+  type: TransactionType,
+): LoadedRule | null {
   if (!note) return null;
   const haystack = note.toLowerCase();
   for (const rule of rules) {
-    if (rule.type === type && haystack.includes(rule.keyword)) return rule.categoryId;
+    if (rule.type === type && haystack.includes(rule.keyword)) return rule;
   }
   return null;
 }

@@ -99,6 +99,16 @@ export const IcoPencil = (p: IconProps) => (
   <PathIcon {...p} paths={[{ d: 'M13.5 4.5l2 2M12.5 3.5l4 4L7 17H3v-4z' }]} />
 );
 
+export const IcoCopy = (p: IconProps) => (
+  <PathIcon
+    {...p}
+    paths={[
+      { d: 'M7.5 7.5h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-8a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1Z' },
+      { d: 'M4.5 12.5h-1a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1' },
+    ]}
+  />
+);
+
 export const IcoSpark = (p: IconProps) => (
   <PathIcon
     {...p}

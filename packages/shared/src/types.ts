@@ -564,6 +564,32 @@ export interface ImportResult {
   errors: Array<{ line: number; reason: string }>;
 }
 
+/** Body de POST /api/transactions/bulk. `categoryId` obligatorio para `setCategory`. */
+export interface BulkTransactionsInput {
+  /** Máximo 100. Todos deben pertenecer al usuario o la operación se rechaza completa. */
+  ids: string[];
+  action: 'delete' | 'setCategory';
+  categoryId?: string | null;
+}
+
+export interface BulkTransactionsResult {
+  /** Cantidad de movimientos afectados. */
+  affected: number;
+}
+
+/** Body de POST /api/rules/apply. */
+export interface RuleApplyInput {
+  /** true: solo simula y devuelve el conteo, sin escribir. */
+  dryRun?: boolean;
+}
+
+export interface RuleApplyResult {
+  /** Movimientos categorizados (o que se categorizarían, si dryRun). */
+  total: number;
+  /** Desglose por regla aplicada. */
+  byRule: Array<{ keyword: string; count: number }>;
+}
+
 export type SuggestionType = 'RECURRING' | 'RULE';
 export type SuggestionStatus = 'PENDING' | 'ACCEPTED' | 'DISMISSED';
 

@@ -1,4 +1,4 @@
-import type { Category, CategoryRule, TransactionType } from '@myfinance/shared';
+import type { Category, CategoryRule, RuleApplyResult, TransactionType } from '@myfinance/shared';
 import { useState, type FormEvent } from 'react';
 import { api } from '../api';
 import { invalidate, useCached } from '../cache';
@@ -26,6 +26,12 @@ export function CategoriesPage() {
   const [ruleKeyword, setRuleKeyword] = useState('');
   const [ruleCategoryId, setRuleCategoryId] = useState('');
   const [ruleBusy, setRuleBusy] = useState(false);
+
+  // Aplicación retroactiva de reglas: dryRun (preview) → confirmar (ejecuta).
+  const [applyOpen, setApplyOpen] = useState(false);
+  const [applyPreview, setApplyPreview] = useState<RuleApplyResult | null>(null);
+  const [applyResult, setApplyResult] = useState<RuleApplyResult | null>(null);
+  const [applyBusy, setApplyBusy] = useState(false);
 
   function openCreate() {
     setEditingId(null);
@@ -114,6 +120,48 @@ export function CategoriesPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error inesperado');
     }
+  }
+
+  /** Paso 1: dryRun — calcula cuántos movimientos sin categoría matchean alguna regla, sin escribir. */
+  async function onOpenApplyPreview() {
+    setError(null);
+    setApplyBusy(true);
+    try {
+      const preview = await api.applyRules(true);
+      setApplyResult(null);
+      setApplyPreview(preview);
+      setApplyOpen(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error inesperado');
+    } finally {
+      setApplyBusy(false);
+    }
+  }
+
+  /** Paso 2: confirmar — ejecuta la categorización real. */
+  async function onConfirmApply() {
+    setApplyBusy(true);
+    setError(null);
+    try {
+      const result = await api.applyRules(false);
+      setApplyResult(result);
+      invalidate('transactions');
+      invalidate('dashboard');
+      invalidate('budgets');
+      // Categorizar movimientos cambia el contador de esta misma página (transactionCount por categoría).
+      invalidate('categories');
+      refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error inesperado');
+    } finally {
+      setApplyBusy(false);
+    }
+  }
+
+  function closeApplyModal() {
+    setApplyOpen(false);
+    setApplyPreview(null);
+    setApplyResult(null);
   }
 
   const expenseCategories = categories?.filter((c) => c.type === 'EXPENSE') ?? [];
@@ -232,6 +280,16 @@ export function CategoriesPage() {
             ))}
           </div>
         )}
+
+        <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+          <button type="button" className="secondary" disabled={applyBusy} onClick={onOpenApplyPreview}>
+            {applyBusy ? 'Calculando…' : 'Aplicar reglas a movimientos sin categoría'}
+          </button>
+          <p className="muted" style={{ fontSize: 11.5, marginTop: 8, marginBottom: 0 }}>
+            Recorre los movimientos ya cargados que no tienen categoría y les asigna la que corresponda según tus
+            reglas. Nunca pisa una categoría ya asignada (manual o previa).
+          </p>
+        </div>
       </div>
 
       <div className="mf-dashed-tile mf-dashed-tile--row">
@@ -273,6 +331,66 @@ export function CategoriesPage() {
           </label>
           <button disabled={busy}>{busy ? 'Guardando…' : editingId ? 'Guardar cambios' : 'Agregar'}</button>
         </form>
+      </Modal>
+
+      <Modal open={applyOpen} onClose={closeApplyModal} title="Aplicar reglas a movimientos sin categoría">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {applyResult ? (
+            <>
+              <p style={{ margin: 0 }}>
+                Se categorizaron <strong>{applyResult.total}</strong> movimiento
+                {applyResult.total === 1 ? '' : 's'}.
+              </p>
+              {applyResult.byRule.length > 0 && (
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: 'var(--text-3)' }}>
+                  {applyResult.byRule.map((r) => (
+                    <li key={r.keyword}>
+                      “{r.keyword}”: {r.count}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <button type="button" onClick={closeApplyModal}>
+                Cerrar
+              </button>
+            </>
+          ) : applyPreview && applyPreview.total === 0 ? (
+            <>
+              <p className="muted" style={{ margin: 0 }}>
+                No hay movimientos sin categoría que coincidan con alguna regla.
+              </p>
+              <button type="button" className="secondary" onClick={closeApplyModal}>
+                Cerrar
+              </button>
+            </>
+          ) : applyPreview ? (
+            <>
+              <p style={{ margin: 0 }}>
+                Se categorizarían <strong>{applyPreview.total}</strong> movimiento
+                {applyPreview.total === 1 ? '' : 's'}.
+              </p>
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: 'var(--text-3)' }}>
+                {applyPreview.byRule.map((r) => (
+                  <li key={r.keyword}>
+                    “{r.keyword}”: {r.count}
+                  </li>
+                ))}
+              </ul>
+              <div className="form-row">
+                <button type="button" className="secondary" disabled={applyBusy} onClick={closeApplyModal}>
+                  Cancelar
+                </button>
+                <button type="button" disabled={applyBusy} onClick={onConfirmApply}>
+                  {applyBusy ? 'Aplicando…' : 'Confirmar'}
+                </button>
+              </div>
+            </>
+          ) : (
+            <p className="muted" style={{ margin: 0 }}>
+              Calculando…
+            </p>
+          )}
+        </div>
       </Modal>
     </>
   );

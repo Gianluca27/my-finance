@@ -8,11 +8,15 @@ export function AddTransactionModal({
   open,
   onClose,
   transaction,
+  duplicateFrom,
 }: {
   open: boolean;
   onClose: () => void;
   /** Si se pasa, el modal edita ese movimiento en vez de crear uno nuevo. */
   transaction?: Transaction | null;
+  /** Si se pasa (y `transaction` no), el modal queda en modo alta precargado con estos datos
+   * y fecha = hoy — usado por "Duplicar". Ignorado si `transaction` también está presente. */
+  duplicateFrom?: Transaction | null;
 }) {
   const editing = !!transaction;
   const [type, setType] = useState<TransactionType>('EXPENSE');
@@ -30,7 +34,8 @@ export function AddTransactionModal({
   const { data: accountsData } = useCached<Account[]>('accounts', () => api.listAccounts());
   const accounts = accountsData ?? [];
 
-  // Al abrir, precargar los datos del movimiento a editar (o limpiar para uno nuevo).
+  // Al abrir, precargar los datos del movimiento a editar, o los de la fila a duplicar
+  // (con fecha = hoy, ya que es un movimiento nuevo), o limpiar para uno nuevo en blanco.
   useEffect(() => {
     if (!open) return;
     if (transaction) {
@@ -40,9 +45,16 @@ export function AddTransactionModal({
       setAccountId(transaction.accountId);
       setDate(transaction.date.slice(0, 10));
       setNote(transaction.note ?? '');
+    } else if (duplicateFrom) {
+      setType(duplicateFrom.type);
+      setAmount(String(duplicateFrom.amount));
+      setCategoryId(duplicateFrom.categoryId ?? '');
+      setAccountId(duplicateFrom.accountId);
+      setDate(new Date().toISOString().slice(0, 10));
+      setNote(duplicateFrom.note ?? '');
     }
     setError(null);
-  }, [open, transaction]);
+  }, [open, transaction, duplicateFrom]);
 
   // Preseleccionar la cuenta por defecto cuando cargan las cuentas (solo al crear).
   useEffect(() => {
@@ -120,7 +132,11 @@ export function AddTransactionModal({
   }
 
   return (
-    <Modal open={open} onClose={close} title={editing ? 'Editar movimiento' : 'Nuevo movimiento'}>
+    <Modal
+      open={open}
+      onClose={close}
+      title={editing ? 'Editar movimiento' : duplicateFrom ? 'Duplicar movimiento' : 'Nuevo movimiento'}
+    >
       <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {error && <div className="error-banner">{error}</div>}
         <div className="mf-seg">

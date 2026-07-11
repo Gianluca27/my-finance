@@ -1,4 +1,4 @@
-import type { BudgetStatus, CategorySummary, DashboardData } from '@myfinance/shared';
+import type { BudgetStatus, Category, CategorySummary, DashboardData } from '@myfinance/shared';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import React, { useCallback, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
@@ -20,6 +20,9 @@ import { useTheme } from '../ThemeContext';
 
 const OTHERS_COLOR = '#5a6472';
 const NW_HEIGHT = 120;
+
+// Presupuesto global (spec 16) tiene category/categoryId null; el soporte mobile llega con spec 18.
+type CategorizedBudget = BudgetStatus & { category: Category; categoryId: string };
 
 /** Paths (línea + área) del gráfico de patrimonio neto, en coordenadas 0..W / 0..H. */
 function buildNetWorthPaths(points: { netWorth: number }[], w: number, h: number) {
@@ -92,7 +95,7 @@ export function DashboardScreen() {
   const { width: winWidth } = useWindowDimensions();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [data, setData] = useState<DashboardData | null>(null);
-  const [budgets, setBudgets] = useState<BudgetStatus[]>([]);
+  const [budgets, setBudgets] = useState<CategorizedBudget[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [barHover, setBarHover] = useState<number | null>(null);
@@ -101,7 +104,10 @@ export function DashboardScreen() {
     return Promise.all([api.dashboard(), api.listBudgets()])
       .then(([d, b]) => {
         setData(d);
-        setBudgets(b);
+        setBudgets(
+          // Presupuesto global (spec 16) se filtra — soporte mobile llega con spec 18
+          b.filter((x): x is CategorizedBudget => x.category != null),
+        );
         setError(null);
       })
       .catch((err) => setError(err.message));

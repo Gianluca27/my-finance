@@ -22,11 +22,14 @@ import {
   type Option,
 } from '../components/ui';
 
+// Presupuesto global (spec 16) tiene category/categoryId null; el soporte mobile llega con spec 18.
+type CategorizedBudget = BudgetStatus & { category: Category; categoryId: string };
+
 export function BudgetsScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
-  const [budgets, setBudgets] = useState<BudgetStatus[]>([]);
+  const [budgets, setBudgets] = useState<CategorizedBudget[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,7 +44,12 @@ export function BudgetsScreen() {
   const load = useCallback(() => {
     return api
       .listBudgets()
-      .then(setBudgets)
+      .then((list) =>
+        setBudgets(
+          // Presupuesto global (spec 16) se filtra — soporte mobile llega con spec 18
+          list.filter((b): b is CategorizedBudget => b.category != null),
+        ),
+      )
       .catch((err) => setError(err instanceof Error ? err.message : 'Error inesperado'));
   }, []);
 

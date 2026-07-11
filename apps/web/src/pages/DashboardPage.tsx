@@ -1,9 +1,10 @@
-import type { BudgetStatus, CategorySummary, DashboardData } from '@myfinance/shared';
+import type { BudgetStatus, CategorySummary, DashboardData, PreviousMonthDelta } from '@myfinance/shared';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, formatMoney } from '../api';
 import { useCached } from '../cache';
 import { MonthPicker } from '../components/MonthPicker';
+import { Skeleton } from '../components/Skeleton';
 import { currentMonthKey, monthLabel } from '../lib/months';
 
 const DONUT_R = 42;
@@ -70,6 +71,42 @@ function budgetBarColor(status: BudgetStatus): string {
   return 'var(--accent)';
 }
 
+/** Top 5 categorías por delta absoluto ($) para que pesos chicos con % gigantes no dominen. */
+function topCategoryDeltas(
+  byCategory: Array<PreviousMonthDelta & { categoryId: string; name: string }>,
+): Array<PreviousMonthDelta & { categoryId: string; name: string }> {
+  return [...byCategory]
+    .sort((a, b) => Math.abs(b.current - b.previous) - Math.abs(a.current - a.previous))
+    .slice(0, 5);
+}
+
+/** Silueta de carga con la misma grilla que el dashboard real, para que no haya salto de layout al llegar los datos. */
+function DashboardSkeleton({ isCurrentMonth }: { isCurrentMonth: boolean }) {
+  const cardBody = (contentHeight: number) => (
+    <>
+      <Skeleton width="45%" height={10} />
+      <Skeleton height={contentHeight} style={{ marginTop: 14 }} />
+    </>
+  );
+  return (
+    <div className={isCurrentMonth ? 'mf-dashboard' : 'mf-dashboard mf-dashboard--past'}>
+      <div className="mf-hero-card mf-b-balance">{cardBody(90)}</div>
+      {isCurrentMonth && <div className="card mf-b-proj">{cardBody(70)}</div>}
+      <div className="mf-b-side">
+        {isCurrentMonth && <div className="card">{cardBody(40)}</div>}
+        <div className="card">{cardBody(40)}</div>
+        <div className="card">{cardBody(40)}</div>
+      </div>
+      <div className="card mf-b-networth">{cardBody(92)}</div>
+      <div className="card mf-b-catdelta">{cardBody(90)}</div>
+      <div className="card mf-b-donut">{cardBody(108)}</div>
+      <div className="card mf-b-bars">{cardBody(118)}</div>
+      {isCurrentMonth && <div className="card mf-b-upcoming">{cardBody(90)}</div>}
+      <div className="card mf-b-budgets">{cardBody(100)}</div>
+    </div>
+  );
+}
+
 export function DashboardPage() {
   const [month, setMonth] = useState(currentMonthKey());
   const isCurrentMonth = month === currentMonthKey();
@@ -94,6 +131,11 @@ export function DashboardPage() {
     if (!budgets) return [];
     return [...budgets].sort((a, b) => b.percentUsed - a.percentUsed).slice(0, 4);
   }, [budgets]);
+
+  const catDeltas = useMemo(
+    () => (data?.insights.previousMonthComparison ? topCategoryDeltas(data.insights.previousMonthComparison.byCategory) : []),
+    [data],
+  );
 
   // Geometría del gráfico de patrimonio neto (área + línea, SVG a mano como el resto del dashboard).
   const nw = useMemo(() => {
@@ -130,7 +172,7 @@ export function DashboardPage() {
     return (
       <>
         {picker}
-        <p className="muted">Cargando resumen…</p>
+        <DashboardSkeleton isCurrentMonth={isCurrentMonth} />
       </>
     );
   }
@@ -153,9 +195,10 @@ export function DashboardPage() {
   const expenseOfProjectedPct =
     projected && projected > 0 ? Math.round((data.monthExpense / projected) * 100) : null;
 
-  const prevTotal = data.insights.previousMonthComparison?.total ?? null;
-  const balDelta = prevTotal ? prevTotal.current - prevTotal.previous : null;
-  const deltaUp = (balDelta ?? 0) > 0;
+  // Comparación de gasto alineada por día ("mismo día del mes pasado"), no del balance total.
+  const prevExpenseWindow = data.insights.previousMonthComparison?.total ?? null;
+  const expenseDelta = prevExpenseWindow ? prevExpenseWindow.current - prevExpenseWindow.previous : null;
+  const expenseDeltaUp = (expenseDelta ?? 0) > 0;
 
   const maxBar = Math.max(1, ...data.monthlyComparison.map((m) => Math.max(m.income, m.expense)));
 
@@ -168,20 +211,6 @@ export function DashboardPage() {
           <div className="mf-hero-body">
             <div className="mf-label" data-n="01">Balance total</div>
             <div className="mf-hero-balance">{formatMoney(data.balance)}</div>
-            {prevTotal && balDelta !== null && (
-              <div className="mf-hero-delta">
-                <span
-                  className="mf-delta-badge"
-                  style={{
-                    background: deltaUp ? 'var(--neg-weak)' : 'var(--accent-weak)',
-                    color: deltaUp ? 'var(--neg)' : 'var(--pos)',
-                  }}
-                >
-                  {deltaUp ? '▲' : '▼'} {formatMoney(Math.abs(balDelta))}
-                </span>
-                <span>vs. mes anterior</span>
-              </div>
-            )}
             <div className="mf-hero-stats">
               <div>
                 <div className="mf-stat-label">Ingresos · {monthLabel(data.month)}</div>
@@ -194,6 +223,20 @@ export function DashboardPage() {
                 <div className="mf-stat-value" style={{ color: 'var(--neg)' }}>
                   {formatMoney(data.monthExpense)}
                 </div>
+                {prevExpenseWindow && expenseDelta !== null && (
+                  <div className="mf-hero-delta" style={{ marginTop: 5, fontSize: 11, flexWrap: 'wrap' }}>
+                    <span
+                      className="mf-delta-badge"
+                      style={{
+                        background: expenseDeltaUp ? 'var(--neg-weak)' : 'var(--accent-weak)',
+                        color: expenseDeltaUp ? 'var(--neg)' : 'var(--pos)',
+                      }}
+                    >
+                      {expenseDeltaUp ? '▲' : '▼'} {formatMoney(Math.abs(expenseDelta))}
+                    </span>
+                    <span>vs. mismo día del mes pasado</span>
+                  </div>
+                )}
               </div>
               <div>
                 <div className="mf-stat-label">Tasa de ahorro</div>
@@ -236,7 +279,8 @@ export function DashboardPage() {
                 data.insights.anomalies.map((a) => (
                   <div className="mf-anomaly-row" key={a.categoryId}>
                     <span style={{ flex: 1 }}>
-                      <strong>{a.name}</strong> por encima de tu promedio
+                      <strong>{a.name}</strong>: gastaste {formatMoney(a.currentAmount)} vs. promedio{' '}
+                      {formatMoney(a.avgAmount)}
                     </span>
                     <span className="mf-anomaly-pct">+{a.percentOfAvg - 100}%</span>
                   </div>
@@ -262,7 +306,9 @@ export function DashboardPage() {
                 {formatMoney(data.safeToSpend.available)}
               </div>
               <div className="mf-caption" title="Balance menos los gastos fijos que faltan pagar este mes">
-                Tras fijos · {formatMoney(data.safeToSpend.available)}
+                {data.safeToSpend.committedExpenses === 0
+                  ? `Balance ${formatMoney(data.safeToSpend.balance)} · sin fijos pendientes`
+                  : `Balance ${formatMoney(data.safeToSpend.balance)} − Fijos por vencer ${formatMoney(data.safeToSpend.committedExpenses)}`}
               </div>
             </div>
           )}
@@ -311,7 +357,8 @@ export function DashboardPage() {
                         color: data.investmentsSummary.pnl >= 0 ? 'var(--pos)' : 'var(--neg)',
                       }}
                     >
-                      {data.investmentsSummary.pnl >= 0 ? '▲' : '▼'} {data.investmentsSummary.pnlPercent}%
+                      {data.investmentsSummary.pnl >= 0 ? '▲' : '▼'} {formatMoney(Math.abs(data.investmentsSummary.pnl))}{' '}
+                      ({data.investmentsSummary.pnlPercent}%)
                     </span>
                   )}
                 </div>
@@ -386,8 +433,42 @@ export function DashboardPage() {
           )}
         </div>
 
+        <div className="card mf-b-catdelta">
+          <div className="mf-label" data-n={isCurrentMonth ? '05' : '03'} style={{ marginBottom: 4 }}>
+            Qué cambió vs. mes anterior
+          </div>
+          {!data.insights.previousMonthComparison ? (
+            <p className="muted">Todavía no hay datos del mes anterior para comparar.</p>
+          ) : catDeltas.length === 0 ? (
+            <p className="muted">Sin categorías comparables entre ambos meses.</p>
+          ) : (
+            <div className="mf-catdelta-list">
+              {catDeltas.map((c) => {
+                const spentMore = c.current > c.previous;
+                return (
+                  <div className="mf-catdelta-row" key={c.categoryId}>
+                    <span className="mf-catdelta-name">{c.name}</span>
+                    <span className="mf-catdelta-values">
+                      {formatMoney(c.previous)} → {formatMoney(c.current)}
+                    </span>
+                    <span
+                      className="mf-delta-badge"
+                      style={{
+                        background: spentMore ? 'var(--neg-weak)' : 'var(--accent-weak)',
+                        color: spentMore ? 'var(--neg)' : 'var(--pos)',
+                      }}
+                    >
+                      {spentMore ? '▲' : '▼'} {Math.abs(c.deltaPercent)}%
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         <div className="card mf-b-donut">
-          <div className="mf-label" data-n={isCurrentMonth ? '05' : '03'} style={{ marginBottom: 14 }}>
+          <div className="mf-label" data-n={isCurrentMonth ? '06' : '04'} style={{ marginBottom: 14 }}>
             Gastos por categoría
           </div>
           {data.expensesByCategory.length === 0 ? (
@@ -437,7 +518,7 @@ export function DashboardPage() {
 
         <div className="card mf-b-bars">
           <div className="mf-card-head">
-            <div className="mf-label" data-n={isCurrentMonth ? '06' : '04'}>Ingresos vs. gastos · {data.monthlyComparison.length} meses</div>
+            <div className="mf-label" data-n={isCurrentMonth ? '07' : '05'}>Ingresos vs. gastos · {data.monthlyComparison.length} meses</div>
             <div className="chip-legend">
               <span className="chip">
                 <span className="chip-swatch" style={{ background: 'var(--pos)' }} />
@@ -500,7 +581,7 @@ export function DashboardPage() {
         {isCurrentMonth && (
           <div className="card mf-b-upcoming">
             <div className="mf-card-head" style={{ marginBottom: 14 }}>
-              <div className="mf-label" data-n="07">Próximos pagos</div>
+              <div className="mf-label" data-n="08">Próximos pagos</div>
               <Link to="/recurrentes" className="mf-link">
                 Ver todos →
               </Link>
@@ -531,7 +612,7 @@ export function DashboardPage() {
 
         <div className="card mf-b-budgets">
           <div className="mf-card-head" style={{ marginBottom: 14 }}>
-            <div className="mf-label" data-n={isCurrentMonth ? '08' : '05'}>Presupuestos del mes</div>
+            <div className="mf-label" data-n={isCurrentMonth ? '09' : '06'}>Presupuestos del mes</div>
             <Link to="/presupuestos" className="mf-link">
               Gestionar →
             </Link>

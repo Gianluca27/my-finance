@@ -253,6 +253,8 @@ export function TransactionsPage() {
     invalidate('dashboard');
     invalidate('budgets');
     invalidate('accounts');
+    // Recategorizar/borrar en lote también cambia el contador por categoría de CategoriesPage.
+    invalidate('categories');
     refresh();
   }
 

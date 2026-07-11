@@ -72,11 +72,14 @@ router.post(
     const [rules, uncategorized] = await Promise.all([
       loadRules(userId),
       prisma.transaction.findMany({
-        where: { userId, categoryId: null },
+        // goalId: null — criterio spec 08: los aportes/retiros de metas son EXPENSE/INCOME sin
+        // categoría pero quedan fuera de las reglas (no son gasto/ingreso real a categorizar).
+        where: { userId, categoryId: null, goalId: null },
         select: { id: true, note: true, type: true },
       }),
     ]);
     const { total, byRule, matches } = computeRuleMatches(rules, uncategorized);
+    let applied = total;
 
     if (!dryRun && matches.length > 0) {
       // Agrupado por categoría para minimizar statements; el filtro categoryId: null se repite
@@ -87,7 +90,7 @@ router.post(
         arr.push(m.transactionId);
         idsByCategory.set(m.categoryId, arr);
       }
-      await prisma.$transaction(
+      const results = await prisma.$transaction(
         [...idsByCategory.entries()].map(([categoryId, ids]) =>
           prisma.transaction.updateMany({
             where: { id: { in: ids }, userId, categoryId: null },
@@ -95,9 +98,12 @@ router.post(
           }),
         ),
       );
+      // El total reportado es la suma real de updateMany, no el conteo precomputado: si hubo una
+      // categorización concurrente entre el cálculo y el update, el conteo real puede ser menor.
+      applied = results.reduce((sum, r) => sum + r.count, 0);
     }
 
-    res.json({ total, byRule });
+    res.json({ total: applied, byRule });
   }),
 );
 

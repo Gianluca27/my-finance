@@ -498,7 +498,8 @@ export function DebtsPage() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <div className="mf-label" style={{ marginBottom: 6 }}>
-                Pagaste {formatMoney(historyDetail.totalAmount - historyDetail.remainingBalance)} de{' '}
+                {historyFor.direction === 'I_OWE' ? 'Pagaste' : 'Te pagaron'}{' '}
+                {formatMoney(historyDetail.totalAmount - historyDetail.remainingBalance)} de{' '}
                 {formatMoney(historyDetail.totalAmount)} en {historyDetail.payments.length} pago
                 {historyDetail.payments.length === 1 ? '' : 's'}.
               </div>

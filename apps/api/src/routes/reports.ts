@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import PDFDocument from 'pdfkit';
-import { z } from 'zod';
 import { currentMonth, isValidMonth, monthRange } from '../lib/dates';
+import { transactionFilterSchema } from '../lib/transactionFilters';
 import { requireAuth } from '../middleware/auth';
 import { asyncHandler } from '../middleware/error';
 import { prisma } from '../prisma';
@@ -9,35 +9,35 @@ import { prisma } from '../prisma';
 const router = Router();
 router.use(requireAuth);
 
-const rangeSchema = z.object({
-  from: z.coerce.date().optional(),
-  to: z.coerce.date().optional(),
-});
-
 function csvEscape(value: string): string {
   if (/[",\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
   return value;
 }
 
-/** Exporta transacciones a CSV (?from=YYYY-MM-DD&to=YYYY-MM-DD). */
+/** Exporta transacciones a CSV (?from&to&type&categoryId&accountId, todos opcionales). */
 router.get(
   '/transactions.csv',
   asyncHandler(async (req, res) => {
-    const { from, to } = rangeSchema.parse(req.query);
+    const { from, to, type, categoryId, accountId } = transactionFilterSchema.parse(req.query);
     const transactions = await prisma.transaction.findMany({
       where: {
         userId: req.auth!.userId,
+        ...(type ? { type } : {}),
+        ...(categoryId ? { categoryId } : {}),
+        ...(accountId ? { accountId } : {}),
         ...(from || to
           ? { date: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } }
           : {}),
       },
-      include: { category: true },
+      include: { category: true, account: true },
       orderBy: { date: 'desc' },
     });
 
     // El CSV no excluye aportes/retiros de metas (a diferencia del dashboard y el PDF): tiene que
     // cuadrar con los movimientos reales de las cuentas. Se identifican con una columna aparte.
-    const header = 'fecha,tipo,monto,categoria,nota,meta';
+    // `cuenta` va al final (no entre categoria/nota) para no romper el import, que lee las
+    // primeras 5 columnas por posición (ver lib/importCsv.ts).
+    const header = 'fecha,tipo,monto,categoria,nota,meta,cuenta';
     const rows = transactions.map((tx) => {
       const metaTag = tx.goalId ? (tx.type === 'EXPENSE' ? 'aporte_meta' : 'retiro_meta') : '';
       return [
@@ -47,6 +47,7 @@ router.get(
         csvEscape(tx.category?.name ?? 'Sin categoría'),
         csvEscape(tx.note ?? ''),
         metaTag,
+        csvEscape(tx.account.name),
       ].join(',');
     });
     const csv = '﻿' + [header, ...rows].join('\n');

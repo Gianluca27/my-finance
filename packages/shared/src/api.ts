@@ -31,6 +31,7 @@ import type {
   GoalInput,
   GoalUpdateInput,
   GoalWithdrawalInput,
+  ImportPreview,
   ImportResult,
   Investment,
   InvestmentDetail,
@@ -44,6 +45,7 @@ import type {
   RecurringExpense,
   RecurringExpenseInput,
   RecurringPayInput,
+  ReportFilters,
   ResetPasswordInput,
   RuleApplyResult,
   Suggestion,
@@ -422,18 +424,23 @@ export class ApiClient {
   importTransactions(csv: string, accountId?: string) {
     return this.request<ImportResult>('POST', '/api/transactions/import', { csv, accountId });
   }
+  /** Corre el mismo parseo/validación que `importTransactions` pero no escribe nada: preview
+   * (conteos + primeras 10 filas interpretadas + errores) para mostrar antes de confirmar. */
+  previewImport(csv: string, accountId?: string) {
+    return this.request<ImportPreview>('POST', '/api/transactions/import?dryRun=true', { csv, accountId });
+  }
 
   // --- Reportes ---
-  reportUrl(kind: 'csv' | 'pdf', params: { from?: string; to?: string; month?: string } = {}) {
+  reportUrl(kind: 'csv' | 'pdf', params: ReportFilters = {}) {
     const search = new URLSearchParams();
     for (const [key, value] of Object.entries(params)) {
-      if (value) search.set(key, value);
+      if (value) search.set(key, String(value));
     }
     const qs = search.toString();
     const path = kind === 'csv' ? '/api/reports/transactions.csv' : '/api/reports/summary.pdf';
     return `${this.opts.baseUrl}${path}${qs ? `?${qs}` : ''}`;
   }
-  async downloadReport(kind: 'csv' | 'pdf', params: { from?: string; to?: string; month?: string } = {}) {
+  async downloadReport(kind: 'csv' | 'pdf', params: ReportFilters = {}) {
     const token = await this.opts.getToken();
     const res = await fetch(this.reportUrl(kind, params), {
       headers: token ? { Authorization: `Bearer ${token}` } : {},

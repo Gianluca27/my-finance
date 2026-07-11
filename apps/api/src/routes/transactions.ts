@@ -3,8 +3,10 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { resolveAccountId } from '../lib/accounts';
 import { loadRules, matchRule } from '../lib/categoryRules';
+import { parseImportCsv, type ImportCategoryResolution } from '../lib/importCsv';
 import { serialize } from '../lib/serialize';
 import { suggestCategoryFromHistory } from '../lib/suggestions';
+import { transactionFilterSchema } from '../lib/transactionFilters';
 import { requireAuth } from '../middleware/auth';
 import { asyncHandler, HttpError } from '../middleware/error';
 import { prisma } from '../prisma';
@@ -33,12 +35,7 @@ const bulkSchema = z
     path: ['categoryId'],
   });
 
-const filtersSchema = z.object({
-  from: z.coerce.date().optional(),
-  to: z.coerce.date().optional(),
-  type: z.enum(['INCOME', 'EXPENSE']).optional(),
-  categoryId: z.string().optional(),
-  accountId: z.string().optional(),
+const filtersSchema = transactionFilterSchema.extend({
   search: z.string().optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
@@ -318,114 +315,94 @@ const importSchema = z.object({
   accountId: z.string().nullable().optional(),
 });
 
-/** Parsea una línea CSV (comillas dobles, comas y comillas escapadas ""). */
-function parseCsvLine(line: string): string[] {
-  const fields: string[] = [];
-  let current = '';
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    if (inQuotes) {
-      if (char === '"') {
-        if (line[i + 1] === '"') {
-          current += '"';
-          i++;
-        } else {
-          inQuotes = false;
-        }
-      } else {
-        current += char;
-      }
-    } else if (char === '"') {
-      inQuotes = true;
-    } else if (char === ',') {
-      fields.push(current);
-      current = '';
-    } else {
-      current += char;
-    }
+/**
+ * Arma el `categoryId` final de una fila ya parseada: existente o recién creada (`toCreate`,
+ * resuelto contra el mapa de categorías creadas en esta misma corrida) o por regla; `none` no
+ * tiene categoría.
+ */
+function resolveRowCategoryId(
+  category: ImportCategoryResolution,
+  newCategoryIds: Map<string, string>,
+): string | null {
+  switch (category.kind) {
+    case 'existing':
+    case 'rule':
+      return category.categoryId;
+    case 'toCreate':
+      return newCategoryIds.get(category.key) ?? null;
+    case 'none':
+      return null;
   }
-  fields.push(current);
-  return fields;
 }
 
 /**
- * Importa transacciones desde el CSV con el mismo formato que exporta la app
- * (encabezado `fecha,tipo,monto,categoria,nota,meta`; la columna `meta` de la exportación se
- * ignora al importar — las columnas se leen por posición, así que los CSV viejos de 5 columnas
- * siguen siendo válidos). Las categorías se emparejan por nombre+tipo; si no existe, el
- * movimiento se importa sin categoría.
+ * Importa transacciones desde el CSV con el mismo formato que exporta la app (ver
+ * `lib/importCsv.ts` para el detalle del parseo/resolución de categorías). Con
+ * `?dryRun=true` corre exactamente el mismo parseo/validación pero no escribe nada — ni
+ * transacciones ni categorías nuevas — y devuelve un preview con las primeras 10 filas
+ * interpretadas para mostrar antes de confirmar.
  */
 router.post(
   '/import',
   asyncHandler(async (req, res) => {
     const { csv, accountId: requestedAccountId } = importSchema.parse(req.body);
+    const dryRun = req.query.dryRun === 'true';
     const userId = req.auth!.userId;
+    // Se valida la cuenta también en dryRun (mismo pipeline completo, solo difiere la escritura);
+    // no se usa en la respuesta del preview, pero un accountId inválido debe fallar temprano.
     const accountId = await resolveAccountId(userId, requestedAccountId);
 
-    const categories = await prisma.category.findMany({ where: { userId } });
-    const categoryByKey = new Map(categories.map((c) => [`${c.type}:${c.name.trim().toLowerCase()}`, c.id]));
-    const rules = await loadRules(userId);
+    const [categories, rules] = await Promise.all([
+      prisma.category.findMany({ where: { userId } }),
+      loadRules(userId),
+    ]);
+    const parsed = parseImportCsv(csv, categories, rules);
 
-    const rawLines = csv.replace(/^﻿/, '').split(/\r?\n/);
-    const errors: Array<{ line: number; reason: string }> = [];
-    const toCreate: Prisma.TransactionCreateManyInput[] = [];
-    let skipped = 0;
-
-    rawLines.forEach((rawLine, index) => {
-      const lineNo = index + 1;
-      if (rawLine.trim() === '') {
-        skipped++;
-        return;
-      }
-      const cols = parseCsvLine(rawLine).map((c) => c.trim());
-      // Encabezado (mismo formato que la exportación)
-      if (index === 0 && cols[0]?.toLowerCase() === 'fecha') {
-        skipped++;
-        return;
-      }
-      const [fechaStr, tipoStr, montoStr, categoriaStr, notaStr] = cols;
-
-      const date = new Date(fechaStr);
-      if (!fechaStr || Number.isNaN(date.getTime())) {
-        errors.push({ line: lineNo, reason: 'Fecha inválida' });
-        return;
-      }
-      const tipoNorm = (tipoStr ?? '').toLowerCase();
-      const type = tipoNorm === 'ingreso' ? 'INCOME' : tipoNorm === 'gasto' ? 'EXPENSE' : null;
-      if (!type) {
-        errors.push({ line: lineNo, reason: 'Tipo debe ser "ingreso" o "gasto"' });
-        return;
-      }
-      const amount = Number((montoStr ?? '').replace(/[^0-9.-]/g, ''));
-      if (!Number.isFinite(amount) || amount <= 0) {
-        errors.push({ line: lineNo, reason: 'Monto inválido' });
-        return;
-      }
-
-      let categoryId =
-        categoriaStr && categoriaStr.toLowerCase() !== 'sin categoría'
-          ? categoryByKey.get(`${type}:${categoriaStr.toLowerCase()}`) ?? null
-          : null;
-      // Sin categoría explícita en el CSV → intentar autocategorizar por reglas sobre la nota.
-      if (!categoryId) categoryId = matchRule(rules, notaStr ?? null, type);
-
-      toCreate.push({
-        userId,
-        type,
-        amount,
-        date,
-        note: notaStr ? notaStr.slice(0, 500) : null,
-        categoryId,
-        accountId,
+    if (dryRun) {
+      const sample = parsed.rows.slice(0, 10).map((row) => ({
+        fecha: row.date.toISOString().slice(0, 10),
+        tipo: row.type === 'INCOME' ? 'ingreso' : ('gasto' as const),
+        monto: row.amount,
+        categoria: row.category.label,
+        nota: row.note ?? '',
+      }));
+      res.json({
+        total: parsed.total,
+        valid: parsed.rows.length,
+        skipped: parsed.skipped,
+        errors: parsed.errors,
+        sample,
       });
-    });
-
-    if (toCreate.length > 0) {
-      await prisma.transaction.createMany({ data: toCreate });
+      return;
     }
 
-    res.status(201).json({ imported: toCreate.length, skipped, errors: errors.slice(0, 50) });
+    const imported = await prisma.$transaction(async (tx) => {
+      const newCategoryIds = new Map<string, string>();
+      for (const cat of parsed.categoriesToCreate) {
+        // upsert por si la categoría se creó por otra vía entre el parseo y esta escritura
+        // (ej: otra pestaña) — evita chocar contra el único (userId, name, type).
+        const category = await tx.category.upsert({
+          where: { userId_name_type: { userId, name: cat.name, type: cat.type } },
+          create: { userId, name: cat.name, type: cat.type },
+          update: {},
+        });
+        newCategoryIds.set(cat.key, category.id);
+      }
+
+      const toCreate: Prisma.TransactionCreateManyInput[] = parsed.rows.map((row) => ({
+        userId,
+        type: row.type,
+        amount: row.amount,
+        date: row.date,
+        note: row.note,
+        categoryId: resolveRowCategoryId(row.category, newCategoryIds),
+        accountId,
+      }));
+      if (toCreate.length > 0) await tx.transaction.createMany({ data: toCreate });
+      return toCreate.length;
+    });
+
+    res.status(201).json({ imported, skipped: parsed.skipped, errors: parsed.errors });
   }),
 );
 

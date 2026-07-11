@@ -65,6 +65,7 @@ router.get(
     const [
       totals,
       monthTotals,
+      monthTransactionCount,
       byCategory,
       monthlyRows,
       upcomingPayments,
@@ -98,6 +99,9 @@ router.get(
         where: { userId, date: { gte: start, lt: end }, goalId: null },
         _sum: { amount: true },
       }),
+      // Conteo de TODOS los movimientos del mes (sí incluye aportes/retiros de metas): alimenta
+      // el footnote de Reportes sin que el cliente tenga que pedir un listado aparte (pageSize:1).
+      prisma.transaction.count({ where: { userId, date: { gte: start, lt: end } } }),
       // Gastos por categoría del mes
       prisma.transaction.groupBy({
         by: ['categoryId'],
@@ -376,6 +380,7 @@ router.get(
       month,
       monthIncome,
       monthExpense,
+      monthTransactionCount,
       goalContributions,
       expensesByCategory,
       monthlyComparison,

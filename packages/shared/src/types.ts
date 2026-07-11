@@ -363,6 +363,9 @@ export interface DashboardData {
   month: string;
   monthIncome: number;
   monthExpense: number;
+  /** Total de movimientos del mes (incluye aportes/retiros de metas, a diferencia de
+   * monthIncome/monthExpense). Alimenta el footnote de Reportes sin pedir un listado aparte. */
+  monthTransactionCount: number;
   /** Ahorro neto en metas del mes (aportes - retiros). No está incluido en monthExpense/monthIncome:
    * se muestra como línea propia ("Ahorro en metas") para que la tasa de ahorro no lo cuente como gasto. */
   goalContributions: number;
@@ -393,6 +396,17 @@ export interface TransactionFilters {
   search?: string;
   page?: number;
   pageSize?: number;
+}
+
+/** Params de `GET /api/reports/*`. El CSV usa from/to/type/categoryId/accountId (rango libre,
+ * independiente del período mostrado en pantalla); el PDF usa solo `month`. */
+export interface ReportFilters {
+  from?: string;
+  to?: string;
+  month?: string;
+  type?: TransactionType;
+  categoryId?: string;
+  accountId?: string;
 }
 
 export interface TransactionInput {
@@ -572,10 +586,35 @@ export interface CategoryRuleInput {
 export interface ImportResult {
   /** Filas insertadas correctamente. */
   imported: number;
-  /** Filas ignoradas (vacías, encabezado, formato inválido). */
+  /** Filas ignoradas (vacías o encabezado). */
   skipped: number;
-  /** Detalle de errores por fila (línea 1-indexada + motivo), acotado. */
+  /** Detalle de errores por fila (línea 1-indexada + motivo). Lista completa, sin límite. */
   errors: Array<{ line: number; reason: string }>;
+}
+
+/**
+ * Respuesta de `POST /api/transactions/import?dryRun=true`: corre el mismo parseo/validación que
+ * el import real pero sin escribir nada (ni transacciones ni categorías nuevas), para mostrar un
+ * preview antes de confirmar.
+ */
+export interface ImportPreview {
+  /** Filas de datos del archivo (válidas + con error). No cuenta encabezado ni líneas vacías. */
+  total: number;
+  /** Filas que se importarían si se confirma. */
+  valid: number;
+  /** Filas ignoradas (vacías o encabezado). */
+  skipped: number;
+  /** Detalle de errores por fila (línea 1-indexada + motivo). Lista completa, sin límite. */
+  errors: Array<{ line: number; reason: string }>;
+  /** Primeras 10 filas válidas, ya interpretadas. */
+  sample: Array<{
+    fecha: string;
+    tipo: 'ingreso' | 'gasto';
+    monto: number;
+    /** Nombre de categoría resuelta, "se creará", "regla aplicada" o "Sin categoría". */
+    categoria: string;
+    nota: string;
+  }>;
 }
 
 /** Body de POST /api/transactions/bulk. `categoryId` obligatorio para `setCategory`. */

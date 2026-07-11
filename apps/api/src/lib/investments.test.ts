@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   closestPriceMatch,
   computePosition,
+  firstRentaWithoutHolding,
   investmentMetrics,
   operationCashAmount,
   positionAsOf,
@@ -134,6 +135,30 @@ describe('renta (RENTA)', () => {
         { type: 'VENTA', quantity: 8, unitPrice: 120 },
       ]),
     ).toBeNull();
+  });
+
+  it('mover la compra después de la renta deja la renta sin tenencia', () => {
+    // Base de la revalidación al editar/borrar OTRA operación: si la única compra
+    // pasa a una fecha posterior a la renta, la renta queda sin tenencia a su fecha.
+    const renta: DatedPositionOp = {
+      type: 'RENTA',
+      quantity: 0,
+      unitPrice: 40,
+      date: new Date('2024-02-01T00:00:00.000Z'),
+    };
+    const ops: DatedPositionOp[] = [
+      { type: 'COMPRA', quantity: 10, unitPrice: 100, date: new Date('2024-03-01T00:00:00.000Z') },
+      renta,
+    ];
+    expect(firstRentaWithoutHolding(ops)).toBe(renta);
+  });
+
+  it('con tenencia a la fecha de la renta la secuencia es válida', () => {
+    const ops: DatedPositionOp[] = [
+      { type: 'COMPRA', quantity: 10, unitPrice: 100, date: new Date('2024-01-01T00:00:00.000Z') },
+      { type: 'RENTA', quantity: 0, unitPrice: 40, date: new Date('2024-02-01T00:00:00.000Z') },
+    ];
+    expect(firstRentaWithoutHolding(ops)).toBeNull();
   });
 });
 

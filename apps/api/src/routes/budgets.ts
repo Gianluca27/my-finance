@@ -15,7 +15,9 @@ const budgetSchema = z.object({
   categoryId: z.string().nullable(),
   amount: z.number().positive().max(999_999_999),
   alertThreshold: z.number().int().min(1).max(100).default(80),
-  rollover: z.boolean().default(false),
+  // Opcional a propósito: si el cliente lo omite (p. ej. el mobile sólo manda
+  // monto/umbral) NO se toca el arrastre, para no borrar la base acumulada.
+  rollover: z.boolean().optional(),
 });
 
 /**
@@ -185,22 +187,33 @@ router.put(
             },
           });
 
-    // El mes de arranque del arrastre se fija al pasar false→true y se limpia al desactivar.
-    let rolloverStartMonth: Date | null;
-    if (!input.rollover) {
-      rolloverStartMonth = null;
-    } else if (existing?.rollover) {
-      rolloverStartMonth = existing.rolloverStartMonth; // ya estaba activo: se respeta el arranque
-    } else {
-      rolloverStartMonth = monthRange(currentMonth()).start;
+    // El rollover sólo se modifica cuando el cliente lo envía; si se omite, no se
+    // pisa (ni el flag ni el mes de arranque) para no destruir la base de arrastre.
+    // El mes de arranque se fija al pasar false→true y se limpia al desactivar.
+    let rolloverData: { rollover: boolean; rolloverStartMonth: Date | null } | null = null;
+    if (input.rollover !== undefined) {
+      let rolloverStartMonth: Date | null;
+      if (!input.rollover) {
+        rolloverStartMonth = null;
+      } else if (existing?.rollover) {
+        rolloverStartMonth = existing.rolloverStartMonth; // ya estaba activo: se respeta el arranque
+      } else {
+        rolloverStartMonth = monthRange(currentMonth()).start;
+      }
+      rolloverData = { rollover: input.rollover, rolloverStartMonth };
     }
 
-    const data = {
+    const baseData = {
       amount: input.amount,
       alertThreshold: input.alertThreshold,
-      rollover: input.rollover,
-      rolloverStartMonth,
       lastAlertMonth: null,
+    };
+    // Update: sólo incluye rollover si el cliente lo mandó (si no, se conserva).
+    const updateData = { ...baseData, ...(rolloverData ?? {}) };
+    // Create: si no llegó rollover, arranca desactivado.
+    const createData = {
+      ...baseData,
+      ...(rolloverData ?? { rollover: false, rolloverStartMonth: null }),
     };
 
     // Categoría: upsert atómico por el unique compuesto (evita duplicados en doble submit).
@@ -212,18 +225,18 @@ router.put(
             where: {
               userId_categoryId: { userId: req.auth!.userId, categoryId: input.categoryId },
             },
-            update: data,
-            create: { ...data, userId: req.auth!.userId, categoryId: input.categoryId },
+            update: updateData,
+            create: { ...createData, userId: req.auth!.userId, categoryId: input.categoryId },
             include: { category: true },
           })
         : existing
           ? await prisma.budget.update({
               where: { id: existing.id },
-              data,
+              data: updateData,
               include: { category: true },
             })
           : await prisma.budget.create({
-              data: { ...data, userId: req.auth!.userId, categoryId: null },
+              data: { ...createData, userId: req.auth!.userId, categoryId: null },
               include: { category: true },
             });
     res.json(serialize(budget));

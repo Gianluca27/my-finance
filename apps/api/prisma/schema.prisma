@@ -206,6 +206,10 @@ model RecurringExpense {
   @@index([active, nextDueDate])
 }
 
+// El índice único parcial `Budget_userId_global_key` (WHERE "categoryId" IS NULL,
+// un solo presupuesto global por usuario) vive sólo en SQL de migración manual:
+// Prisma no puede expresar índices parciales en el schema. Si `prisma migrate dev`
+// genera un `DROP INDEX` de ese índice, hay que rechazar/editar esa migración.
 model Budget {
   id             String   @id @default(cuid())
   amount         Decimal  @db.Decimal(12, 2)

@@ -134,6 +134,22 @@ export function positionAsOf(ops: DatedPositionOp[], asOf: Date): Position | nul
   return computePosition(upTo);
 }
 
+/**
+ * Primera RENTA de la secuencia que quedaría sin tenencia a su fecha (`null` si
+ * todas tienen tenencia > 0). No se cobra renta de lo que no se tiene: una renta
+ * huérfana infla `incomeCollected` y la TIR. Sirve para revalidar la secuencia
+ * completa al editar o borrar OTRA operación (mover o eliminar la única compra
+ * puede dejar una renta huérfana que `computePosition` no ve, porque ignora la RENTA).
+ */
+export function firstRentaWithoutHolding(ops: DatedPositionOp[]): DatedPositionOp | null {
+  for (const op of ops) {
+    if (op.type !== 'RENTA') continue;
+    const pos = positionAsOf(ops, op.date);
+    if (!pos || pos.quantity <= 0) return op;
+  }
+  return null;
+}
+
 /** Flujo de caja fechado para la TIR: negativo = egreso (compra), positivo = ingreso (venta/valuación). */
 export interface CashFlow {
   date: Date;

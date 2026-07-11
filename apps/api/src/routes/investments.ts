@@ -5,6 +5,7 @@ import {
   buildInvestmentsSummary,
   closestPriceMatch,
   computePosition,
+  firstRentaWithoutHolding,
   investmentMetrics,
   operationCashAmount,
   positionAsOf,
@@ -778,6 +779,24 @@ function assertOperationValid(input: OperationInput, opDate: Date, others: Dated
       throw new HttpError(400, 'No tenés tenencia de este activo a esa fecha: no se puede registrar renta.');
     }
   }
+  // El cambio no puede dejar huérfana ninguna renta previa (p. ej. mover la única
+  // compra a una fecha posterior a una renta, o cargar una venta que anule la tenencia).
+  assertNoOrphanRenta(candidate);
+}
+
+/**
+ * Revalida la secuencia completa: ninguna RENTA puede quedar sin tenencia a su
+ * fecha. `computePosition` ignora la RENTA, así que este chequeo es el único que
+ * atrapa una renta huérfana dejada por editar o borrar OTRA operación.
+ */
+function assertNoOrphanRenta(ops: DatedOp[]): void {
+  const orphan = firstRentaWithoutHolding(ops);
+  if (orphan) {
+    throw new HttpError(
+      400,
+      `El cambio dejaría la renta del ${dayKey(orphan.date)} sin tenencia del activo a esa fecha.`,
+    );
+  }
 }
 
 router.post(
@@ -875,10 +894,12 @@ router.delete(
     if (!operation) throw new HttpError(404, 'Operación no encontrada');
 
     const ops = await fetchOps(existing.id);
-    const remaining = toDatedOps(ops.filter((op) => op.id !== operation.id));
-    if (computePosition(sortOps(remaining)) === null) {
+    const remaining = sortOps(toDatedOps(ops.filter((op) => op.id !== operation.id)));
+    if (computePosition(remaining) === null) {
       throw new HttpError(400, 'No se puede eliminar: dejaría ventas sin tenencia suficiente.');
     }
+    // Borrar la operación no puede dejar una renta previa sin tenencia (p. ej. eliminar la única compra).
+    assertNoOrphanRenta(remaining);
 
     await prisma.investmentOperation.delete({ where: { id: operation.id } });
     res.json(await buildDetail(existing));

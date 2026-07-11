@@ -213,10 +213,17 @@ model Budget {
   alertThreshold Int      @default(80)
   /// Último mes (YYYY-MM) en que se envió alerta, evita duplicados
   lastAlertMonth String?
+  /// Si acumula el sobrante (o el exceso) mes a mes en vez de evaporarlo.
+  rollover       Boolean  @default(false)
+  /// Primer día (UTC) del mes en que se activó el rollover; el arrastre se
+  /// computa desde acá. Se setea al pasar false→true y se limpia al desactivar.
+  rolloverStartMonth DateTime?
   userId         String
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  categoryId     String
-  category       Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Null = presupuesto global (techo total del mes). El único global por usuario
+  /// lo garantiza un índice único parcial (WHERE "categoryId" IS NULL), en la migración.
+  categoryId     String?
+  category       Category? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

@@ -90,13 +90,22 @@ export interface Budget {
   amount: number;
   /** Porcentaje (0-100) de uso que dispara la alerta */
   alertThreshold: number;
-  categoryId: string;
-  category: Category;
+  /** Si acumula el sobrante (o el exceso) mes a mes en lugar de evaporarlo. */
+  rollover: boolean;
+  /** Null = presupuesto global (techo total del mes). Uno solo por usuario. */
+  categoryId: string | null;
+  /** Null en el presupuesto global. */
+  category: Category | null;
   createdAt: string;
 }
 
 export interface BudgetStatus extends Budget {
   spent: number;
+  /** Arrastre entrante del mes (0 sin rollover; negativo si el mes anterior se pasó). */
+  carryOver: number;
+  /** Límite efectivo del mes: amount + carryOver (== amount sin rollover). */
+  effectiveLimit: number;
+  /** Uso calculado sobre effectiveLimit. */
   percentUsed: number;
   month: string;
 }
@@ -577,9 +586,12 @@ export interface RecurringPayInput {
 }
 
 export interface BudgetInput {
-  categoryId: string;
+  /** Null = presupuesto global (techo total del mes). */
+  categoryId: string | null;
   amount: number;
   alertThreshold?: number;
+  /** Acumular el sobrante/exceso mes a mes. Default false. */
+  rollover?: boolean;
 }
 
 export interface DebtInput {

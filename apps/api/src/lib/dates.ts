@@ -81,6 +81,11 @@ export function currentMonth(): string {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
+/** Mes "YYYY-MM" (UTC) de una fecha. */
+export function monthKeyOf(date: Date): string {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
 export function isValidMonth(month: string): boolean {
   return /^\d{4}-(0[1-9]|1[0-2])$/.test(month);
 }

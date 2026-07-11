@@ -2,7 +2,7 @@ import type { Goal } from '@myfinance/shared';
 import { useState, type FormEvent } from 'react';
 import { api, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
-import { IcoPlus, IcoTrash } from '../components/icons';
+import { IcoPencil, IcoPlus, IcoTrash } from '../components/icons';
 import { Modal } from '../components/Modal';
 
 const COLOR_PALETTE = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#3b82f6', '#ec4899', '#14b8a6'];
@@ -26,6 +26,7 @@ export function GoalsPage() {
   const [icon, setIcon] = useState('');
   const [color, setColor] = useState(COLOR_PALETTE[0]);
   const [busy, setBusy] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const [contribId, setContribId] = useState<string | null>(null);
   const [contribAmount, setContribAmount] = useState('');
@@ -42,23 +43,45 @@ export function GoalsPage() {
     refresh();
   }
 
+  function openCreate() {
+    setEditingId(null);
+    setName('');
+    setTargetAmount('');
+    setTargetDate('');
+    setIcon('');
+    setColor(COLOR_PALETTE[0]);
+    setError(null);
+    setFormOpen(true);
+  }
+
+  function openEdit(goal: Goal) {
+    setEditingId(goal.id);
+    setName(goal.name);
+    setTargetAmount(String(goal.targetAmount));
+    setTargetDate(goal.targetDate ? goal.targetDate.slice(0, 10) : '');
+    setIcon(goal.icon ?? '');
+    setColor(goal.color);
+    setError(null);
+    setFormOpen(true);
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     setBusy(true);
     try {
-      await api.createGoal({
+      const payload = {
         name,
         targetAmount: Number(targetAmount),
         targetDate: targetDate || null,
         icon: icon || null,
         color,
-      });
-      setName('');
-      setTargetAmount('');
-      setTargetDate('');
-      setIcon('');
-      setColor(COLOR_PALETTE[0]);
+      };
+      if (editingId) {
+        await api.updateGoal(editingId, payload);
+      } else {
+        await api.createGoal(payload);
+      }
       setFormOpen(false);
       invalidateAfterMutation();
     } catch (err) {
@@ -118,6 +141,9 @@ export function GoalsPage() {
             <div className="mf-budget-status">{goal.achievedAt ? '¡Lograda!' : `${pct}% ahorrado`}</div>
           </div>
           {!goal.achievedAt && <div className="mf-budget-pct">{pct}%</div>}
+          <button type="button" className="mf-icon-btn" aria-label="Editar meta" onClick={() => openEdit(goal)}>
+            <IcoPencil size={15} />
+          </button>
           <button type="button" className="mf-icon-btn" aria-label="Eliminar meta" onClick={() => onDelete(goal.id)}>
             <IcoTrash size={15} />
           </button>
@@ -222,7 +248,7 @@ export function GoalsPage() {
       )}
 
       <div className="mf-dashed-tile mf-dashed-tile--row">
-        <button type="button" className="mf-dashed-main" onClick={() => setFormOpen(true)}>
+        <button type="button" className="mf-dashed-main" onClick={openCreate}>
           <span className="mf-dashed-mark" aria-hidden="true">
             <IcoPlus />
           </span>
@@ -230,7 +256,11 @@ export function GoalsPage() {
         </button>
       </div>
 
-      <Modal open={formOpen} onClose={() => setFormOpen(false)} title="Nueva meta de ahorro">
+      <Modal
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        title={editingId ? 'Editar meta de ahorro' : 'Nueva meta de ahorro'}
+      >
         <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {error && <div className="error-banner">{error}</div>}
           <label className="field">
@@ -289,7 +319,7 @@ export function GoalsPage() {
               ))}
             </div>
           </label>
-          <button disabled={busy}>{busy ? 'Guardando…' : 'Crear meta'}</button>
+          <button disabled={busy}>{busy ? 'Guardando…' : editingId ? 'Guardar cambios' : 'Crear meta'}</button>
         </form>
       </Modal>
     </>

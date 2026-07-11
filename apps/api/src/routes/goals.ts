@@ -80,8 +80,17 @@ router.put(
     const input = updateSchema.parse(req.body);
     const existing = await prisma.goal.findFirst({ where: { id: req.params.id, userId: req.auth!.userId } });
     if (!existing) throw new HttpError(404, 'Meta no encontrada');
-    const goal = await prisma.goal.update({ where: { id: existing.id }, data: input });
-    const saved = await getSavedAmount(goal.id);
+
+    // Recalcular achievedAt contra el targetAmount resultante: si baja por debajo de lo ya
+    // aportado, la meta pasa a lograda; si sube por encima, vuelve a activa.
+    const saved = await getSavedAmount(existing.id);
+    const target = input.targetAmount ?? existing.targetAmount.toNumber();
+    const achieved = saved >= target;
+
+    const goal = await prisma.goal.update({
+      where: { id: existing.id },
+      data: { ...input, achievedAt: achieved ? (existing.achievedAt ?? new Date()) : null },
+    });
     res.json(withSaved(goal, saved));
   }),
 );

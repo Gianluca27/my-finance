@@ -2,7 +2,7 @@ import type { Category, CategoryRule, TransactionType } from '@myfinance/shared'
 import { useState, type FormEvent } from 'react';
 import { api } from '../api';
 import { invalidate, useCached } from '../cache';
-import { IcoPlus, IcoTrash } from '../components/icons';
+import { IcoPencil, IcoPlus, IcoTrash } from '../components/icons';
 import { Modal } from '../components/Modal';
 
 export function CategoriesPage() {
@@ -14,6 +14,7 @@ export function CategoriesPage() {
   const [color, setColor] = useState('#6366f1');
   const [icon, setIcon] = useState('');
   const [busy, setBusy] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const { data: categories, error: loadError, refresh } = useCached<Category[]>('categories', () =>
     api.listCategories(),
@@ -26,16 +27,42 @@ export function CategoriesPage() {
   const [ruleCategoryId, setRuleCategoryId] = useState('');
   const [ruleBusy, setRuleBusy] = useState(false);
 
+  function openCreate() {
+    setEditingId(null);
+    setName('');
+    setType('EXPENSE');
+    setColor('#6366f1');
+    setIcon('');
+    setError(null);
+    setFormOpen(true);
+  }
+
+  // El tipo (ingreso/gasto) no se puede editar: cambiarlo con transacciones ya cargadas
+  // rompe la semántica de reportes y presupuestos, por eso el form de edición no lo expone.
+  function openEdit(category: Category) {
+    setEditingId(category.id);
+    setName(category.name);
+    setColor(category.color);
+    setIcon(category.icon ?? '');
+    setError(null);
+    setFormOpen(true);
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     setBusy(true);
     try {
-      await api.createCategory({ name, type, color, icon: icon || null });
-      setName('');
-      setIcon('');
+      if (editingId) {
+        await api.updateCategory(editingId, { name, color, icon: icon || null });
+        // El color/ícono de la categoría viaja embebido en transacciones, dashboard,
+        // presupuestos y recurrentes: se limpia todo el cache para que se vea actualizado.
+        invalidate();
+      } else {
+        await api.createCategory({ name, type, color, icon: icon || null });
+        invalidate('categories');
+      }
       setFormOpen(false);
-      invalidate('categories');
       refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error inesperado');
@@ -99,14 +126,24 @@ export function CategoriesPage() {
         {list.map((c) => (
           <div className="card mf-cat-card" key={c.id}>
             <span className="mf-cat-dot" style={{ background: c.color }} />
-            <button
-              type="button"
-              className="mf-cat-delete"
-              aria-label={`Eliminar categoría ${c.name}`}
-              onClick={() => onDelete(c)}
-            >
-              <IcoTrash size={14} />
-            </button>
+            <div className="mf-cat-actions">
+              <button
+                type="button"
+                className="mf-cat-edit"
+                aria-label={`Editar categoría ${c.name}`}
+                onClick={() => openEdit(c)}
+              >
+                <IcoPencil size={14} />
+              </button>
+              <button
+                type="button"
+                className="mf-cat-delete"
+                aria-label={`Eliminar categoría ${c.name}`}
+                onClick={() => onDelete(c)}
+              >
+                <IcoTrash size={14} />
+              </button>
+            </div>
             <div className="mf-cat-icon" style={{ background: `${c.color}26` }}>
               {c.icon || '🏷️'}
             </div>
@@ -198,7 +235,7 @@ export function CategoriesPage() {
       </div>
 
       <div className="mf-dashed-tile mf-dashed-tile--row">
-        <button type="button" className="mf-dashed-main" onClick={() => setFormOpen(true)}>
+        <button type="button" className="mf-dashed-main" onClick={openCreate}>
           <span className="mf-dashed-mark" aria-hidden="true">
             <IcoPlus />
           </span>
@@ -206,20 +243,26 @@ export function CategoriesPage() {
         </button>
       </div>
 
-      <Modal open={formOpen} onClose={() => setFormOpen(false)} title="Nueva categoría">
+      <Modal
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        title={editingId ? 'Editar categoría' : 'Nueva categoría'}
+      >
         <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {error && <div className="error-banner">{error}</div>}
           <label className="field">
             Nombre
             <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={50} autoFocus />
           </label>
-          <label className="field">
-            Tipo
-            <select value={type} onChange={(e) => setType(e.target.value as TransactionType)}>
-              <option value="EXPENSE">Gasto</option>
-              <option value="INCOME">Ingreso</option>
-            </select>
-          </label>
+          {!editingId && (
+            <label className="field">
+              Tipo
+              <select value={type} onChange={(e) => setType(e.target.value as TransactionType)}>
+                <option value="EXPENSE">Gasto</option>
+                <option value="INCOME">Ingreso</option>
+              </select>
+            </label>
+          )}
           <label className="field">
             Color
             <input type="color" value={color} onChange={(e) => setColor(e.target.value)} />
@@ -228,7 +271,7 @@ export function CategoriesPage() {
             Emoji (opcional)
             <input value={icon} onChange={(e) => setIcon(e.target.value)} maxLength={4} placeholder="🛒" />
           </label>
-          <button disabled={busy}>{busy ? 'Guardando…' : 'Agregar'}</button>
+          <button disabled={busy}>{busy ? 'Guardando…' : editingId ? 'Guardar cambios' : 'Agregar'}</button>
         </form>
       </Modal>
     </>

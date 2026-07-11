@@ -3021,10 +3021,22 @@ select option {
   border-radius: 50%;
 }
 
-.mf-cat-delete {
+.mf-cat-actions {
   position: absolute;
   top: 10px;
   right: 10px;
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.mf-cat-card:hover .mf-cat-actions {
+  opacity: 1;
+}
+
+.mf-cat-edit,
+.mf-cat-delete {
   width: 26px;
   height: 26px;
   display: flex;
@@ -3035,19 +3047,16 @@ select option {
   color: var(--text-2);
   border-radius: 6px;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
-.mf-cat-card:hover .mf-cat-delete {
-  opacity: 1;
-}
-
+.mf-cat-edit:hover,
 .mf-cat-delete:hover {
   background: var(--border);
   color: var(--text);
 }
 
+.mf-cat-edit svg,
 .mf-cat-delete svg {
   flex-shrink: 0;
 }

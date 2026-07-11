@@ -2,7 +2,7 @@ import type { Category, Frequency, RecurringExpense, TransactionType } from '@my
 import { useState, type FormEvent } from 'react';
 import { api, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
-import { IcoPause, IcoPlay, IcoPlus, IcoTrash } from '../components/icons';
+import { IcoPause, IcoPencil, IcoPlay, IcoPlus, IcoTrash } from '../components/icons';
 import { Modal } from '../components/Modal';
 
 const WEEKDAYS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
@@ -45,6 +45,7 @@ export function RecurringPage() {
   const [categoryId, setCategoryId] = useState('');
   const [busy, setBusy] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const { data: items, error: loadError, refresh } = useCached<RecurringExpense[]>('recurring', () =>
     api.listRecurring(),
@@ -57,12 +58,40 @@ export function RecurringPage() {
   const totalExpense = activeItems.filter((i) => i.type === 'EXPENSE').reduce((sum, i) => sum + i.amount, 0);
   const totalIncome = activeItems.filter((i) => i.type === 'INCOME').reduce((sum, i) => sum + i.amount, 0);
 
+  function openCreate() {
+    setEditingId(null);
+    setName('');
+    setType('EXPENSE');
+    setAmount('');
+    setFrequency('MONTHLY');
+    setDueDay('1');
+    setDueMonth('1');
+    setReminderDays('3');
+    setCategoryId('');
+    setError(null);
+    setFormOpen(true);
+  }
+
+  function openEdit(item: RecurringExpense) {
+    setEditingId(item.id);
+    setName(item.name);
+    setType(item.type);
+    setAmount(String(item.amount));
+    setFrequency(item.frequency);
+    setDueDay(String(item.dueDay));
+    setDueMonth(String(item.dueMonth ?? 1));
+    setReminderDays(String(item.reminderDaysBefore));
+    setCategoryId(item.categoryId ?? '');
+    setError(null);
+    setFormOpen(true);
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     setBusy(true);
     try {
-      await api.createRecurring({
+      const payload = {
         name,
         type,
         amount: Number(amount),
@@ -71,9 +100,12 @@ export function RecurringPage() {
         dueMonth: frequency === 'YEARLY' ? Number(dueMonth) : null,
         reminderDaysBefore: Number(reminderDays),
         categoryId: categoryId || null,
-      });
-      setName('');
-      setAmount('');
+      };
+      if (editingId) {
+        await api.updateRecurring(editingId, payload);
+      } else {
+        await api.createRecurring(payload);
+      }
       setFormOpen(false);
       invalidate('recurring');
       // El dashboard muestra próximos vencimientos y descuenta los fijos del safe-to-spend.
@@ -187,6 +219,14 @@ export function RecurringPage() {
                     <button
                       type="button"
                       className="mf-icon-btn"
+                      aria-label="Editar"
+                      onClick={() => openEdit(item)}
+                    >
+                      <IcoPencil size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      className="mf-icon-btn"
                       aria-label="Eliminar"
                       onClick={() => onDelete(item.id)}
                     >
@@ -206,7 +246,7 @@ export function RecurringPage() {
       </p>
 
       <div className="mf-dashed-tile mf-dashed-tile--row">
-        <button type="button" className="mf-dashed-main" onClick={() => setFormOpen(true)}>
+        <button type="button" className="mf-dashed-main" onClick={openCreate}>
           <span className="mf-dashed-mark" aria-hidden="true">
             <IcoPlus />
           </span>
@@ -214,7 +254,11 @@ export function RecurringPage() {
         </button>
       </div>
 
-      <Modal open={formOpen} onClose={() => setFormOpen(false)} title="Nuevo movimiento fijo">
+      <Modal
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        title={editingId ? 'Editar movimiento fijo' : 'Nuevo movimiento fijo'}
+      >
         <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {error && <div className="error-banner">{error}</div>}
           <label className="field">
@@ -318,7 +362,7 @@ export function RecurringPage() {
               ))}
             </select>
           </label>
-          <button disabled={busy}>{busy ? 'Guardando…' : 'Agregar'}</button>
+          <button disabled={busy}>{busy ? 'Guardando…' : editingId ? 'Guardar cambios' : 'Agregar'}</button>
         </form>
       </Modal>
     </>

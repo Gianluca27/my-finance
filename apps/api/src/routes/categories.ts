@@ -54,8 +54,14 @@ router.put(
     const input = categorySchema.partial().parse(req.body);
     const existing = await prisma.category.findFirst({
       where: { id: req.params.id, userId: req.auth!.userId },
+      include: { _count: { select: { transactions: true } } },
     });
     if (!existing) throw new HttpError(404, 'Categoría no encontrada');
+    // Cambiar INCOME↔EXPENSE con movimientos ya cargados rompe la semántica de reportes
+    // y presupuestos: solo se permite en categorías todavía sin transacciones.
+    if (input.type !== undefined && input.type !== existing.type && existing._count.transactions > 0) {
+      throw new HttpError(400, 'No se puede cambiar el tipo de una categoría con movimientos asociados');
+    }
     const category = await prisma.category.update({
       where: { id: existing.id },
       data: input,

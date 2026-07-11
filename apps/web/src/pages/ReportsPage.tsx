@@ -187,8 +187,9 @@ export function ReportsPage() {
           <div className="mf-report-title">Importar CSV</div>
         </div>
         <p className="mf-report-desc">
-          Subí un CSV con el mismo formato que exporta la app (<code>fecha,tipo,monto,categoria,nota</code>). Las
-          categorías se emparejan por nombre; si no existen, el movimiento se importa sin categoría.
+          Subí un CSV con el mismo formato que exporta la app (<code>fecha,tipo,monto,categoria,nota,meta</code>;
+          la columna <code>meta</code> es opcional y se ignora al importar). Las categorías se emparejan por
+          nombre; si no existen, el movimiento se importa sin categoría.
         </p>
         {accounts.length > 0 && (
           <label className="field" style={{ marginBottom: 12 }}>

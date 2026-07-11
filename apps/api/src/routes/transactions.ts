@@ -279,8 +279,10 @@ function parseCsvLine(line: string): string[] {
 
 /**
  * Importa transacciones desde el CSV con el mismo formato que exporta la app
- * (encabezado `fecha,tipo,monto,categoria,nota`). Las categorías se emparejan por
- * nombre+tipo; si no existe, el movimiento se importa sin categoría.
+ * (encabezado `fecha,tipo,monto,categoria,nota,meta`; la columna `meta` de la exportación se
+ * ignora al importar — las columnas se leen por posición, así que los CSV viejos de 5 columnas
+ * siguen siendo válidos). Las categorías se emparejan por nombre+tipo; si no existe, el
+ * movimiento se importa sin categoría.
  */
 router.post(
   '/import',

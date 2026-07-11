@@ -18,8 +18,9 @@ export async function checkBudgetAlert(userId: string, categoryId: string | null
   if (budget.lastAlertMonth === month) return;
 
   const { start, end } = monthRange(month);
+  // goalId: null — los aportes a metas no cuentan como gasto (mismo criterio que budgets.ts).
   const agg = await prisma.transaction.aggregate({
-    where: { userId, categoryId, type: 'EXPENSE', date: { gte: start, lt: end } },
+    where: { userId, categoryId, type: 'EXPENSE', date: { gte: start, lt: end }, goalId: null },
     _sum: { amount: true },
   });
   const spent = agg._sum.amount?.toNumber() ?? 0;

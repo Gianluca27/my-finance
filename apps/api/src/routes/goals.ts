@@ -182,15 +182,29 @@ router.post(
     const existing = await prisma.goal.findFirst({ where: { id: req.params.id, userId: req.auth!.userId } });
     if (!existing) throw new HttpError(404, 'Meta no encontrada');
 
-    const savedSoFar = await getSavedAmount(existing.id);
-    if (amount > savedSoFar) throw new HttpError(400, 'El monto supera lo ahorrado en la meta');
-
-    const newSaved = round2(savedSoFar - amount);
     const target = existing.targetAmount.toNumber();
     const accountId = await resolveAccountId(req.auth!.userId, requestedAccountId);
 
-    const [transaction, goal] = await prisma.$transaction([
-      prisma.transaction.create({
+    // Transacción interactiva: el saldo se relee y valida ADENTRO, con la fila de la meta
+    // bloqueada (FOR UPDATE) como primer paso. Sin el lock, dos retiros concurrentes leen el
+    // mismo saldo antes de que el otro commitee (Read Committed), ambos pasan la validación y
+    // el ahorro queda negativo. El lock serializa los retiros por meta; el HttpError adentro
+    // hace rollback y sale como 400.
+    const { transaction, goal, newSaved } = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "Goal" WHERE id = ${existing.id} FOR UPDATE`;
+
+      const sums = await tx.transaction.groupBy({
+        by: ['type'],
+        where: { goalId: existing.id },
+        _sum: { amount: true },
+      });
+      const contributed = sums.find((s) => s.type === 'EXPENSE')?._sum.amount?.toNumber() ?? 0;
+      const withdrawn = sums.find((s) => s.type === 'INCOME')?._sum.amount?.toNumber() ?? 0;
+      const savedSoFar = netSaved(contributed, withdrawn);
+      if (amount > savedSoFar) throw new HttpError(400, 'El monto supera lo ahorrado en la meta');
+
+      const newSaved = round2(savedSoFar - amount);
+      const transaction = await tx.transaction.create({
         data: {
           type: 'INCOME',
           amount,
@@ -201,12 +215,13 @@ router.post(
           userId: req.auth!.userId,
         },
         include: { category: true },
-      }),
-      prisma.goal.update({
+      });
+      const goal = await tx.goal.update({
         where: { id: existing.id },
         data: { achievedAt: resolveAchievedAt(existing.achievedAt, newSaved, target) },
-      }),
-    ]);
+      });
+      return { transaction, goal, newSaved };
+    });
 
     res.status(201).json({ transaction: serialize(transaction), goal: withSaved(goal, newSaved) });
   }),

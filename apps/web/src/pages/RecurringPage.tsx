@@ -298,7 +298,19 @@ export function RecurringPage() {
           </label>
           <label className="field">
             Frecuencia
-            <select value={frequency} onChange={(e) => setFrequency(e.target.value as Frequency)}>
+            <select
+              value={frequency}
+              onChange={(e) => {
+                const next = e.target.value as Frequency;
+                // El dominio de dueDay cambia entre semanal (0-6) y mensual/anual (1-31):
+                // al cruzar de dominio se vuelve al primer día válido para no mandar un
+                // valor fuera de rango (el server lo rechazaría con 400).
+                if ((next === 'WEEKLY') !== (frequency === 'WEEKLY')) {
+                  setDueDay(next === 'WEEKLY' ? '0' : '1');
+                }
+                setFrequency(next);
+              }}
+            >
               <option value="MONTHLY">Mensual</option>
               <option value="WEEKLY">Semanal</option>
               <option value="YEARLY">Anual</option>

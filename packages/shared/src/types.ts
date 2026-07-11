@@ -358,6 +358,9 @@ export interface DashboardData {
   month: string;
   monthIncome: number;
   monthExpense: number;
+  /** Ahorro neto en metas del mes (aportes - retiros). No está incluido en monthExpense/monthIncome:
+   * se muestra como línea propia ("Ahorro en metas") para que la tasa de ahorro no lo cuente como gasto. */
+  goalContributions: number;
   expensesByCategory: CategorySummary[];
   monthlyComparison: MonthlySummary[];
   netWorthTrend: NetWorthPoint[];
@@ -524,6 +527,14 @@ export interface GoalInput {
 }
 
 export type GoalUpdateInput = Partial<GoalInput>;
+
+/** Body de POST /:id/withdrawals. `amount` no puede superar lo ahorrado (`saved`). */
+export interface GoalWithdrawalInput {
+  amount: number;
+  /** Cuenta destino del retiro. Default: cuenta por defecto del usuario. */
+  accountId?: string | null;
+  note?: string | null;
+}
 
 export interface CategoryRule {
   id: string;

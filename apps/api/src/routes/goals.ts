@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { getDefaultAccountId } from '../lib/accounts';
+import { resolveAccountId } from '../lib/accounts';
+import { netSaved, resolveAchievedAt } from '../lib/goals';
 import { serialize } from '../lib/serialize';
 import { requireAuth } from '../middleware/auth';
 import { asyncHandler, HttpError } from '../middleware/error';
@@ -25,11 +26,27 @@ const updateSchema = createSchema.partial();
 
 const contributionSchema = z.object({
   amount: z.number().positive().max(999_999_999),
+  /** Cuenta de origen del aporte. Default: cuenta por defecto del usuario. */
+  accountId: z.string().nullable().optional(),
 });
 
+const withdrawalSchema = z.object({
+  amount: z.number().positive().max(999_999_999),
+  /** Cuenta destino del retiro. Default: cuenta por defecto del usuario. */
+  accountId: z.string().nullable().optional(),
+  note: z.string().max(500).nullable().optional(),
+});
+
+/** Ahorro neto de la meta: aportes (EXPENSE) menos retiros (INCOME), ambos vinculados por goalId. */
 async function getSavedAmount(goalId: string): Promise<number> {
-  const result = await prisma.transaction.aggregate({ where: { goalId }, _sum: { amount: true } });
-  return result._sum.amount?.toNumber() ?? 0;
+  const sums = await prisma.transaction.groupBy({
+    by: ['type'],
+    where: { goalId },
+    _sum: { amount: true },
+  });
+  const contributed = sums.find((s) => s.type === 'EXPENSE')?._sum.amount?.toNumber() ?? 0;
+  const withdrawn = sums.find((s) => s.type === 'INCOME')?._sum.amount?.toNumber() ?? 0;
+  return netSaved(contributed, withdrawn);
 }
 
 function withSaved(goal: { targetAmount: { toNumber(): number } }, saved: number) {
@@ -49,17 +66,25 @@ router.get(
       where: { userId },
       orderBy: [{ achievedAt: 'asc' }, { createdAt: 'desc' }],
     });
+    // Agrupa por meta y tipo: hay que netear aportes (EXPENSE) contra retiros (INCOME) antes de sumar.
     const savedSums = await prisma.transaction.groupBy({
-      by: ['goalId'],
+      by: ['goalId', 'type'],
       where: { userId, goalId: { in: goals.map((g) => g.id) } },
       _sum: { amount: true },
     });
-    const savedMap = new Map(
-      savedSums
-        .filter((s): s is typeof s & { goalId: string } => s.goalId !== null)
-        .map((s) => [s.goalId, s._sum.amount?.toNumber() ?? 0]),
+    const contributedMap = new Map<string, number>();
+    const withdrawnMap = new Map<string, number>();
+    for (const s of savedSums) {
+      if (!s.goalId) continue;
+      const amount = s._sum.amount?.toNumber() ?? 0;
+      const target = s.type === 'EXPENSE' ? contributedMap : withdrawnMap;
+      target.set(s.goalId, (target.get(s.goalId) ?? 0) + amount);
+    }
+    res.json(
+      goals.map((goal) =>
+        withSaved(goal, netSaved(contributedMap.get(goal.id) ?? 0, withdrawnMap.get(goal.id) ?? 0)),
+      ),
     );
-    res.json(goals.map((goal) => withSaved(goal, savedMap.get(goal.id) ?? 0)));
   }),
 );
 
@@ -85,11 +110,10 @@ router.put(
     // aportado, la meta pasa a lograda; si sube por encima, vuelve a activa.
     const saved = await getSavedAmount(existing.id);
     const target = input.targetAmount ?? existing.targetAmount.toNumber();
-    const achieved = saved >= target;
 
     const goal = await prisma.goal.update({
       where: { id: existing.id },
-      data: { ...input, achievedAt: achieved ? (existing.achievedAt ?? new Date()) : null },
+      data: { ...input, achievedAt: resolveAchievedAt(existing.achievedAt, saved, target) },
     });
     res.json(withSaved(goal, saved));
   }),
@@ -106,19 +130,22 @@ router.delete(
   }),
 );
 
-/** Registra un aporte: crea la Transaction (EXPENSE) vinculada y marca la meta como lograda al alcanzar el objetivo. */
+/**
+ * Registra un aporte: crea la Transaction (EXPENSE) vinculada por goalId y marca la meta como
+ * lograda al alcanzar el objetivo. Queda excluida de los agregados de gasto (dashboard, presupuestos,
+ * resumen PDF) porque no es un gasto real — el balance de la cuenta sí baja, eso es correcto.
+ */
 router.post(
   '/:id/contributions',
   asyncHandler(async (req, res) => {
-    const { amount } = contributionSchema.parse(req.body);
+    const { amount, accountId: requestedAccountId } = contributionSchema.parse(req.body);
     const existing = await prisma.goal.findFirst({ where: { id: req.params.id, userId: req.auth!.userId } });
     if (!existing) throw new HttpError(404, 'Meta no encontrada');
 
     const savedSoFar = await getSavedAmount(existing.id);
     const newSaved = round2(savedSoFar + amount);
     const target = existing.targetAmount.toNumber();
-    const justAchieved = !existing.achievedAt && newSaved >= target;
-    const accountId = await getDefaultAccountId(req.auth!.userId);
+    const accountId = await resolveAccountId(req.auth!.userId, requestedAccountId);
 
     const [transaction, goal] = await prisma.$transaction([
       prisma.transaction.create({
@@ -135,7 +162,49 @@ router.post(
       }),
       prisma.goal.update({
         where: { id: existing.id },
-        data: justAchieved ? { achievedAt: new Date() } : {},
+        data: { achievedAt: resolveAchievedAt(existing.achievedAt, newSaved, target) },
+      }),
+    ]);
+
+    res.status(201).json({ transaction: serialize(transaction), goal: withSaved(goal, newSaved) });
+  }),
+);
+
+/**
+ * Registra un retiro: crea la Transaction (INCOME) vinculada por goalId — también excluida de los
+ * agregados de ingreso, mismo criterio que los aportes. Si el ahorro resultante cae bajo el
+ * objetivo, la meta vuelve de "lograda" a activa.
+ */
+router.post(
+  '/:id/withdrawals',
+  asyncHandler(async (req, res) => {
+    const { amount, accountId: requestedAccountId, note } = withdrawalSchema.parse(req.body);
+    const existing = await prisma.goal.findFirst({ where: { id: req.params.id, userId: req.auth!.userId } });
+    if (!existing) throw new HttpError(404, 'Meta no encontrada');
+
+    const savedSoFar = await getSavedAmount(existing.id);
+    if (amount > savedSoFar) throw new HttpError(400, 'El monto supera lo ahorrado en la meta');
+
+    const newSaved = round2(savedSoFar - amount);
+    const target = existing.targetAmount.toNumber();
+    const accountId = await resolveAccountId(req.auth!.userId, requestedAccountId);
+
+    const [transaction, goal] = await prisma.$transaction([
+      prisma.transaction.create({
+        data: {
+          type: 'INCOME',
+          amount,
+          date: new Date(),
+          note: note || `Retiro de meta: ${existing.name}`,
+          accountId,
+          goalId: existing.id,
+          userId: req.auth!.userId,
+        },
+        include: { category: true },
+      }),
+      prisma.goal.update({
+        where: { id: existing.id },
+        data: { achievedAt: resolveAchievedAt(existing.achievedAt, newSaved, target) },
       }),
     ]);
 

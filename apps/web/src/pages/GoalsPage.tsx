@@ -1,4 +1,4 @@
-import type { Goal } from '@myfinance/shared';
+import type { Account, Goal } from '@myfinance/shared';
 import { useState, type FormEvent } from 'react';
 import { api, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
@@ -28,17 +28,26 @@ export function GoalsPage() {
   const [busy, setBusy] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  const [contribId, setContribId] = useState<string | null>(null);
+  const [contribGoal, setContribGoal] = useState<Goal | null>(null);
   const [contribAmount, setContribAmount] = useState('');
+  const [contribAccountId, setContribAccountId] = useState('');
   const [contribBusy, setContribBusy] = useState(false);
 
+  const [withdrawGoal, setWithdrawGoal] = useState<Goal | null>(null);
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [withdrawAccountId, setWithdrawAccountId] = useState('');
+  const [withdrawNote, setWithdrawNote] = useState('');
+  const [withdrawBusy, setWithdrawBusy] = useState(false);
+
   const { data: goals, error: loadError, refresh } = useCached<Goal[]>('goals', () => api.listGoals());
+  const { data: accountsData } = useCached<Account[]>('accounts', () => api.listAccounts());
+  const accounts = accountsData ?? [];
 
   function invalidateAfterMutation() {
     invalidate('goals');
     invalidate('transactions');
     invalidate('dashboard');
-    // El aporte a una meta crea una transacción contra la cuenta por defecto.
+    // Aportes y retiros mueven el balance de la cuenta elegida.
     invalidate('accounts');
     refresh();
   }
@@ -92,22 +101,63 @@ export function GoalsPage() {
   }
 
   function onStartContrib(goal: Goal) {
-    setContribId(goal.id);
+    setContribGoal(goal);
     setContribAmount(String(goal.remaining || ''));
+    setContribAccountId(accounts.find((a) => a.isDefault)?.id ?? accounts[0]?.id ?? '');
     setError(null);
   }
 
-  async function onConfirmContrib(goal: Goal) {
+  function onCloseContrib() {
+    if (contribBusy) return;
+    setContribGoal(null);
+  }
+
+  async function onConfirmContrib(e: FormEvent) {
+    e.preventDefault();
+    if (!contribGoal) return;
     setError(null);
     setContribBusy(true);
     try {
-      await api.contributeGoal(goal.id, Number(contribAmount));
-      setContribId(null);
+      await api.contributeGoal(contribGoal.id, Number(contribAmount), contribAccountId || undefined);
+      setContribGoal(null);
       invalidateAfterMutation();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error inesperado');
     } finally {
       setContribBusy(false);
+    }
+  }
+
+  function onStartWithdraw(goal: Goal) {
+    setWithdrawGoal(goal);
+    setWithdrawAmount(String(goal.saved || ''));
+    setWithdrawAccountId(accounts.find((a) => a.isDefault)?.id ?? accounts[0]?.id ?? '');
+    setWithdrawNote('');
+    setError(null);
+  }
+
+  function onCloseWithdraw() {
+    if (withdrawBusy) return;
+    setWithdrawGoal(null);
+  }
+
+  async function onConfirmWithdraw(e: FormEvent) {
+    e.preventDefault();
+    if (!withdrawGoal) return;
+    setError(null);
+    setWithdrawBusy(true);
+    try {
+      await api.withdrawFromGoal(withdrawGoal.id, {
+        amount: Number(withdrawAmount),
+        accountId: withdrawAccountId || undefined,
+        note: withdrawNote || undefined,
+      });
+      setWithdrawGoal(null);
+      invalidateAfterMutation();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error inesperado');
+    } finally {
+      setWithdrawBusy(false);
     }
   }
 
@@ -165,32 +215,28 @@ export function GoalsPage() {
           </div>
         )}
 
-        {!goal.achievedAt &&
-          (contribId === goal.id ? (
-            <div className="form-row" style={{ marginTop: 10 }}>
-              <label className="field">
-                Monto
-                <input
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  value={contribAmount}
-                  onChange={(e) => setContribAmount(e.target.value)}
-                  autoFocus
-                />
-              </label>
-              <button disabled={contribBusy} onClick={() => onConfirmContrib(goal)}>
-                {contribBusy ? 'Guardando…' : 'Aportar'}
-              </button>
-              <button className="secondary" disabled={contribBusy} onClick={() => setContribId(null)}>
-                Cancelar
-              </button>
-            </div>
-          ) : (
-            <button type="button" className="mf-debt-pay" onClick={() => onStartContrib(goal)}>
+        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          {!goal.achievedAt && (
+            <button
+              type="button"
+              className="mf-debt-pay"
+              style={{ marginTop: 0, flex: 1 }}
+              onClick={() => onStartContrib(goal)}
+            >
               Registrar aporte
             </button>
-          ))}
+          )}
+          {goal.saved > 0 && (
+            <button
+              type="button"
+              className="mf-debt-pay secondary"
+              style={{ marginTop: 0, flex: 1 }}
+              onClick={() => onStartWithdraw(goal)}
+            >
+              Retirar
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -321,6 +367,87 @@ export function GoalsPage() {
           </label>
           <button disabled={busy}>{busy ? 'Guardando…' : editingId ? 'Guardar cambios' : 'Crear meta'}</button>
         </form>
+      </Modal>
+
+      <Modal
+        open={contribGoal !== null}
+        onClose={onCloseContrib}
+        title={contribGoal ? `Registrar aporte: ${contribGoal.name}` : ''}
+      >
+        {contribGoal && (
+          <form onSubmit={onConfirmContrib} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {error && <div className="error-banner">{error}</div>}
+            <label className="field">
+              Monto
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={contribAmount}
+                onChange={(e) => setContribAmount(e.target.value)}
+                autoFocus
+                required
+              />
+            </label>
+            {accounts.length > 0 && (
+              <label className="field">
+                Cuenta de origen
+                <select value={contribAccountId} onChange={(e) => setContribAccountId(e.target.value)}>
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.icon ? `${a.icon} ` : ''}
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <button disabled={contribBusy}>{contribBusy ? 'Guardando…' : 'Aportar'}</button>
+          </form>
+        )}
+      </Modal>
+
+      <Modal
+        open={withdrawGoal !== null}
+        onClose={onCloseWithdraw}
+        title={withdrawGoal ? `Retirar de: ${withdrawGoal.name}` : ''}
+      >
+        {withdrawGoal && (
+          <form onSubmit={onConfirmWithdraw} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {error && <div className="error-banner">{error}</div>}
+            <label className="field">
+              Monto
+              <input
+                type="number"
+                min="0.01"
+                max={withdrawGoal.saved}
+                step="0.01"
+                value={withdrawAmount}
+                onChange={(e) => setWithdrawAmount(e.target.value)}
+                autoFocus
+                required
+              />
+            </label>
+            {accounts.length > 0 && (
+              <label className="field">
+                Cuenta destino
+                <select value={withdrawAccountId} onChange={(e) => setWithdrawAccountId(e.target.value)}>
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.icon ? `${a.icon} ` : ''}
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <label className="field">
+              Nota (opcional)
+              <input value={withdrawNote} onChange={(e) => setWithdrawNote(e.target.value)} maxLength={500} />
+            </label>
+            <button disabled={withdrawBusy}>{withdrawBusy ? 'Guardando…' : 'Retirar'}</button>
+          </form>
+        )}
       </Modal>
     </>
   );

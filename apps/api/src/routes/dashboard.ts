@@ -73,6 +73,7 @@ router.get(
       prevWindowByCategory,
       earliestExpenseByCategory,
       anomalyWindowRows,
+      goalMonthTotals,
       activeDebts,
       debtPaymentSums,
       categories,
@@ -84,29 +85,30 @@ router.get(
       deltaBeforeRows,
       nwMonthlyRows,
     ] = await Promise.all([
-      // Balance histórico (todos los ingresos - todos los gastos)
+      // Balance histórico (todos los ingresos - todos los gastos). No excluye goalId: el balance
+      // real de la cuenta sí baja con los aportes y sube con los retiros, eso es correcto.
       prisma.transaction.groupBy({
         by: ['type'],
         where: { userId },
         _sum: { amount: true },
       }),
-      // Totales del mes seleccionado
+      // Totales del mes seleccionado (excluye aportes/retiros de metas: no son gasto/ingreso real)
       prisma.transaction.groupBy({
         by: ['type'],
-        where: { userId, date: { gte: start, lt: end } },
+        where: { userId, date: { gte: start, lt: end }, goalId: null },
         _sum: { amount: true },
       }),
       // Gastos por categoría del mes
       prisma.transaction.groupBy({
         by: ['categoryId'],
-        where: { userId, type: 'EXPENSE', date: { gte: start, lt: end } },
+        where: { userId, type: 'EXPENSE', date: { gte: start, lt: end }, goalId: null },
         _sum: { amount: true },
       }),
       // Comparativa de los últimos 6 meses, agregada en la base
       prisma.$queryRaw<Array<{ month: string; type: string; total: number }>>`
         SELECT to_char("date", 'YYYY-MM') AS month, "type"::text AS type, SUM("amount")::float8 AS total
         FROM "Transaction"
-        WHERE "userId" = ${userId} AND "date" >= ${rangeStart} AND "date" < ${rangeEnd}
+        WHERE "userId" = ${userId} AND "date" >= ${rangeStart} AND "date" < ${rangeEnd} AND "goalId" IS NULL
         GROUP BY 1, 2
       `,
       // Próximos pagos (14 días)
@@ -120,19 +122,20 @@ router.get(
       // Gasto por categoría en la ventana alineada del mes seleccionado
       prisma.transaction.groupBy({
         by: ['categoryId'],
-        where: { userId, type: 'EXPENSE', date: { gte: start, lt: currentWindowEnd } },
+        where: { userId, type: 'EXPENSE', date: { gte: start, lt: currentWindowEnd }, goalId: null },
         _sum: { amount: true },
       }),
       // Gasto por categoría en la misma ventana del mes anterior
       prisma.transaction.groupBy({
         by: ['categoryId'],
-        where: { userId, type: 'EXPENSE', date: { gte: prevRange.start, lt: prevWindowEnd } },
+        where: { userId, type: 'EXPENSE', date: { gte: prevRange.start, lt: prevWindowEnd }, goalId: null },
         _sum: { amount: true },
       }),
-      // Fecha del gasto más antiguo por categoría (elegibilidad de anomalías)
+      // Fecha del gasto más antiguo por categoría (elegibilidad de anomalías). Los aportes no
+      // tienen categoría hoy, pero se blinda igual con goalId: null por si eso cambia.
       prisma.transaction.groupBy({
         by: ['categoryId'],
-        where: { userId, type: 'EXPENSE', categoryId: { not: null } },
+        where: { userId, type: 'EXPENSE', categoryId: { not: null }, goalId: null },
         _min: { date: true },
       }),
       // Gasto por categoría y mes en los últimos N meses completos (promedio de anomalías)
@@ -140,9 +143,15 @@ router.get(
         SELECT "categoryId", to_char("date", 'YYYY-MM') AS month, SUM("amount")::float8 AS total
         FROM "Transaction"
         WHERE "userId" = ${userId} AND "type" = 'EXPENSE' AND "categoryId" IS NOT NULL
-          AND "date" >= ${anomalyRangeStart} AND "date" < ${start}
+          AND "date" >= ${anomalyRangeStart} AND "date" < ${start} AND "goalId" IS NULL
         GROUP BY 1, 2
       `,
+      // Aportes y retiros de metas del mes, para la línea "Ahorro en metas" (no son gasto/ingreso)
+      prisma.transaction.groupBy({
+        by: ['type'],
+        where: { userId, date: { gte: start, lt: end }, goalId: { not: null } },
+        _sum: { amount: true },
+      }),
       // Deudas activas (no saldadas) para el resumen "Debés / Te deben"
       prisma.debt.findMany({
         where: { userId, settledAt: null },
@@ -196,6 +205,12 @@ router.get(
     const totalExpense = totals.find((t) => t.type === 'EXPENSE')?._sum.amount?.toNumber() ?? 0;
     const monthIncome = monthTotals.find((t) => t.type === 'INCOME')?._sum.amount?.toNumber() ?? 0;
     const monthExpense = monthTotals.find((t) => t.type === 'EXPENSE')?._sum.amount?.toNumber() ?? 0;
+
+    // Ahorro neto en metas del mes: aportes (EXPENSE con goalId) menos retiros (INCOME con goalId).
+    // Se muestra como línea propia ("Ahorro en metas") en vez de contarse como gasto o ingreso.
+    const monthGoalContributed = goalMonthTotals.find((t) => t.type === 'EXPENSE')?._sum.amount?.toNumber() ?? 0;
+    const monthGoalWithdrawn = goalMonthTotals.find((t) => t.type === 'INCOME')?._sum.amount?.toNumber() ?? 0;
+    const goalContributions = round2(monthGoalContributed - monthGoalWithdrawn);
 
     const categoryMap = new Map(categories.map((c) => [c.id, c]));
     const expensesByCategory = byCategory
@@ -361,6 +376,7 @@ router.get(
       month,
       monthIncome,
       monthExpense,
+      goalContributions,
       expensesByCategory,
       monthlyComparison,
       netWorthTrend,

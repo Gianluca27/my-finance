@@ -37,6 +37,8 @@ router.get(
         type: 'EXPENSE',
         date: { gte: start, lt: end },
         categoryId: { in: budgets.map((b) => b.categoryId) },
+        // Los aportes a metas no tienen categoría hoy, pero se blinda igual: no son gasto real.
+        goalId: null,
       },
       _sum: { amount: true },
     });

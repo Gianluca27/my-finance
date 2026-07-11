@@ -37,20 +37,22 @@ function deltaPct(current: number, previous: number): number {
 }
 
 async function buildPeriodSummary(userId: string, period: Period, prev: Period): Promise<PeriodSummary> {
+  // Excluye aportes/retiros de metas (goalId): no son gasto/ingreso real, mismo criterio que el
+  // dashboard — si no, el resumen por email queda inconsistente con lo que se ve en la app.
   const [curTotals, prevTotals, byCategory] = await Promise.all([
     prisma.transaction.groupBy({
       by: ['type'],
-      where: { userId, date: { gte: period.start, lt: period.end } },
+      where: { userId, date: { gte: period.start, lt: period.end }, goalId: null },
       _sum: { amount: true },
     }),
     prisma.transaction.groupBy({
       by: ['type'],
-      where: { userId, date: { gte: prev.start, lt: prev.end } },
+      where: { userId, date: { gte: prev.start, lt: prev.end }, goalId: null },
       _sum: { amount: true },
     }),
     prisma.transaction.groupBy({
       by: ['categoryId'],
-      where: { userId, type: 'EXPENSE', date: { gte: period.start, lt: period.end } },
+      where: { userId, type: 'EXPENSE', date: { gte: period.start, lt: period.end }, goalId: null },
       _sum: { amount: true },
     }),
   ]);

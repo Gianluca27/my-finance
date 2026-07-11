@@ -243,6 +243,18 @@ export function DashboardPage() {
                 <div className="mf-stat-label">Tasa de ahorro</div>
                 <div className="mf-stat-value">{savingsRate}%</div>
               </div>
+              {/* Aportes y retiros de metas no cuentan como gasto/ingreso: se muestran aparte. */}
+              {data.goalContributions !== 0 && (
+                <div>
+                  <div className="mf-stat-label">Ahorro en metas</div>
+                  <div
+                    className="mf-stat-value"
+                    style={{ color: data.goalContributions > 0 ? 'var(--pos)' : 'var(--neg)' }}
+                  >
+                    {formatMoney(data.goalContributions)}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

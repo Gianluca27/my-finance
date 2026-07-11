@@ -25,6 +25,7 @@ import type {
   Goal,
   GoalInput,
   GoalUpdateInput,
+  GoalWithdrawalInput,
   ImportResult,
   Investment,
   InvestmentDetail,
@@ -296,11 +297,17 @@ export class ApiClient {
   deleteGoal(id: string) {
     return this.request<void>('DELETE', `/api/goals/${id}`);
   }
-  /** Registra un aporte: crea la Transaction (EXPENSE) vinculada y marca la meta como lograda al alcanzar el objetivo. */
-  contributeGoal(id: string, amount: number) {
+  /** Registra un aporte: crea la Transaction (EXPENSE) vinculada y marca la meta como lograda al
+   * alcanzar el objetivo. `accountId` es opcional (default: cuenta por defecto del usuario). */
+  contributeGoal(id: string, amount: number, accountId?: string | null) {
     return this.request<{ transaction: Transaction; goal: Goal }>('POST', `/api/goals/${id}/contributions`, {
       amount,
+      accountId,
     });
+  }
+  /** Registra un retiro: crea la Transaction (INCOME) vinculada. `amount` no puede superar `saved`. */
+  withdrawFromGoal(id: string, input: GoalWithdrawalInput) {
+    return this.request<{ transaction: Transaction; goal: Goal }>('POST', `/api/goals/${id}/withdrawals`, input);
   }
 
   // --- Inversiones ---

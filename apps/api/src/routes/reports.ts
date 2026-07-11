@@ -35,16 +35,20 @@ router.get(
       orderBy: { date: 'desc' },
     });
 
-    const header = 'fecha,tipo,monto,categoria,nota';
-    const rows = transactions.map((tx) =>
-      [
+    // El CSV no excluye aportes/retiros de metas (a diferencia del dashboard y el PDF): tiene que
+    // cuadrar con los movimientos reales de las cuentas. Se identifican con una columna aparte.
+    const header = 'fecha,tipo,monto,categoria,nota,meta';
+    const rows = transactions.map((tx) => {
+      const metaTag = tx.goalId ? (tx.type === 'EXPENSE' ? 'aporte_meta' : 'retiro_meta') : '';
+      return [
         tx.date.toISOString().slice(0, 10),
         tx.type === 'INCOME' ? 'ingreso' : 'gasto',
         tx.amount.toFixed(2),
         csvEscape(tx.category?.name ?? 'Sin categoría'),
         csvEscape(tx.note ?? ''),
-      ].join(','),
-    );
+        metaTag,
+      ].join(',');
+    });
     const csv = '﻿' + [header, ...rows].join('\n');
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -65,8 +69,9 @@ router.get(
 
     const [user, transactions] = await Promise.all([
       prisma.user.findUnique({ where: { id: userId } }),
+      // Excluye aportes/retiros de metas: no son gasto/ingreso real (ver dashboard).
       prisma.transaction.findMany({
-        where: { userId, date: { gte: start, lt: end } },
+        where: { userId, date: { gte: start, lt: end }, goalId: null },
         include: { category: true },
         orderBy: { date: 'asc' },
       }),

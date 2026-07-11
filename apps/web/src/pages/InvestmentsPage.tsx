@@ -4,13 +4,14 @@ import type {
   InvestmentOperationType,
   InvestmentsOverview,
   InvestmentType,
+  PortfolioHistory,
   ProviderAvailability,
   ProviderMarket,
   ProviderSource,
   SymbolSearchKind,
   SymbolSearchResult,
 } from '@myfinance/shared';
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api, formatDate, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
 import { IcoPencil, IcoPlus, IcoTrash } from '../components/icons';
@@ -134,6 +135,25 @@ function pnlColor(pnl: number): string {
   return 'var(--text)';
 }
 
+/** "hace X" a partir de un timestamp (ms), para el estado del refresh de precios. */
+function formatAgo(fromMs: number): string {
+  const min = Math.floor((Date.now() - fromMs) / 60_000);
+  if (min < 1) return 'recién';
+  if (min < 60) return `hace ${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `hace ${h} h`;
+  return `hace ${Math.floor(h / 24)} d`;
+}
+
+/** TIR formateada con signo, o "—" si no hay dato (poco historial / no converge). */
+function formatTir(tir: number | null | undefined): string {
+  if (tir === null || tir === undefined) return '—';
+  return `${tir >= 0 ? '+' : ''}${tir}%`;
+}
+
+type HistoryRange = 3 | 6 | 12;
+const HISTORY_RANGES: HistoryRange[] = [3, 6, 12];
+
 interface AssetFormState {
   id: string | null;
   name: string;
@@ -196,10 +216,26 @@ export function InvestmentsPage() {
   const [rateValue, setRateValue] = useState('');
   const [rateEdit, setRateEdit] = useState<{ currency: string; value: string } | null>(null);
 
+  const [historyMonths, setHistoryMonths] = useState<HistoryRange>(12);
+  const [history, setHistory] = useState<PortfolioHistory | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
   const { data, error: loadError, refresh } = useCached<InvestmentsOverview>('investments', () =>
     api.listInvestments(),
   );
   const providers = data?.providers ?? NO_PROVIDERS;
+
+  // Curva del portafolio: se recarga al cambiar el rango y tras cada mutación/refresh.
+  const loadHistory = useCallback(async () => {
+    try {
+      setHistory(await api.getPortfolioHistory(historyMonths));
+    } catch {
+      setHistory(null);
+    }
+  }, [historyMonths]);
+  useEffect(() => {
+    loadHistory();
+  }, [loadHistory]);
 
   // Buscador de símbolos con debounce (ningún proveedor cobra créditos por buscar).
   const formSearchKind = assetForm ? searchKind(assetForm.type) : null;
@@ -316,6 +352,21 @@ export function InvestmentsPage() {
     invalidate('investments');
     invalidate('dashboard');
     refresh();
+    loadHistory();
+  }
+
+  async function onRefreshPrices() {
+    setRefreshing(true);
+    setError(null);
+    try {
+      await api.refreshInvestmentPrices();
+      invalidateAfterMutation();
+    } catch (err) {
+      // Incluye el 429 con el tiempo de espera: el mensaje del server ya es user-facing.
+      setError(err instanceof Error ? err.message : 'No se pudieron actualizar los precios.');
+    } finally {
+      setRefreshing(false);
+    }
   }
 
   async function run(action: () => Promise<void>) {
@@ -525,6 +576,45 @@ export function InvestmentsPage() {
     return { total, segments };
   }, [activeAssets, rateMap]);
 
+  // Timestamp del precio más reciente entre los activos, para "Actualizado hace {x}".
+  const lastPriceUpdate = useMemo(() => {
+    let latest: number | null = null;
+    for (const inv of items) {
+      if (!inv.priceUpdatedAt) continue;
+      const t = new Date(inv.priceUpdatedAt).getTime();
+      if (latest === null || t > latest) latest = t;
+    }
+    return latest;
+  }, [items]);
+
+  // Geometría de la curva de valor del portafolio (área + línea SVG, como el patrimonio del dashboard).
+  const curve = useMemo(() => {
+    const pts = history?.points ?? [];
+    if (pts.length < 2) return null;
+    const W = 600;
+    const H = 120;
+    const padY = 14;
+    const invested = history?.invested ?? 0;
+    const values = pts.map((p) => p.value);
+    // El invertido entra al rango para que la línea de referencia siempre caiga dentro del gráfico.
+    const min = Math.min(...values, invested);
+    const max = Math.max(...values, invested);
+    const range = max - min || 1;
+    const x = (i: number) => (i / (pts.length - 1)) * W;
+    const y = (v: number) => padY + (1 - (v - min) / range) * (H - padY * 2);
+    const line = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(p.value).toFixed(1)}`).join(' ');
+    return {
+      W,
+      H,
+      line,
+      area: `${line} L ${W} ${H} L 0 ${H} Z`,
+      investedY: invested > 0 ? y(invested) : null,
+      first: pts[0].date,
+      last: pts[pts.length - 1].date,
+      lastValue: pts[pts.length - 1].value,
+    };
+  }, [history]);
+
   function renderAssetCard(inv: Investment) {
     const missingRate = inv.currency !== null && !rateMap.has(inv.currency);
     return (
@@ -692,6 +782,104 @@ export function InvestmentsPage() {
         </div>
       )}
 
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+            marginBottom: 12,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div className="mf-label mf-label--dot" style={{ marginBottom: 0 }}>
+            Curva del portafolio
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {HISTORY_RANGES.map((m) => (
+              <button
+                key={m}
+                type="button"
+                className={historyMonths === m ? 'accent-soft' : 'ghost'}
+                onClick={() => setHistoryMonths(m)}
+              >
+                {m}M
+              </button>
+            ))}
+          </div>
+        </div>
+        {curve === null ? (
+          <p className="muted" style={{ fontSize: 12.5 }}>
+            Necesitás al menos dos días con precios registrados para ver la evolución del portafolio.
+          </p>
+        ) : (
+          <>
+            <svg
+              viewBox={`0 0 ${curve.W} ${curve.H}`}
+              width="100%"
+              height={curve.H}
+              preserveAspectRatio="none"
+              style={{ display: 'block' }}
+            >
+              <defs>
+                <linearGradient id="invCurveFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.25" />
+                  <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              <path d={curve.area} fill="url(#invCurveFill)" />
+              <path
+                d={curve.line}
+                fill="none"
+                stroke="var(--accent)"
+                strokeWidth={2}
+                strokeLinejoin="round"
+                strokeLinecap="round"
+                vectorEffect="non-scaling-stroke"
+              />
+              {curve.investedY !== null && (
+                <line
+                  x1={0}
+                  y1={curve.investedY}
+                  x2={curve.W}
+                  y2={curve.investedY}
+                  stroke="var(--text-4)"
+                  strokeWidth={1}
+                  strokeDasharray="4 4"
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
+            </svg>
+            <div
+              className="muted"
+              style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, marginTop: 2 }}
+            >
+              <span>{formatDate(curve.first)}</span>
+              {(history?.invested ?? 0) > 0 && (
+                <span className="mono">– – invertido {formatMoney(history!.invested)}</span>
+              )}
+              <span>{formatDate(curve.last)}</span>
+            </div>
+          </>
+        )}
+      </div>
+
+      {(providers.twelveData || providers.data912) && (
+        <div
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, marginBottom: 12 }}
+        >
+          {lastPriceUpdate !== null && (
+            <span className="muted" style={{ fontSize: 12.5 }}>
+              Actualizado {formatAgo(lastPriceUpdate)}
+            </span>
+          )}
+          <button type="button" className="secondary" disabled={refreshing} onClick={onRefreshPrices}>
+            {refreshing ? 'Actualizando…' : 'Actualizar precios'}
+          </button>
+        </div>
+      )}
+
       <div className="mf-grid-3" style={{ marginBottom: 14 }}>
         <div className="mf-hero-card">
           <div className="mf-hero-glow" />
@@ -718,6 +906,11 @@ export function InvestmentsPage() {
             <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>
               {summary.pnlPercent >= 0 ? '+' : ''}
               {summary.pnlPercent}% sobre lo invertido
+            </div>
+          )}
+          {summary?.tir != null && (
+            <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>
+              TIR anualizada {formatTir(summary.tir)}
             </div>
           )}
         </div>
@@ -1255,6 +1448,14 @@ function DetailBody({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {detail.tir != null && (
+        <div className="mf-asset-row" style={{ marginTop: -4 }}>
+          <span className="muted">TIR anualizada</span>
+          <span className="mono" style={{ color: pnlColor(detail.tir), fontWeight: 600 }}>
+            {formatTir(detail.tir)}
+          </span>
+        </div>
+      )}
       <div>
         <div className="mf-label" style={{ marginBottom: 8 }}>
           Precio

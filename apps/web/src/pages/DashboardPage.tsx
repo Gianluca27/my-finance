@@ -150,7 +150,12 @@ export function DashboardPage() {
 
   const miniBudgets = useMemo(() => {
     if (!budgets) return [];
-    return [...budgets].sort((a, b) => b.percentUsed - a.percentUsed).slice(0, 4);
+    // El presupuesto global (categoryId null) tiene su card propia en Presupuestos; acá
+    // el mini-listado es por categoría.
+    return budgets
+      .filter((b): b is BudgetStatus & { category: NonNullable<BudgetStatus['category']> } => b.category !== null)
+      .sort((a, b) => b.percentUsed - a.percentUsed)
+      .slice(0, 4);
   }, [budgets]);
 
   const catDeltas = useMemo(

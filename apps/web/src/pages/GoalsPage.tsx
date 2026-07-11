@@ -41,7 +41,8 @@ export function GoalsPage() {
 
   const { data: goals, error: loadError, refresh } = useCached<Goal[]>('goals', () => api.listGoals());
   const { data: accountsData } = useCached<Account[]>('accounts', () => api.listAccounts());
-  const accounts = accountsData ?? [];
+  // Las archivadas no se ofrecen para aportes ni retiros nuevos.
+  const accounts = (accountsData ?? []).filter((a) => !a.archivedAt);
 
   function invalidateAfterMutation() {
     invalidate('goals');

@@ -32,7 +32,9 @@ export function AddTransactionModal({
   const { data: categoriesData } = useCached<Category[]>('categories', () => api.listCategories());
   const categories = (categoriesData ?? []).filter((c) => c.type === type);
   const { data: accountsData } = useCached<Account[]>('accounts', () => api.listAccounts());
-  const accounts = accountsData ?? [];
+  // Las archivadas se excluyen del select salvo que sea la cuenta ya elegida (edición de un
+  // movimiento viejo): así no desaparecen del formulario ni cambian el valor por debajo.
+  const accounts = (accountsData ?? []).filter((a) => !a.archivedAt || a.id === accountId);
 
   // Al abrir, precargar los datos del movimiento a editar, o los de la fila a duplicar
   // (con fecha = hoy, ya que es un movimiento nuevo), o limpiar para uno nuevo en blanco.

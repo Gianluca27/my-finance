@@ -98,7 +98,8 @@ export function RecurringPage() {
   );
   const { data: categoriesData } = useCached<Category[]>('categories', () => api.listCategories());
   const { data: accountsData } = useCached<Account[]>('accounts', () => api.listAccounts());
-  const accounts = accountsData ?? [];
+  // Las archivadas no se ofrecen para registrar nuevos pagos.
+  const accounts = (accountsData ?? []).filter((a) => !a.archivedAt);
   // Las categorías del formulario siguen el tipo elegido (gasto fijo vs ingreso fijo).
   const categories = (categoriesData ?? []).filter((c) => c.type === type);
 

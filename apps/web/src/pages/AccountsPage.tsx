@@ -31,6 +31,78 @@ function isThisMonth(iso: string): boolean {
   return d.getUTCFullYear() === now.getUTCFullYear() && d.getUTCMonth() === now.getUTCMonth();
 }
 
+/** Card de una cuenta, reusada tanto en el listado activo como en la sección de archivadas. */
+function AccountCard({
+  account: a,
+  onEdit,
+  onDelete,
+  onSetDefault,
+  onToggleArchive,
+  onReconcile,
+}: {
+  account: Account;
+  onEdit: (a: Account) => void;
+  onDelete: (a: Account) => void;
+  onSetDefault: (a: Account) => void;
+  onToggleArchive: (a: Account) => void;
+  onReconcile: (a: Account) => void;
+}) {
+  return (
+    <div className="card mf-account-card">
+      <div className="mf-account-head">
+        <div className="mf-mark" style={{ background: `${a.color}26`, borderColor: `${a.color}4d`, color: a.color }}>
+          {a.icon ?? shortCode(a.name)}
+        </div>
+        <div className="mf-account-titles">
+          <div className="mf-account-name">
+            {a.name}
+            {a.isDefault && <span className="mf-account-default"> · predet.</span>}
+          </div>
+          <div className="mf-caption">
+            {TYPE_LABEL[a.type]}
+            {a.archivedAt && ' · archivada'}
+          </div>
+        </div>
+        <button type="button" className="mf-icon-btn" aria-label="Editar cuenta" onClick={() => onEdit(a)}>
+          ✎
+        </button>
+        <button type="button" className="mf-icon-btn" aria-label="Eliminar cuenta" onClick={() => onDelete(a)}>
+          <IcoTrash size={15} />
+        </button>
+      </div>
+      <div className="mf-figure" style={{ color: a.balance < 0 ? 'var(--neg)' : undefined }}>
+        {formatMoney(a.balance)}
+      </div>
+      <div className="mf-account-foot">
+        <span className="muted">
+          Saldo inicial <span className="mono">{formatMoney(a.initialBalance)}</span>
+        </span>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <button type="button" className="mf-link-btn" onClick={() => onReconcile(a)}>
+            Ajustar saldo
+          </button>
+          {a.archivedAt ? (
+            <button type="button" className="mf-link-btn" onClick={() => onToggleArchive(a)}>
+              Desarchivar
+            </button>
+          ) : (
+            !a.isDefault && (
+              <>
+                <button type="button" className="mf-link-btn" onClick={() => onToggleArchive(a)}>
+                  Archivar
+                </button>
+                <button type="button" className="mf-link-btn" onClick={() => onSetDefault(a)}>
+                  Predeterminar
+                </button>
+              </>
+            )
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function AccountsPage() {
   const [error, setError] = useState<string | null>(null);
 
@@ -50,17 +122,35 @@ export function AccountsPage() {
   const [isDefault, setIsDefault] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  // Transferencia
+  // Transferencia (alta o edición, según transferEditId)
   const [transferOpen, setTransferOpen] = useState(false);
+  const [transferEditId, setTransferEditId] = useState<string | null>(null);
   const [fromId, setFromId] = useState('');
   const [toId, setToId] = useState('');
   const [transferAmount, setTransferAmount] = useState('');
+  const [transferDate, setTransferDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [transferNote, setTransferNote] = useState('');
   const [transferBusy, setTransferBusy] = useState(false);
 
+  // Archivadas (colapsadas)
+  const [showArchived, setShowArchived] = useState(false);
+
+  // Reconciliación de saldo
+  const [reconcileAccount, setReconcileAccount] = useState<Account | null>(null);
+  const [reconcileValue, setReconcileValue] = useState('');
+  const [reconcileDate, setReconcileDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [reconcileBusy, setReconcileBusy] = useState(false);
+
   const list = accounts ?? [];
+  // Las archivadas siguen contando en el patrimonio neto (el dinero existió) pero se ocultan del
+  // listado principal y de los selects de alta.
+  const activeAccounts = list.filter((a) => !a.archivedAt);
+  const archivedAccounts = list.filter((a) => a.archivedAt);
   const netWorth = list.reduce((sum, a) => sum + a.balance, 0);
   const transfersThisMonth = (transfers ?? []).filter((t) => isThisMonth(t.date)).length;
+  // Al editar una transferencia vieja, la cuenta puede estar archivada: se incluye igual para que
+  // no desaparezca del select ni cambie el valor por debajo.
+  const transferAccountOptions = list.filter((a) => !a.archivedAt || a.id === fromId || a.id === toId);
 
   function invalidateAll() {
     invalidate('accounts');
@@ -140,16 +230,39 @@ export function AccountsPage() {
     }
   }
 
+  async function onToggleArchive(a: Account) {
+    setError(null);
+    try {
+      await api.updateAccount(a.id, { archived: a.archivedAt === null });
+      invalidateAll();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error inesperado');
+    }
+  }
+
   function openTransfer() {
-    if (list.length < 2) {
-      setError('Necesitás al menos dos cuentas para transferir.');
+    if (activeAccounts.length < 2) {
+      setError('Necesitás al menos dos cuentas activas para transferir.');
       return;
     }
-    const def = list.find((a) => a.isDefault) ?? list[0];
+    setTransferEditId(null);
+    const def = activeAccounts.find((a) => a.isDefault) ?? activeAccounts[0];
     setFromId(def.id);
-    setToId(list.find((a) => a.id !== def.id)!.id);
+    setToId(activeAccounts.find((a) => a.id !== def.id)!.id);
     setTransferAmount('');
+    setTransferDate(new Date().toISOString().slice(0, 10));
     setTransferNote('');
+    setError(null);
+    setTransferOpen(true);
+  }
+
+  function openEditTransfer(t: Transfer) {
+    setTransferEditId(t.id);
+    setFromId(t.fromAccountId);
+    setToId(t.toAccountId);
+    setTransferAmount(String(t.amount));
+    setTransferDate(t.date.slice(0, 10));
+    setTransferNote(t.note ?? '');
     setError(null);
     setTransferOpen(true);
   }
@@ -163,12 +276,15 @@ export function AccountsPage() {
     setError(null);
     setTransferBusy(true);
     try {
-      await api.createTransfer({
+      const payload = {
         fromAccountId: fromId,
         toAccountId: toId,
         amount: Number(transferAmount),
+        date: transferDate,
         note: transferNote || null,
-      });
+      };
+      if (transferEditId) await api.updateTransfer(transferEditId, payload);
+      else await api.createTransfer(payload);
       setTransferOpen(false);
       invalidateAll();
     } catch (err) {
@@ -185,6 +301,37 @@ export function AccountsPage() {
       invalidateAll();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error inesperado');
+    }
+  }
+
+  function openReconcile(a: Account) {
+    setReconcileAccount(a);
+    setReconcileValue(String(a.balance));
+    setReconcileDate(new Date().toISOString().slice(0, 10));
+    setError(null);
+  }
+
+  function closeReconcile() {
+    if (reconcileBusy) return;
+    setReconcileAccount(null);
+  }
+
+  async function onSubmitReconcile(e: FormEvent) {
+    e.preventDefault();
+    if (!reconcileAccount) return;
+    setError(null);
+    setReconcileBusy(true);
+    try {
+      await api.reconcileAccount(reconcileAccount.id, {
+        actualBalance: Number(reconcileValue),
+        date: reconcileDate,
+      });
+      setReconcileAccount(null);
+      invalidateAll();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error inesperado');
+    } finally {
+      setReconcileBusy(false);
     }
   }
 
@@ -205,8 +352,8 @@ export function AccountsPage() {
         </div>
         <div className="mf-accounts-hero-stats">
           <div>
-            <div className="mf-statfig">{list.length}</div>
-            <div className="mf-statcap">{list.length === 1 ? 'cuenta' : 'cuentas'}</div>
+            <div className="mf-statfig">{activeAccounts.length}</div>
+            <div className="mf-statcap">{activeAccounts.length === 1 ? 'cuenta' : 'cuentas'}</div>
           </div>
           <div>
             <div className="mf-statfig">{transfersThisMonth}</div>
@@ -219,43 +366,16 @@ export function AccountsPage() {
         <p className="muted">Cargando…</p>
       ) : (
         <div className="mf-grid-2">
-          {list.map((a) => (
-            <div className="card mf-account-card" key={a.id}>
-              <div className="mf-account-head">
-                <div
-                  className="mf-mark"
-                  style={{ background: `${a.color}26`, borderColor: `${a.color}4d`, color: a.color }}
-                >
-                  {a.icon ?? shortCode(a.name)}
-                </div>
-                <div className="mf-account-titles">
-                  <div className="mf-account-name">
-                    {a.name}
-                    {a.isDefault && <span className="mf-account-default"> · predet.</span>}
-                  </div>
-                  <div className="mf-caption">{TYPE_LABEL[a.type]}</div>
-                </div>
-                <button type="button" className="mf-icon-btn" aria-label="Editar cuenta" onClick={() => openEdit(a)}>
-                  ✎
-                </button>
-                <button type="button" className="mf-icon-btn" aria-label="Eliminar cuenta" onClick={() => onDelete(a)}>
-                  <IcoTrash size={15} />
-                </button>
-              </div>
-              <div className="mf-figure" style={{ color: a.balance < 0 ? 'var(--neg)' : undefined }}>
-                {formatMoney(a.balance)}
-              </div>
-              <div className="mf-account-foot">
-                <span className="muted">
-                  Saldo inicial <span className="mono">{formatMoney(a.initialBalance)}</span>
-                </span>
-                {!a.isDefault && (
-                  <button type="button" className="mf-link-btn" onClick={() => onSetDefault(a)}>
-                    Predeterminar
-                  </button>
-                )}
-              </div>
-            </div>
+          {activeAccounts.map((a) => (
+            <AccountCard
+              key={a.id}
+              account={a}
+              onEdit={openEdit}
+              onDelete={onDelete}
+              onSetDefault={onSetDefault}
+              onToggleArchive={onToggleArchive}
+              onReconcile={openReconcile}
+            />
           ))}
 
           <div className="mf-dashed-tile mf-dashed-tile--block">
@@ -269,6 +389,29 @@ export function AccountsPage() {
               o transferí entre cuentas existentes
             </button>
           </div>
+        </div>
+      )}
+
+      {archivedAccounts.length > 0 && (
+        <div className="card" style={{ marginTop: 14 }}>
+          <button type="button" className="ghost" onClick={() => setShowArchived((v) => !v)}>
+            {showArchived ? 'Ocultar' : 'Ver'} archivadas ({archivedAccounts.length})
+          </button>
+          {showArchived && (
+            <div className="mf-grid-2" style={{ marginTop: 12 }}>
+              {archivedAccounts.map((a) => (
+                <AccountCard
+                  key={a.id}
+                  account={a}
+                  onEdit={openEdit}
+                  onDelete={onDelete}
+                  onSetDefault={onSetDefault}
+                  onToggleArchive={onToggleArchive}
+                  onReconcile={openReconcile}
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -292,6 +435,14 @@ export function AccountsPage() {
                 <span className="mono" style={{ fontWeight: 600 }}>
                   {formatMoney(t.amount)}
                 </span>
+                <button
+                  type="button"
+                  className="mf-icon-btn"
+                  aria-label="Editar transferencia"
+                  onClick={() => openEditTransfer(t)}
+                >
+                  ✎
+                </button>
                 <button
                   type="button"
                   className="mf-icon-btn"
@@ -364,13 +515,17 @@ export function AccountsPage() {
         </form>
       </Modal>
 
-      <Modal open={transferOpen} onClose={() => setTransferOpen(false)} title="Transferir entre cuentas">
+      <Modal
+        open={transferOpen}
+        onClose={() => setTransferOpen(false)}
+        title={transferEditId ? 'Editar transferencia' : 'Transferir entre cuentas'}
+      >
         <form onSubmit={onSubmitTransfer} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {error && <div className="error-banner">{error}</div>}
           <label className="field">
             Desde
             <select value={fromId} onChange={(e) => setFromId(e.target.value)}>
-              {list.map((a) => (
+              {transferAccountOptions.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.name} ({formatMoney(a.balance)})
                 </option>
@@ -380,7 +535,7 @@ export function AccountsPage() {
           <label className="field">
             Hacia
             <select value={toId} onChange={(e) => setToId(e.target.value)}>
-              {list.map((a) => (
+              {transferAccountOptions.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.name} ({formatMoney(a.balance)})
                 </option>
@@ -400,11 +555,65 @@ export function AccountsPage() {
             />
           </label>
           <label className="field">
+            Fecha
+            <input type="date" value={transferDate} onChange={(e) => setTransferDate(e.target.value)} required />
+          </label>
+          <label className="field">
             Nota (opcional)
             <input value={transferNote} onChange={(e) => setTransferNote(e.target.value)} maxLength={500} />
           </label>
-          <button disabled={transferBusy}>{transferBusy ? 'Guardando…' : 'Transferir'}</button>
+          <button disabled={transferBusy}>
+            {transferBusy ? 'Guardando…' : transferEditId ? 'Guardar cambios' : 'Transferir'}
+          </button>
         </form>
+      </Modal>
+
+      <Modal
+        open={reconcileAccount !== null}
+        onClose={closeReconcile}
+        title={reconcileAccount ? `Ajustar saldo: ${reconcileAccount.name}` : ''}
+      >
+        {reconcileAccount && (
+          <form onSubmit={onSubmitReconcile} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {error && <div className="error-banner">{error}</div>}
+            <p className="muted" style={{ margin: 0 }}>
+              ¿Cuál es el saldo real de esta cuenta? El calculado hoy es{' '}
+              <span className="mono">{formatMoney(reconcileAccount.balance)}</span>.
+            </p>
+            <label className="field">
+              Saldo real
+              <input
+                type="number"
+                step="0.01"
+                value={reconcileValue}
+                onChange={(e) => setReconcileValue(e.target.value)}
+                autoFocus
+                required
+              />
+            </label>
+            <label className="field">
+              Fecha del ajuste
+              <input type="date" value={reconcileDate} onChange={(e) => setReconcileDate(e.target.value)} required />
+            </label>
+            {(() => {
+              const diff = Math.round((Number(reconcileValue || 0) - reconcileAccount.balance) * 100) / 100;
+              if (diff === 0) {
+                return <p className="muted" style={{ margin: 0 }}>No se registrará ningún ajuste.</p>;
+              }
+              return (
+                <p className="muted" style={{ margin: 0 }}>
+                  Se registrará un movimiento de{' '}
+                  <strong style={{ color: diff > 0 ? 'var(--pos)' : 'var(--neg)' }}>
+                    {diff > 0 ? '+' : ''}
+                    {formatMoney(diff)}
+                  </strong>{' '}
+                  ({diff > 0 ? 'ingreso' : 'gasto'}) con la nota "Ajuste de saldo".
+                </p>
+              );
+            })()}
+            <button disabled={reconcileBusy}>{reconcileBusy ? 'Guardando…' : 'Confirmar'}</button>
+          </form>
+        )}
       </Modal>
     </>
   );

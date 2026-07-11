@@ -75,7 +75,8 @@ export function DebtsPage() {
   const { data: categoriesData } = useCached<Category[]>('categories', () => api.listCategories());
   const categories = categoriesData ?? [];
   const { data: accountsData } = useCached<Account[]>('accounts', () => api.listAccounts());
-  const accounts = accountsData ?? [];
+  // Las archivadas no se ofrecen para registrar nuevos pagos.
+  const accounts = (accountsData ?? []).filter((a) => !a.archivedAt);
 
   // El pago genera EXPENSE (I_OWE) o INCOME (OWED_TO_ME): la categoría elegible sigue esa dirección.
   const formCategories = categories.filter((c) => c.type === (direction === 'I_OWE' ? 'EXPENSE' : 'INCOME'));

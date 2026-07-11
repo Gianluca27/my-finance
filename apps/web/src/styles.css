@@ -222,6 +222,49 @@ a:hover {
   outline-offset: 2px;
 }
 
+/* Drill-down del dashboard/presupuestos hacia Movimientos (spec 11): affordance genérica
+   para filas/cards que se vuelven <Link>/role="button". Declarada temprano a propósito:
+   los widgets que ya fijan su propio `color` (ej. `.mf-anomaly-row`) deben ganarle en la
+   cascada por orden de aparición sin necesidad de subir especificidad. */
+.mf-clickable-row {
+  cursor: pointer;
+  color: inherit;
+  text-decoration: none;
+  transition: opacity 0.15s ease;
+}
+
+.mf-clickable-row:hover,
+.mf-clickable-row:focus-visible {
+  opacity: 0.72;
+  text-decoration: none;
+}
+
+.mf-clickable-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Variante para una card entera clickeable (ej. presupuesto → movimientos de esa categoría):
+   mantiene el fondo/borde de `.card` y solo resalta ambos en hover/foco. */
+.mf-clickable-card {
+  cursor: pointer;
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.mf-clickable-card:hover,
+.mf-clickable-card:focus-visible {
+  border-color: var(--accent-line);
+  background: var(--surface-2);
+}
+
+.mf-clickable-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .brand-dot {
   color: var(--accent);
 }
@@ -1915,6 +1958,22 @@ td.num {
   text-overflow: ellipsis;
 }
 
+/* Segmento clickeable del donut de gastos por categoría. */
+.mf-donut-seg {
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.mf-donut-seg:hover,
+.mf-donut-seg:focus-visible {
+  opacity: 0.72;
+}
+
+.mf-donut-seg:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .mf-card-head {
   display: flex;
   align-items: center;
@@ -1939,6 +1998,18 @@ td.num {
   align-items: center;
   gap: 6px;
   height: 100%;
+  /* Toda la columna navega a Movimientos del mes (spec 11); las barras individuales
+     agregan `type` por encima (ver .mf-bar-income/.mf-bar-expense). */
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.mf-bar-col:hover {
+  background: var(--surface-2);
+}
+
+.mf-bar-col:focus-visible {
+  outline-offset: 4px;
 }
 
 .mf-bar-pair {
@@ -1985,11 +2056,20 @@ td.num {
 
 .mf-bar-income {
   background: var(--pos);
+  cursor: pointer;
+  transition: opacity 0.15s ease;
 }
 
 .mf-bar-expense {
   background: var(--bar-expense);
   animation-delay: 0.05s;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.mf-bar-income:hover,
+.mf-bar-expense:hover {
+  opacity: 0.75;
 }
 
 .mf-bar-label {

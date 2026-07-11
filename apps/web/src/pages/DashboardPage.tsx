@@ -1,11 +1,11 @@
 import type { BudgetStatus, CategorySummary, DashboardData, PreviousMonthDelta } from '@myfinance/shared';
-import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useMemo, useState, type KeyboardEvent } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { api, formatMoney } from '../api';
 import { useCached } from '../cache';
 import { MonthPicker } from '../components/MonthPicker';
 import { Skeleton } from '../components/Skeleton';
-import { currentMonthKey, monthLabel } from '../lib/months';
+import { currentMonthKey, monthDateRange, monthLabel } from '../lib/months';
 
 const DONUT_R = 42;
 const DONUT_C = 2 * Math.PI * DONUT_R;
@@ -71,6 +71,25 @@ function budgetBarColor(status: BudgetStatus): string {
   return 'var(--accent)';
 }
 
+/** Arma un link a Movimientos con filtros precargados (spec 11 — drill-down). */
+function txUrl(params: { type?: 'INCOME' | 'EXPENSE'; categoryId?: string | null; from?: string; to?: string }): string {
+  const qs = new URLSearchParams();
+  if (params.type) qs.set('type', params.type);
+  if (params.categoryId) qs.set('categoryId', params.categoryId);
+  if (params.from) qs.set('from', params.from);
+  if (params.to) qs.set('to', params.to);
+  return `/transacciones?${qs.toString()}`;
+}
+
+/** Activa `onActivate` con Enter/Espacio: para elementos con role="button" que no son <button>/<a>. */
+function onActivateKey(onActivate: () => void) {
+  return (e: KeyboardEvent) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    onActivate();
+  };
+}
+
 /** Top 5 categorías por delta absoluto ($) para que pesos chicos con % gigantes no dominen. */
 function topCategoryDeltas(
   byCategory: Array<PreviousMonthDelta & { categoryId: string; name: string }>,
@@ -109,6 +128,7 @@ function DashboardSkeleton({ isCurrentMonth }: { isCurrentMonth: boolean }) {
 }
 
 export function DashboardPage() {
+  const navigate = useNavigate();
   const [month, setMonth] = useState(currentMonthKey());
   const isCurrentMonth = month === currentMonthKey();
   const { data, error } = useCached<DashboardData>(`dashboard:${month}`, () => api.dashboard(month));
@@ -178,6 +198,10 @@ export function DashboardPage() {
     );
   }
 
+  // Rango del mes visible (no necesariamente el actual): base de todos los links de
+  // drill-down hacia Movimientos (spec 11).
+  const range = monthDateRange(data.month);
+
   const netWorthCurrent = data.netWorthTrend.length
     ? data.netWorthTrend[data.netWorthTrend.length - 1].netWorth
     : data.balance;
@@ -213,13 +237,27 @@ export function DashboardPage() {
             <div className="mf-label" data-n="01">Balance total</div>
             <div className="mf-hero-balance">{formatMoney(data.balance)}</div>
             <div className="mf-hero-stats">
-              <div>
+              <div
+                className="mf-clickable-row"
+                role="button"
+                tabIndex={0}
+                aria-label={`Ver ingresos de ${monthLabel(data.month)}`}
+                onClick={() => navigate(txUrl({ type: 'INCOME', from: range.from, to: range.to }))}
+                onKeyDown={onActivateKey(() => navigate(txUrl({ type: 'INCOME', from: range.from, to: range.to })))}
+              >
                 <div className="mf-stat-label">Ingresos · {monthLabel(data.month)}</div>
                 <div className="mf-stat-value" style={{ color: 'var(--pos)' }}>
                   {formatMoney(data.monthIncome)}
                 </div>
               </div>
-              <div>
+              <div
+                className="mf-clickable-row"
+                role="button"
+                tabIndex={0}
+                aria-label={`Ver gastos de ${monthLabel(data.month)}`}
+                onClick={() => navigate(txUrl({ type: 'EXPENSE', from: range.from, to: range.to }))}
+                onKeyDown={onActivateKey(() => navigate(txUrl({ type: 'EXPENSE', from: range.from, to: range.to })))}
+              >
                 <div className="mf-stat-label">Gastos · {monthLabel(data.month)}</div>
                 <div className="mf-stat-value" style={{ color: 'var(--neg)' }}>
                   {formatMoney(data.monthExpense)}
@@ -290,13 +328,18 @@ export function DashboardPage() {
                 </div>
               ) : (
                 data.insights.anomalies.map((a) => (
-                  <div className="mf-anomaly-row" key={a.categoryId}>
+                  <Link
+                    to={txUrl({ type: 'EXPENSE', categoryId: a.categoryId, from: range.from, to: range.to })}
+                    className="mf-anomaly-row mf-clickable-row"
+                    key={a.categoryId}
+                    aria-label={`Ver movimientos de ${a.name} este mes`}
+                  >
                     <span style={{ flex: 1 }}>
                       <strong>{a.name}</strong>: gastaste {formatMoney(a.currentAmount)} vs. promedio{' '}
                       {formatMoney(a.avgAmount)}
                     </span>
                     <span className="mf-anomaly-pct">+{a.percentOfAvg - 100}%</span>
-                  </div>
+                  </Link>
                 ))
               )}
             </div>
@@ -493,19 +536,33 @@ export function DashboardPage() {
               <div className="mf-donut-wrap">
                 <svg width={108} height={108} viewBox="0 0 108 108" style={{ transform: 'rotate(-90deg)' }}>
                   <circle cx={54} cy={54} r={DONUT_R} fill="none" stroke="var(--surface-2)" strokeWidth={13} />
-                  {donutSegments.map((seg, i) => (
-                    <circle
-                      key={i}
-                      cx={54}
-                      cy={54}
-                      r={DONUT_R}
-                      fill="none"
-                      stroke={seg.color}
-                      strokeWidth={13}
-                      strokeDasharray={seg.dash}
-                      strokeDashoffset={seg.offset}
-                    />
-                  ))}
+                  {donutSegments.map((seg, i) => {
+                    const cat = top[i];
+                    // "Otros" (rest) agrupa varias categorías: no hay un único categoryId para
+                    // filtrar, así que ese segmento queda sin click (igual que "Sin categoría").
+                    const clickable = !!cat.categoryId && cat.categoryId !== 'rest';
+                    const goToCategory = () =>
+                      navigate(txUrl({ type: 'EXPENSE', categoryId: cat.categoryId, from: range.from, to: range.to }));
+                    return (
+                      <circle
+                        key={i}
+                        cx={54}
+                        cy={54}
+                        r={DONUT_R}
+                        fill="none"
+                        stroke={seg.color}
+                        strokeWidth={13}
+                        strokeDasharray={seg.dash}
+                        strokeDashoffset={seg.offset}
+                        className={clickable ? 'mf-donut-seg' : undefined}
+                        role={clickable ? 'button' : undefined}
+                        tabIndex={clickable ? 0 : undefined}
+                        aria-label={clickable ? `Ver movimientos de ${cat.categoryName}` : undefined}
+                        onClick={clickable ? goToCategory : undefined}
+                        onKeyDown={clickable ? onActivateKey(goToCategory) : undefined}
+                      />
+                    );
+                  })}
                 </svg>
                 <div className="mf-donut-center">
                   <div className="mf-donut-total">{formatMoneyShort(data.monthExpense)}</div>
@@ -515,15 +572,32 @@ export function DashboardPage() {
                 </div>
               </div>
               <div className="mf-legend">
-                {top.map((c) => (
-                  <div className="mf-legend-row" key={c.categoryId ?? 'none'}>
-                    <span className="mf-legend-dot" style={{ background: c.color }} />
-                    <span className="mf-legend-name">{c.categoryName}</span>
-                    <span className="mono">
-                      {data.monthExpense > 0 ? Math.round((c.total / data.monthExpense) * 100) : 0}%
-                    </span>
-                  </div>
-                ))}
+                {top.map((c) => {
+                  const clickable = !!c.categoryId && c.categoryId !== 'rest';
+                  const legendContent = (
+                    <>
+                      <span className="mf-legend-dot" style={{ background: c.color }} />
+                      <span className="mf-legend-name">{c.categoryName}</span>
+                      <span className="mono">
+                        {data.monthExpense > 0 ? Math.round((c.total / data.monthExpense) * 100) : 0}%
+                      </span>
+                    </>
+                  );
+                  return clickable ? (
+                    <Link
+                      to={txUrl({ type: 'EXPENSE', categoryId: c.categoryId, from: range.from, to: range.to })}
+                      className="mf-legend-row mf-clickable-row"
+                      key={c.categoryId}
+                      aria-label={`Ver movimientos de ${c.categoryName}`}
+                    >
+                      {legendContent}
+                    </Link>
+                  ) : (
+                    <div className="mf-legend-row" key={c.categoryId ?? 'none'}>
+                      {legendContent}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -544,36 +618,56 @@ export function DashboardPage() {
             </div>
           </div>
           <div className="mf-bars">
-            {data.monthlyComparison.map((m) => (
-              <div className="mf-bar-col" key={m.month}>
+            {data.monthlyComparison.map((m) => {
+              const barRange = monthDateRange(m.month);
+              const goToMonth = () => navigate(txUrl({ from: barRange.from, to: barRange.to }));
+              const goToSeries = (type: 'INCOME' | 'EXPENSE') => (e: { stopPropagation: () => void }) => {
+                e.stopPropagation();
+                navigate(txUrl({ type, from: barRange.from, to: barRange.to }));
+              };
+              return (
                 <div
-                  className="mf-bar-pair"
-                  onMouseEnter={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    setBarHover({ month: m.month, left: rect.left + rect.width / 2, top: rect.top });
-                  }}
-                  onMouseLeave={() => setBarHover(null)}
+                  className="mf-bar-col"
+                  key={m.month}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Ver movimientos de ${hoverMonthLabel(m.month)}`}
+                  onClick={goToMonth}
+                  onKeyDown={onActivateKey(goToMonth)}
                 >
                   <div
-                    className="mf-bar mf-bar-income"
-                    style={{ height: `${Math.max(2, (m.income / maxBar) * 100)}%` }}
-                  />
+                    className="mf-bar-pair"
+                    onMouseEnter={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      setBarHover({ month: m.month, left: rect.left + rect.width / 2, top: rect.top });
+                    }}
+                    onMouseLeave={() => setBarHover(null)}
+                  >
+                    <div
+                      className="mf-bar mf-bar-income"
+                      style={{ height: `${Math.max(2, (m.income / maxBar) * 100)}%` }}
+                      title={`Ver ingresos de ${hoverMonthLabel(m.month)}`}
+                      onClick={goToSeries('INCOME')}
+                    />
+                    <div
+                      className="mf-bar mf-bar-expense"
+                      style={{ height: `${Math.max(2, (m.expense / maxBar) * 100)}%` }}
+                      title={`Ver gastos de ${hoverMonthLabel(m.month)}`}
+                      onClick={goToSeries('EXPENSE')}
+                    />
+                  </div>
                   <div
-                    className="mf-bar mf-bar-expense"
-                    style={{ height: `${Math.max(2, (m.expense / maxBar) * 100)}%` }}
-                  />
+                    className="mf-bar-label"
+                    style={{
+                      color: m.month === data.month ? 'var(--text)' : 'var(--text-3)',
+                      fontWeight: m.month === data.month ? 700 : 500,
+                    }}
+                  >
+                    {shortMonthLabel(m.month)}
+                  </div>
                 </div>
-                <div
-                  className="mf-bar-label"
-                  style={{
-                    color: m.month === data.month ? 'var(--text)' : 'var(--text-3)',
-                    fontWeight: m.month === data.month ? 700 : 500,
-                  }}
-                >
-                  {shortMonthLabel(m.month)}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           {barHover &&
             (() => {
@@ -606,7 +700,12 @@ export function DashboardPage() {
                 {data.upcomingPayments.slice(0, 4).map((p) => {
                   const due = dueInfo(p.nextDueDate);
                   return (
-                    <div className="mf-list-row" key={p.id}>
+                    <Link
+                      to="/recurrentes"
+                      className="mf-list-row mf-clickable-row"
+                      key={p.id}
+                      aria-label={`Ver ${p.name} en Gastos recurrentes`}
+                    >
                       <div className="mf-list-icon mf-list-code">{shortCode(p.name)}</div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div className="mf-list-title">{p.name}</div>
@@ -615,7 +714,7 @@ export function DashboardPage() {
                       <div className="mono" style={{ fontWeight: 600, fontSize: 13 }}>
                         {formatMoney(p.amount)}
                       </div>
-                    </div>
+                    </Link>
                   );
                 })}
               </div>
@@ -635,7 +734,12 @@ export function DashboardPage() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {miniBudgets.map((b) => (
-                <div key={b.id}>
+                <Link
+                  to={txUrl({ type: 'EXPENSE', categoryId: b.categoryId, from: range.from, to: range.to })}
+                  className="mf-clickable-row"
+                  key={b.id}
+                  aria-label={`Ver movimientos de ${b.category.name} este mes`}
+                >
                   <div className="mf-mini-budget-head">
                     <span>
                       <span className="mf-legend-dot" style={{ background: b.category.color }} />
@@ -651,7 +755,7 @@ export function DashboardPage() {
                       style={{ width: `${Math.min(100, b.percentUsed)}%`, background: budgetBarColor(b) }}
                     />
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           )}

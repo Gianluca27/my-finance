@@ -19,3 +19,18 @@ export function monthLabel(month: string): string {
     timeZone: 'UTC',
   });
 }
+
+/**
+ * Rango `from`/`to` (YYYY-MM-DD, UTC) de un mes "YYYY-MM" — para armar links de
+ * drill-down hacia `/transacciones` que filtren por el mes visible del dashboard
+ * o de presupuestos. Mismo criterio UTC que el chip "Este mes" de TransactionsPage
+ * (`monthRangeUTC`), así los movimientos que aparecen coinciden con los del widget.
+ */
+export function monthDateRange(month: string): { from: string; to: string } {
+  const [y, m] = month.split('-').map(Number);
+  const toParam = (d: Date) => d.toISOString().slice(0, 10);
+  return {
+    from: toParam(new Date(Date.UTC(y, m - 1, 1))),
+    to: toParam(new Date(Date.UTC(y, m, 0))),
+  };
+}

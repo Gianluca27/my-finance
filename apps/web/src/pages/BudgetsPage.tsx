@@ -1,15 +1,30 @@
 import type { BudgetStatus, Category } from '@myfinance/shared';
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, type KeyboardEvent, type MouseEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
 import { IcoPlus, IcoTrash } from '../components/icons';
 import { Modal } from '../components/Modal';
 import { MonthPicker } from '../components/MonthPicker';
-import { currentMonthKey, monthLabel } from '../lib/months';
+import { currentMonthKey, monthDateRange, monthLabel } from '../lib/months';
+
+/** Arma un link a Movimientos con filtros precargados (spec 11 — drill-down). */
+function txUrl(params: { type?: 'INCOME' | 'EXPENSE'; categoryId?: string; from?: string; to?: string }): string {
+  const qs = new URLSearchParams();
+  if (params.type) qs.set('type', params.type);
+  if (params.categoryId) qs.set('categoryId', params.categoryId);
+  if (params.from) qs.set('from', params.from);
+  if (params.to) qs.set('to', params.to);
+  return `/transacciones?${qs.toString()}`;
+}
 
 export function BudgetsPage() {
+  const navigate = useNavigate();
   const [month, setMonth] = useState(currentMonthKey());
   const isCurrentMonth = month === currentMonthKey();
+  // Mismas migas que el dashboard (spec 11): card de presupuesto → movimientos de esa
+  // categoría en el mes visible del picker (no necesariamente el actual).
+  const range = monthDateRange(month);
 
   const [error, setError] = useState<string | null>(null);
 
@@ -116,8 +131,22 @@ export function BudgetsPage() {
             const color = budget.category.color;
             const remainingBudget = Math.max(0, budget.amount - budget.spent);
             const perDay = remainingBudget / daysLeft;
+            const goToCategory = () =>
+              navigate(txUrl({ type: 'EXPENSE', categoryId: budget.categoryId, from: range.from, to: range.to }));
             return (
-              <div className="card mf-budget-card" key={budget.id}>
+              <div
+                className="card mf-budget-card mf-clickable-card"
+                key={budget.id}
+                role="button"
+                tabIndex={0}
+                aria-label={`Ver movimientos de ${budget.category.name} en ${monthLabel(month)}`}
+                onClick={goToCategory}
+                onKeyDown={(e: KeyboardEvent) => {
+                  if (e.key !== 'Enter' && e.key !== ' ') return;
+                  e.preventDefault();
+                  goToCategory();
+                }}
+              >
                 <div className="mf-budget-head">
                   <div className="mf-budget-icon" style={{ background: `${color}26` }}>
                     {budget.category.icon ?? '💰'}
@@ -132,7 +161,11 @@ export function BudgetsPage() {
                       type="button"
                       className="mf-icon-btn"
                       aria-label="Eliminar presupuesto"
-                      onClick={() => onDelete(budget.id)}
+                      onClick={(e: MouseEvent) => {
+                        // No burbujear al click de la card: eliminar no debería navegar.
+                        e.stopPropagation();
+                        onDelete(budget.id);
+                      }}
                     >
                       <IcoTrash size={15} />
                     </button>

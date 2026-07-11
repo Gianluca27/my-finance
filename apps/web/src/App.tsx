@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { api } from './api';
 import { useAuth } from './auth';
 import { prefetch } from './cache';
@@ -26,6 +26,7 @@ const TransactionsPage = lazy(() => import('./pages/TransactionsPage').then((m) 
 
 export default function App() {
   const { user, loading } = useAuth();
+  const location = useLocation();
 
   // Apenas hay usuario: bajar el chunk del Dashboard (ruta inicial) y disparar
   // sus datos en paralelo, en vez de esperar chunk -> montaje -> fetch en serie.
@@ -40,13 +41,23 @@ export default function App() {
     return <div className="auth-wrap muted">Cargando…</div>;
   }
 
+  // El link de reset llega por email y tiene que funcionar aunque haya una sesión
+  // activa en este navegador (JWT de 7 días): se resuelve antes de ramificar por
+  // usuario para que el catch-all autenticado no lo redirija al dashboard.
+  if (location.pathname === '/reset') {
+    return (
+      <Suspense fallback={<div className="auth-wrap muted">Cargando…</div>}>
+        <ResetPasswordPage />
+      </Suspense>
+    );
+  }
+
   if (!user) {
     return (
       <Suspense fallback={<div className="auth-wrap muted">Cargando…</div>}>
         <Routes>
           <Route path="/login" element={<AuthPage mode="login" />} />
           <Route path="/registro" element={<AuthPage mode="register" />} />
-          <Route path="/reset" element={<ResetPasswordPage />} />
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </Suspense>

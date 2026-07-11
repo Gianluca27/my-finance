@@ -45,4 +45,26 @@ describe('RateLimiter', () => {
     expect(limiter.attempt('a@b.com', 1)).toBe(false);
     expect(limiter.attempt('c@d.com', 1)).toBe(true);
   });
+
+  it('evicta las claves cuyos intentos salieron todos de la ventana (no crece sin límite)', () => {
+    const limiter = new RateLimiter(3, HOUR);
+    limiter.attempt('viejo@x.com', 0);
+    limiter.attempt('otro-viejo@x.com', 1);
+    expect(limiter.size).toBe(2);
+    // Una hora después, cualquier intento dispara la limpieza: las claves
+    // sin intentos vivos se eliminan del mapa en vez de quedar para siempre.
+    limiter.attempt('nuevo@x.com', HOUR + 2);
+    expect(limiter.size).toBe(1);
+  });
+
+  it('la limpieza no toca claves que aún tienen intentos vivos', () => {
+    const limiter = new RateLimiter(3, HOUR);
+    limiter.attempt('viejo@x.com', 0);
+    limiter.attempt('vigente@x.com', HOUR - 1);
+    // Sweep en HOUR + 1: 'viejo' (t=0) ya expiró, 'vigente' (t=HOUR-1) sigue vivo.
+    limiter.attempt('nuevo@x.com', HOUR + 1);
+    expect(limiter.size).toBe(2);
+    // 'vigente' conserva su historial y sigue pudiendo intentar dentro del máximo.
+    expect(limiter.attempt('vigente@x.com', HOUR + 2)).toBe(true);
+  });
 });

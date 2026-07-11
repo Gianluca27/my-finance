@@ -1,7 +1,8 @@
 import type {
+  Account,
   Investment,
   InvestmentDetail,
-  InvestmentOperationType,
+  InvestmentOperation,
   InvestmentsOverview,
   InvestmentType,
   PortfolioHistory,
@@ -151,6 +152,16 @@ function formatTir(tir: number | null | undefined): string {
   return `${tir >= 0 ? '+' : ''}${tir}%`;
 }
 
+/** Compra o venta (la RENTA se registra con su propio formulario). */
+type TradeType = 'COMPRA' | 'VENTA';
+
+/** Etiqueta contextual de la renta según el tipo de activo. */
+function rentaLabel(type: InvestmentType): string {
+  if (type === 'BONO') return 'Cupón';
+  if (type === 'ACCION' || type === 'CEDEAR' || type === 'ETF') return 'Dividendo';
+  return 'Renta';
+}
+
 type HistoryRange = 3 | 6 | 12;
 const HISTORY_RANGES: HistoryRange[] = [3, 6, 12];
 
@@ -197,7 +208,9 @@ export function InvestmentsPage() {
   const [symbolSearching, setSymbolSearching] = useState(false);
 
   const [opTarget, setOpTarget] = useState<Investment | null>(null);
-  const [opType, setOpType] = useState<InvestmentOperationType>('COMPRA');
+  // id de la operación cuando se está editando una compra/venta; null = alta.
+  const [opEditId, setOpEditId] = useState<string | null>(null);
+  const [opType, setOpType] = useState<TradeType>('COMPRA');
   const [opQuantity, setOpQuantity] = useState('');
   const [opPrice, setOpPrice] = useState('');
   const [opDate, setOpDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -206,6 +219,15 @@ export function InvestmentsPage() {
   const [opPriceLoading, setOpPriceLoading] = useState(false);
   // Último precio autocompletado: si el usuario lo pisó a mano, no lo volvemos a tocar.
   const opPriceAutoRef = useRef<string | null>(null);
+
+  // Formulario de renta (dividendo/cupón/amortización). rentaOpId = edición; null = alta.
+  const [rentaTarget, setRentaTarget] = useState<Investment | null>(null);
+  const [rentaOpId, setRentaOpId] = useState<string | null>(null);
+  const [rentaAmount, setRentaAmount] = useState('');
+  const [rentaDate, setRentaDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [rentaNote, setRentaNote] = useState('');
+  const [rentaCredit, setRentaCredit] = useState(false);
+  const [rentaAccountId, setRentaAccountId] = useState('');
 
   const [priceEditId, setPriceEditId] = useState<string | null>(null);
   const [priceValue, setPriceValue] = useState('');
@@ -224,6 +246,9 @@ export function InvestmentsPage() {
     api.listInvestments(),
   );
   const providers = data?.providers ?? NO_PROVIDERS;
+  // Cuentas para el checkbox "acreditar en cuenta" de la renta.
+  const { data: accountsData } = useCached<Account[]>('accounts', () => api.listAccounts());
+  const accounts = useMemo(() => (accountsData ?? []).filter((a) => a.archivedAt === null), [accountsData]);
 
   // Curva del portafolio: se recarga al cambiar el rango y tras cada mutación/refresh.
   const loadHistory = useCallback(async () => {
@@ -269,6 +294,8 @@ export function InvestmentsPage() {
   // un precio que el usuario ya haya tipeado a mano.
   useEffect(() => {
     if (!opTarget) return;
+    // Editando una operación existente: no autocompletar (pisaría el precio real cargado).
+    if (opEditId) return;
     const todayStr = new Date().toISOString().slice(0, 10);
     if (opDate === todayStr) {
       setOpPriceLoading(false);
@@ -440,7 +467,8 @@ export function InvestmentsPage() {
 
   // --- Operaciones ---
 
-  function onOpenOperation(inv: Investment, type: InvestmentOperationType) {
+  function onOpenOperation(inv: Investment, type: TradeType) {
+    setOpEditId(null);
     setOpTarget(inv);
     setOpType(type);
     setOpQuantity('');
@@ -453,19 +481,98 @@ export function InvestmentsPage() {
     setError(null);
   }
 
+  function closeOpModal() {
+    setOpTarget(null);
+    setOpEditId(null);
+  }
+
   function onSubmitOperation(e: FormEvent) {
     e.preventDefault();
     if (!opTarget) return;
+    const target = opTarget;
+    const editId = opEditId;
     run(async () => {
-      await api.addInvestmentOperation(opTarget.id, {
+      const input = {
         type: opType,
         quantity: Number(opQuantity),
         unitPrice: Number(opPrice),
         date: opDate,
         note: opNote || null,
-      });
-      setOpTarget(null);
+      } as const;
+      const result = editId
+        ? await api.updateInvestmentOperation(target.id, editId, input)
+        : await api.addInvestmentOperation(target.id, input);
+      // Editando desde el historial: refresca el detalle abierto con la secuencia recalculada.
+      if (detail && detail.id === target.id) setDetail(result);
+      closeOpModal();
     });
+  }
+
+  // --- Renta (dividendo/cupón/amortización) ---
+
+  function onOpenRenta(inv: Investment) {
+    setRentaOpId(null);
+    setRentaTarget(inv);
+    setRentaAmount('');
+    setRentaDate(new Date().toISOString().slice(0, 10));
+    setRentaNote('');
+    setRentaCredit(false);
+    setRentaAccountId(accounts.find((a) => a.isDefault)?.id ?? accounts[0]?.id ?? '');
+    setError(null);
+  }
+
+  function closeRentaModal() {
+    setRentaTarget(null);
+    setRentaOpId(null);
+  }
+
+  function onSubmitRenta(e: FormEvent) {
+    e.preventDefault();
+    if (!rentaTarget) return;
+    const target = rentaTarget;
+    const editId = rentaOpId;
+    run(async () => {
+      const base = {
+        type: 'RENTA' as const,
+        amount: Number(rentaAmount),
+        date: rentaDate,
+        note: rentaNote || null,
+      };
+      // El "acreditar en cuenta" sólo aplica al alta (no hay vínculo persistido para editarlo).
+      const result = editId
+        ? await api.updateInvestmentOperation(target.id, editId, base)
+        : await api.addInvestmentOperation(target.id, {
+            ...base,
+            credit: rentaCredit,
+            accountId: rentaCredit ? rentaAccountId || null : undefined,
+          });
+      if (detail && detail.id === target.id) setDetail(result);
+      closeRentaModal();
+    });
+  }
+
+  /** Lápiz del historial: abre el formulario correcto (compra/venta o renta) precargado. */
+  function onEditOperation(op: InvestmentOperation) {
+    if (!detail) return;
+    setError(null);
+    if (op.type === 'RENTA') {
+      setRentaOpId(op.id);
+      setRentaTarget(detail);
+      setRentaAmount(String(op.unitPrice));
+      setRentaDate(op.date.slice(0, 10));
+      setRentaNote(op.note ?? '');
+      setRentaCredit(false);
+      return;
+    }
+    setOpEditId(op.id);
+    setOpTarget(detail);
+    setOpType(op.type);
+    setOpQuantity(String(op.quantity));
+    setOpPrice(String(op.unitPrice));
+    opPriceAutoRef.current = String(op.unitPrice);
+    setOpPriceHint(null);
+    setOpDate(op.date.slice(0, 10));
+    setOpNote(op.note ?? '');
   }
 
   async function onOpenDetail(inv: Investment) {
@@ -737,6 +844,14 @@ export function InvestmentsPage() {
             {inv.investedCost > 0 ? ` (${inv.pnlPercent >= 0 ? '+' : ''}${inv.pnlPercent}%)` : ''}
           </span>
         </div>
+        {(inv.incomeCollected ?? 0) > 0 && (
+          <div className="mf-asset-row">
+            <span className="muted">Renta cobrada</span>
+            <span className="mono" style={{ color: 'var(--pos)', fontWeight: 600 }}>
+              +{formatAsset(inv.incomeCollected ?? 0, inv.currency)}
+            </span>
+          </div>
+        )}
 
         <div className="mf-asset-actions">
           {!inv.archivedAt && (
@@ -751,6 +866,9 @@ export function InvestmentsPage() {
                 onClick={() => onOpenOperation(inv, 'VENTA')}
               >
                 Vender
+              </button>
+              <button type="button" className="ghost" onClick={() => onOpenRenta(inv)}>
+                {rentaLabel(inv.type)}
               </button>
             </>
           )}
@@ -1336,11 +1454,32 @@ export function InvestmentsPage() {
         )}
       </Modal>
 
-      {/* --- Modal compra/venta --- */}
+      {/* --- Modal detalle: histórico de precio + operaciones (antes que los de operación
+           para que el modal de edición, abierto desde el historial, quede por encima) --- */}
+      <Modal
+        open={detail !== null}
+        onClose={() => setDetail(null)}
+        title={detail ? `Historial · ${detail.name}` : ''}
+      >
+        {detail && (
+          <DetailBody
+            detail={detail}
+            onEditOperation={onEditOperation}
+            onDeleteOperation={onDeleteOperation}
+            busy={busy}
+          />
+        )}
+      </Modal>
+
+      {/* --- Modal compra/venta (alta y edición) --- */}
       <Modal
         open={opTarget !== null}
-        onClose={() => setOpTarget(null)}
-        title={opTarget ? `${opType === 'COMPRA' ? 'Comprar' : 'Vender'} · ${opTarget.name}` : ''}
+        onClose={closeOpModal}
+        title={
+          opTarget
+            ? `${opEditId ? 'Editar operación' : opType === 'COMPRA' ? 'Comprar' : 'Vender'} · ${opTarget.name}`
+            : ''
+        }
       >
         {opTarget && (
           <form onSubmit={onSubmitOperation} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -1348,7 +1487,7 @@ export function InvestmentsPage() {
             <div className="form-row">
               <label className="field" style={{ flex: 1 }}>
                 Operación
-                <select value={opType} onChange={(e) => setOpType(e.target.value as InvestmentOperationType)}>
+                <select value={opType} onChange={(e) => setOpType(e.target.value as TradeType)}>
                   <option value="COMPRA">Compra</option>
                   <option value="VENTA">Venta</option>
                 </select>
@@ -1403,29 +1542,97 @@ export function InvestmentsPage() {
               Nota (opcional)
               <input value={opNote} onChange={(e) => setOpNote(e.target.value)} maxLength={500} />
             </label>
-            <button disabled={busy}>{busy ? 'Guardando…' : 'Registrar operación'}</button>
+            <button disabled={busy}>
+              {busy ? 'Guardando…' : opEditId ? 'Guardar cambios' : 'Registrar operación'}
+            </button>
           </form>
         )}
       </Modal>
 
-      {/* --- Modal detalle: histórico de precio + operaciones --- */}
+      {/* --- Modal renta (dividendo/cupón/amortización, alta y edición) --- */}
       <Modal
-        open={detail !== null}
-        onClose={() => setDetail(null)}
-        title={detail ? `Historial · ${detail.name}` : ''}
+        open={rentaTarget !== null}
+        onClose={closeRentaModal}
+        title={
+          rentaTarget
+            ? `${rentaOpId ? 'Editar' : 'Registrar'} ${rentaLabel(rentaTarget.type).toLowerCase()} · ${rentaTarget.name}`
+            : ''
+        }
       >
-        {detail && <DetailBody detail={detail} onDeleteOperation={onDeleteOperation} busy={busy} />}
+        {rentaTarget && (
+          <form onSubmit={onSubmitRenta} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {error && <div className="error-banner">{error}</div>}
+            <div className="form-row">
+              <label className="field" style={{ flex: 1 }}>
+                Monto cobrado{rentaTarget.currency ? ` (${rentaTarget.currency})` : ''}
+                <input
+                  type="number"
+                  min="0.00000001"
+                  step="any"
+                  value={rentaAmount}
+                  onChange={(e) => setRentaAmount(e.target.value)}
+                  required
+                  autoFocus
+                />
+              </label>
+              <label className="field" style={{ flex: 1 }}>
+                Fecha
+                <input type="date" value={rentaDate} onChange={(e) => setRentaDate(e.target.value)} required />
+              </label>
+            </div>
+            <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+              El monto total cobrado, no por unidad. No cambia la tenencia ni el costo promedio; suma al resultado
+              total y a la TIR.
+            </p>
+            <label className="field">
+              Nota (opcional)
+              <input value={rentaNote} onChange={(e) => setRentaNote(e.target.value)} maxLength={500} />
+            </label>
+            {/* Acreditar en cuenta: sólo al alta (la edición no toca movimientos ya creados). */}
+            {!rentaOpId && (
+              <>
+                <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
+                  <input
+                    type="checkbox"
+                    checked={rentaCredit}
+                    disabled={accounts.length === 0}
+                    onChange={(e) => setRentaCredit(e.target.checked)}
+                  />
+                  Acreditar como ingreso en una cuenta
+                </label>
+                {rentaCredit && (
+                  <label className="field">
+                    Cuenta
+                    <select value={rentaAccountId} onChange={(e) => setRentaAccountId(e.target.value)}>
+                      {accounts.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+              </>
+            )}
+            <button disabled={busy}>
+              {busy ? 'Guardando…' : rentaOpId ? 'Guardar cambios' : 'Registrar'}
+            </button>
+          </form>
+        )}
       </Modal>
+
     </>
   );
 }
 
 function DetailBody({
   detail,
+  onEditOperation,
   onDeleteOperation,
   busy,
 }: {
   detail: InvestmentDetail;
+  onEditOperation: (op: InvestmentOperation) => void;
   onDeleteOperation: (operationId: string) => void;
   busy: boolean;
 }) {
@@ -1453,6 +1660,14 @@ function DetailBody({
           <span className="muted">TIR anualizada</span>
           <span className="mono" style={{ color: pnlColor(detail.tir), fontWeight: 600 }}>
             {formatTir(detail.tir)}
+          </span>
+        </div>
+      )}
+      {(detail.incomeCollected ?? 0) > 0 && (
+        <div className="mf-asset-row" style={{ marginTop: -4 }}>
+          <span className="muted">Renta cobrada</span>
+          <span className="mono" style={{ color: 'var(--pos)', fontWeight: 600 }}>
+            +{formatAsset(detail.incomeCollected ?? 0, detail.currency)}
           </span>
         </div>
       )}
@@ -1510,40 +1725,57 @@ function DetailBody({
         {detail.operations.length === 0 ? (
           <p className="muted">Sin operaciones registradas.</p>
         ) : (
-          detail.operations.map((op) => (
-            <div className="mf-list-row" key={op.id}>
-              <span
-                className="mf-delta-badge"
-                style={{
-                  background: op.type === 'COMPRA' ? 'var(--accent-weak)' : 'var(--neg-weak)',
-                  color: op.type === 'COMPRA' ? 'var(--pos)' : 'var(--neg)',
-                }}
-              >
-                {op.type === 'COMPRA' ? 'Compra' : 'Venta'}
-              </span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="mono" style={{ fontSize: 13 }}>
-                  {formatQty(op.quantity)} × {formatPrice(op.unitPrice, detail.currency)}
+          detail.operations.map((op) => {
+            const isRenta = op.type === 'RENTA';
+            const badgeLabel = isRenta ? rentaLabel(detail.type) : op.type === 'COMPRA' ? 'Compra' : 'Venta';
+            return (
+              <div className="mf-list-row" key={op.id}>
+                <span
+                  className="mf-delta-badge"
+                  style={{
+                    background: op.type === 'VENTA' ? 'var(--neg-weak)' : 'var(--accent-weak)',
+                    color: isRenta ? 'var(--warn)' : op.type === 'COMPRA' ? 'var(--pos)' : 'var(--neg)',
+                  }}
+                >
+                  {badgeLabel}
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="mono" style={{ fontSize: 13 }}>
+                    {isRenta
+                      ? 'Renta cobrada'
+                      : `${formatQty(op.quantity)} × ${formatPrice(op.unitPrice, detail.currency)}`}
+                  </div>
+                  <div className="muted" style={{ fontSize: 11.5 }}>
+                    {formatDate(op.date)}
+                    {op.note ? ` · ${op.note}` : ''}
+                  </div>
                 </div>
-                <div className="muted" style={{ fontSize: 11.5 }}>
-                  {formatDate(op.date)}
-                  {op.note ? ` · ${op.note}` : ''}
-                </div>
+                <span className="mono" style={{ fontWeight: 600, color: isRenta ? 'var(--pos)' : undefined }}>
+                  {isRenta
+                    ? `+${formatAsset(op.unitPrice, detail.currency)}`
+                    : formatAsset((op.quantity * op.unitPrice) / detail.priceFactor, detail.currency)}
+                </span>
+                <button
+                  type="button"
+                  className="mf-icon-btn"
+                  aria-label="Editar operación"
+                  disabled={busy}
+                  onClick={() => onEditOperation(op)}
+                >
+                  <IcoPencil size={14} />
+                </button>
+                <button
+                  type="button"
+                  className="mf-icon-btn"
+                  aria-label="Eliminar operación"
+                  disabled={busy}
+                  onClick={() => onDeleteOperation(op.id)}
+                >
+                  <IcoTrash size={14} />
+                </button>
               </div>
-              <span className="mono" style={{ fontWeight: 600 }}>
-                {formatAsset((op.quantity * op.unitPrice) / detail.priceFactor, detail.currency)}
-              </span>
-              <button
-                type="button"
-                className="mf-icon-btn"
-                aria-label="Eliminar operación"
-                disabled={busy}
-                onClick={() => onDeleteOperation(op.id)}
-              >
-                <IcoTrash size={14} />
-              </button>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>

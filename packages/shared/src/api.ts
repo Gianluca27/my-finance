@@ -3,6 +3,8 @@ import type {
   AcceptSuggestionResult,
   Account,
   AccountInput,
+  AccountReconcileInput,
+  AccountReconcileResult,
   AccountUpdateInput,
   AuthResponse,
   Budget,
@@ -152,6 +154,9 @@ export class ApiClient {
   deleteAccount(id: string) {
     return this.request<void>('DELETE', `/api/accounts/${id}`);
   }
+  reconcileAccount(id: string, input: AccountReconcileInput) {
+    return this.request<AccountReconcileResult>('POST', `/api/accounts/${id}/reconcile`, input);
+  }
 
   // --- Transferencias entre cuentas ---
   listTransfers() {
@@ -159,6 +164,9 @@ export class ApiClient {
   }
   createTransfer(input: TransferInput) {
     return this.request<Transfer>('POST', '/api/transfers', input);
+  }
+  updateTransfer(id: string, input: TransferInput) {
+    return this.request<Transfer>('PUT', `/api/transfers/${id}`, input);
   }
   deleteTransfer(id: string) {
     return this.request<void>('DELETE', `/api/transfers/${id}`);

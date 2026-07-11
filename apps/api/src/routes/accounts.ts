@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { computeReconcileAdjustment } from '../lib/accounts';
 import { serialize } from '../lib/serialize';
 import { requireAuth } from '../middleware/auth';
 import { asyncHandler, HttpError } from '../middleware/error';
@@ -21,7 +22,15 @@ const createSchema = z.object({
   isDefault: z.boolean().optional(),
 });
 
-const updateSchema = createSchema.partial();
+const updateSchema = createSchema.partial().extend({
+  /** true archiva (setea archivedAt), false desarchiva. */
+  archived: z.boolean().optional(),
+});
+
+const reconcileSchema = z.object({
+  actualBalance: z.number().min(-999_999_999).max(999_999_999),
+  date: z.coerce.date().optional(),
+});
 
 /** Calcula el balance de cada cuenta: inicial + ingresos - gastos + transferencias recibidas - enviadas. */
 async function balancesByAccount(userId: string, accounts: { id: string; initialBalance: { toNumber(): number } }[]) {
@@ -93,15 +102,68 @@ router.put(
     if (input.isDefault === false && existing.isDefault) {
       throw new HttpError(400, 'Designá otra cuenta como predeterminada en lugar de quitar esta.');
     }
+    // Misma regla que el DELETE: la cuenta por defecto no se archiva.
+    if (input.archived === true && existing.isDefault) {
+      throw new HttpError(400, 'No podés archivar la cuenta por defecto.');
+    }
+    // Una cuenta archivada (ya sea que lo estaba o pasa a estarlo en este mismo pedido) no puede
+    // convertirse en la predeterminada.
+    const staysArchived = input.archived !== undefined ? input.archived : existing.archivedAt !== null;
+    if (input.isDefault === true && staysArchived) {
+      throw new HttpError(400, 'Una cuenta archivada no puede ser la predeterminada. Desarchivala primero.');
+    }
+
+    const { archived, ...fields } = input;
+    const data: Record<string, unknown> = { ...fields };
+    if (archived !== undefined) {
+      data.archivedAt = archived ? (existing.archivedAt ?? new Date()) : null;
+    }
+
     const ops = [];
     if (input.isDefault === true && !existing.isDefault) {
       ops.push(prisma.account.updateMany({ where: { userId, isDefault: true }, data: { isDefault: false } }));
     }
-    ops.push(prisma.account.update({ where: { id: existing.id }, data: input }));
+    ops.push(prisma.account.update({ where: { id: existing.id }, data }));
     const results = await prisma.$transaction(ops);
     const account = results[results.length - 1] as Awaited<ReturnType<typeof prisma.account.update>>;
     const balances = await balancesByAccount(userId, [account]);
     res.json({ ...(serialize(account) as Record<string, unknown>), balance: balances.get(account.id) ?? 0 });
+  }),
+);
+
+/**
+ * Reconcilia el saldo calculado de la cuenta con el saldo real informado por el usuario: si
+ * difieren, crea una transacción de ajuste (sin categoría) para que el balance calculado vuelva
+ * a coincidir con la realidad, sin reescribir el historial existente.
+ */
+router.post(
+  '/:id/reconcile',
+  asyncHandler(async (req, res) => {
+    const input = reconcileSchema.parse(req.body);
+    const userId = req.auth!.userId;
+    const existing = await prisma.account.findFirst({ where: { id: req.params.id, userId } });
+    if (!existing) throw new HttpError(404, 'Cuenta no encontrada');
+
+    const balances = await balancesByAccount(userId, [existing]);
+    const calculated = balances.get(existing.id) ?? 0;
+    const adjustment = computeReconcileAdjustment(calculated, input.actualBalance);
+    if (!adjustment) {
+      res.json({ adjustment: 0, newBalance: calculated });
+      return;
+    }
+
+    await prisma.transaction.create({
+      data: {
+        type: adjustment.type,
+        amount: adjustment.amount,
+        date: input.date ?? new Date(),
+        note: 'Ajuste de saldo',
+        categoryId: null,
+        accountId: existing.id,
+        userId,
+      },
+    });
+    res.status(201).json({ adjustment: adjustment.adjustment, newBalance: adjustment.newBalance });
   }),
 );
 

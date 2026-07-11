@@ -428,7 +428,21 @@ export interface AccountInput {
   isDefault?: boolean;
 }
 
-export type AccountUpdateInput = Partial<AccountInput>;
+/** Edición; `archived` mapea a archivedAt (patrón Account/Investment). */
+export type AccountUpdateInput = Partial<AccountInput> & { archived?: boolean };
+
+export interface AccountReconcileInput {
+  /** Saldo real informado por el usuario. */
+  actualBalance: number;
+  /** Fecha de la transacción de ajuste. Default: hoy. */
+  date?: string;
+}
+
+export interface AccountReconcileResult {
+  /** actualBalance − balance calculado, con signo. 0 si no hizo falta ajustar. */
+  adjustment: number;
+  newBalance: number;
+}
 
 export interface TransferAccountRef {
   id: string;

@@ -1,19 +1,22 @@
 import cron from 'node-cron';
 import { config } from '../config';
 import { advanceDueDate, startOfTodayUTC } from '../lib/dates';
+import { debtReminderContent, getPaidAmount, isDebtReminderDue, remainingBalance } from '../lib/debts';
 import { prisma } from '../prisma';
 import { notifyUser } from '../services/notifications';
 
 /**
  * Job diario de recordatorios de pagos:
- * 1. Avanza los vencimientos ya pasados (si el usuario no registró el pago).
- * 2. Envía recordatorio cuando faltan <= reminderDaysBefore días para el vencimiento,
- *    una sola vez por vencimiento (lastRemindedFor).
+ * 1. Avanza los vencimientos ya pasados de recurrentes (si el usuario no registró el pago).
+ * 2. Envía recordatorio de recurrentes cuando faltan <= reminderDaysBefore días para el
+ *    vencimiento, una sola vez por vencimiento (lastRemindedFor).
+ * 3. Envía recordatorio de deudas por vencer (bloque propio, ver más abajo).
  */
-export async function runRemindersJob(): Promise<{ rolled: number; reminded: number }> {
+export async function runRemindersJob(): Promise<{ rolled: number; reminded: number; debtsReminded: number }> {
   const today = startOfTodayUTC();
   let rolled = 0;
   let reminded = 0;
+  let debtsReminded = 0;
 
   // 1. Vencimientos pasados → avanzar al próximo período
   const overdue = await prisma.recurringExpense.findMany({
@@ -57,14 +60,43 @@ export async function runRemindersJob(): Promise<{ rolled: number; reminded: num
     reminded++;
   }
 
-  return { rolled, reminded };
+  // 3. Recordatorios de deudas por vencer. Bloque aislado (mismo patrón que runPricesJob): si
+  //    falla, no debe perderse lo ya procesado arriba para los recurrentes.
+  try {
+    const debts = await prisma.debt.findMany({
+      where: { settledAt: null, dueDate: { not: null } },
+    });
+    for (const debt of debts) {
+      if (!debt.dueDate) continue; // ya filtrado en la query; angosta el tipo para TS
+      if (!isDebtReminderDue(debt.dueDate, debt.lastRemindedFor, today)) continue;
+
+      const paid = await getPaidAmount(debt.id);
+      const balance = remainingBalance(debt.totalAmount.toNumber(), paid);
+      const { title, body } = debtReminderContent({
+        direction: debt.direction,
+        counterparty: debt.counterparty,
+        dueDate: debt.dueDate,
+        remainingBalance: balance,
+      });
+
+      await notifyUser(debt.userId, { title, body, emailHtml: `<h2>${title}</h2><p>${body}</p>` });
+      await prisma.debt.update({ where: { id: debt.id }, data: { lastRemindedFor: debt.dueDate } });
+      debtsReminded++;
+    }
+  } catch (err) {
+    console.error('[reminders] Error en recordatorios de deudas:', err);
+  }
+
+  return { rolled, reminded, debtsReminded };
 }
 
 export function scheduleRemindersJob(): void {
   cron.schedule(config.remindersCron, async () => {
     try {
       const result = await runRemindersJob();
-      console.log(`[reminders] rolled=${result.rolled} reminded=${result.reminded}`);
+      console.log(
+        `[reminders] rolled=${result.rolled} reminded=${result.reminded} debtsReminded=${result.debtsReminded}`,
+      );
     } catch (err) {
       console.error('[reminders] Error en job de recordatorios:', err);
     }

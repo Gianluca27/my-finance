@@ -117,6 +117,11 @@ export interface Debt {
   createdAt: string;
 }
 
+export interface DebtDetail extends Debt {
+  /** Pagos vinculados a esta deuda (transacciones con este debtId), orden desc por fecha. */
+  payments: Transaction[];
+}
+
 export type InvestmentType = 'ACCION' | 'ETF' | 'CEDEAR' | 'CRIPTO' | 'FCI' | 'PLAZO_FIJO' | 'BONO' | 'OTRO';
 export type InvestmentOperationType = 'COMPRA' | 'VENTA';
 

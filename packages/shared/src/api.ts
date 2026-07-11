@@ -16,6 +16,7 @@ import type {
   ChangePasswordInput,
   DashboardData,
   Debt,
+  DebtDetail,
   DigestFrequency,
   DebtInput,
   DebtUpdateInput,
@@ -268,6 +269,10 @@ export class ApiClient {
   listDebts() {
     return this.request<Debt[]>('GET', '/api/debts');
   }
+  /** Detalle de una deuda con el historial de pagos vinculados. */
+  getDebt(id: string) {
+    return this.request<DebtDetail>('GET', `/api/debts/${id}`);
+  }
   createDebt(input: DebtInput) {
     return this.request<Debt>('POST', '/api/debts', input);
   }
@@ -277,10 +282,13 @@ export class ApiClient {
   deleteDebt(id: string) {
     return this.request<void>('DELETE', `/api/debts/${id}`);
   }
-  /** Registra un pago parcial: crea la Transaction (EXPENSE o INCOME según dirección) vinculada. */
-  payDebt(id: string, amount: number) {
+  /** Registra un pago parcial: crea la Transaction (EXPENSE o INCOME según dirección) vinculada.
+   * `accountId` y `date` son opcionales: default cuenta por defecto del usuario y fecha actual. */
+  payDebt(id: string, amount: number, accountId?: string | null, date?: string) {
     return this.request<{ transaction: Transaction; debt: Debt }>('POST', `/api/debts/${id}/payments`, {
       amount,
+      accountId,
+      date,
     });
   }
 

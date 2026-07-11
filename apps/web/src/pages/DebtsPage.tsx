@@ -1,8 +1,8 @@
-import type { Category, Debt, DebtDirection } from '@myfinance/shared';
+import type { Account, Category, Debt, DebtDetail, DebtDirection } from '@myfinance/shared';
 import { useState, type FormEvent } from 'react';
-import { api, formatMoney } from '../api';
+import { api, formatDate, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
-import { IcoPencil, IcoPlus, IcoTrash } from '../components/icons';
+import { IcoPencil, IcoPlus, IcoTrash, IcoTrend } from '../components/icons';
 import { Modal } from '../components/Modal';
 
 const DIRECTION_LABEL: Record<DebtDirection, string> = {
@@ -61,11 +61,21 @@ export function DebtsPage() {
 
   const [payingId, setPayingId] = useState<string | null>(null);
   const [payAmount, setPayAmount] = useState('');
+  const [payAccountId, setPayAccountId] = useState('');
+  const [payDate, setPayDate] = useState('');
   const [payBusy, setPayBusy] = useState(false);
+
+  // `historyFor` abre el modal ya (con el nombre disponible) mientras `historyDetail` carga el
+  // historial de pagos en sí — mismo split que RecurringPage (historyItem/historyPayments).
+  const [historyFor, setHistoryFor] = useState<Debt | null>(null);
+  const [historyDetail, setHistoryDetail] = useState<DebtDetail | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const { data: debts, error: loadError, refresh } = useCached<Debt[]>('debts', () => api.listDebts());
   const { data: categoriesData } = useCached<Category[]>('categories', () => api.listCategories());
   const categories = categoriesData ?? [];
+  const { data: accountsData } = useCached<Account[]>('accounts', () => api.listAccounts());
+  const accounts = accountsData ?? [];
 
   // El pago genera EXPENSE (I_OWE) o INCOME (OWED_TO_ME): la categoría elegible sigue esa dirección.
   const formCategories = categories.filter((c) => c.type === (direction === 'I_OWE' ? 'EXPENSE' : 'INCOME'));
@@ -142,6 +152,8 @@ export function DebtsPage() {
   function onStartPay(debt: Debt) {
     setPayingId(debt.id);
     setPayAmount(String(debt.remainingBalance));
+    setPayAccountId(accounts.find((a) => a.isDefault)?.id ?? accounts[0]?.id ?? '');
+    setPayDate(todayISODate());
     setError(null);
   }
 
@@ -153,7 +165,7 @@ export function DebtsPage() {
     setError(null);
     setPayBusy(true);
     try {
-      await api.payDebt(debt.id, Number(payAmount));
+      await api.payDebt(debt.id, Number(payAmount), payAccountId || undefined, payDate || undefined);
       setPayingId(null);
       invalidateAfterMutation();
     } catch (err) {
@@ -161,6 +173,25 @@ export function DebtsPage() {
     } finally {
       setPayBusy(false);
     }
+  }
+
+  async function onOpenHistory(debt: Debt) {
+    setHistoryFor(debt);
+    setHistoryDetail(null);
+    setHistoryLoading(true);
+    setError(null);
+    try {
+      setHistoryDetail(await api.getDebt(debt.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error inesperado');
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  function onCloseHistory() {
+    setHistoryFor(null);
+    setHistoryDetail(null);
   }
 
   async function onDelete(id: string) {
@@ -211,26 +242,36 @@ export function DebtsPage() {
               <div className="mf-debt-total">de {formatMoney(debt.totalAmount)}</div>
             </div>
           )}
-          {!debt.settledAt && (
-            <div className="mf-debt-actions">
-              <button
-                type="button"
-                className="mf-icon-btn"
-                aria-label="Editar deuda"
-                onClick={() => onStartEdit(debt)}
-              >
-                <IcoPencil size={14} />
-              </button>
-              <button
-                type="button"
-                className="mf-icon-btn"
-                aria-label="Eliminar deuda"
-                onClick={() => onDelete(debt.id)}
-              >
-                <IcoTrash size={14} />
-              </button>
-            </div>
-          )}
+          <div className="mf-debt-actions">
+            <button
+              type="button"
+              className="mf-icon-btn"
+              aria-label="Ver historial de pagos"
+              onClick={() => onOpenHistory(debt)}
+            >
+              <IcoTrend size={14} />
+            </button>
+            {!debt.settledAt && (
+              <>
+                <button
+                  type="button"
+                  className="mf-icon-btn"
+                  aria-label="Editar deuda"
+                  onClick={() => onStartEdit(debt)}
+                >
+                  <IcoPencil size={14} />
+                </button>
+                <button
+                  type="button"
+                  className="mf-icon-btn"
+                  aria-label="Eliminar deuda"
+                  onClick={() => onDelete(debt.id)}
+                >
+                  <IcoTrash size={14} />
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {!debt.settledAt && badge && <span className={`mf-due-badge ${badge.modifier}`}>{badge.text}</span>}
@@ -259,6 +300,23 @@ export function DebtsPage() {
                   onChange={(e) => setPayAmount(e.target.value)}
                   autoFocus
                 />
+              </label>
+              {accounts.length > 0 && (
+                <label className="field">
+                  Cuenta
+                  <select value={payAccountId} onChange={(e) => setPayAccountId(e.target.value)}>
+                    {accounts.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.icon ? `${a.icon} ` : ''}
+                        {a.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <label className="field">
+                Fecha
+                <input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} />
               </label>
               <button disabled={payBusy} onClick={() => onConfirmPay(debt)}>
                 {payBusy ? 'Guardando…' : 'Confirmar'}
@@ -421,6 +479,39 @@ export function DebtsPage() {
             {busy ? 'Guardando…' : editingId ? 'Guardar cambios' : 'Agregar deuda'}
           </button>
         </form>
+      </Modal>
+
+      <Modal
+        open={historyFor !== null}
+        onClose={onCloseHistory}
+        title={historyFor ? `Historial de pagos: ${historyFor.counterparty}` : ''}
+      >
+        {historyFor &&
+          (historyLoading || !historyDetail ? (
+            <p className="muted">Cargando…</p>
+          ) : error ? (
+            <div className="error-banner">{error}</div>
+          ) : historyDetail.payments.length === 0 ? (
+            <p className="muted">Todavía no registraste pagos para esta deuda.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div className="mf-label" style={{ marginBottom: 6 }}>
+                Pagaste {formatMoney(historyDetail.totalAmount - historyDetail.remainingBalance)} de{' '}
+                {formatMoney(historyDetail.totalAmount)} en {historyDetail.payments.length} pago
+                {historyDetail.payments.length === 1 ? '' : 's'}.
+              </div>
+              {historyDetail.payments.map((p) => (
+                <div className="mf-list-row" key={p.id}>
+                  <span className="muted" style={{ flex: 1 }}>
+                    {formatDate(p.date)}
+                  </span>
+                  <span className="mono" style={{ fontWeight: 600 }}>
+                    {formatMoney(p.amount)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ))}
       </Modal>
     </>
   );

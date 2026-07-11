@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { getDefaultAccountId } from '../lib/accounts';
+import { resolveAccountId } from '../lib/accounts';
+import { getPaidAmount, remainingBalance } from '../lib/debts';
 import { serialize } from '../lib/serialize';
 import { requireAuth } from '../middleware/auth';
 import { asyncHandler, HttpError } from '../middleware/error';
@@ -9,10 +10,6 @@ import { checkBudgetAlert } from '../services/budgetAlerts';
 
 const router = Router();
 router.use(requireAuth);
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
-}
 
 const createSchema = z.object({
   direction: z.enum(['I_OWE', 'OWED_TO_ME']),
@@ -28,6 +25,10 @@ const updateSchema = createSchema.omit({ direction: true }).partial();
 
 const paymentSchema = z.object({
   amount: z.number().positive().max(999_999_999),
+  /** Cuenta donde se registra el movimiento. Default: cuenta por defecto del usuario. */
+  accountId: z.string().nullable().optional(),
+  /** Fecha del movimiento (ISO o YYYY-MM-DD). Default: ahora. */
+  date: z.coerce.date().optional(),
 });
 
 async function assertCategoryOwned(userId: string, categoryId: string | null | undefined) {
@@ -36,13 +37,11 @@ async function assertCategoryOwned(userId: string, categoryId: string | null | u
   if (!category) throw new HttpError(400, 'Categoría inválida');
 }
 
-async function getPaidAmount(debtId: string): Promise<number> {
-  const result = await prisma.transaction.aggregate({ where: { debtId }, _sum: { amount: true } });
-  return result._sum.amount?.toNumber() ?? 0;
-}
-
 function withRemainingBalance(debt: { totalAmount: { toNumber(): number } }, paid: number) {
-  return { ...(serialize(debt) as Record<string, unknown>), remainingBalance: Math.max(0, round2(debt.totalAmount.toNumber() - paid)) };
+  return {
+    ...(serialize(debt) as Record<string, unknown>),
+    remainingBalance: remainingBalance(debt.totalAmount.toNumber(), paid),
+  };
 }
 
 router.get(
@@ -65,6 +64,29 @@ router.get(
         .map((p) => [p.debtId, p._sum.amount?.toNumber() ?? 0]),
     );
     res.json(debts.map((debt) => withRemainingBalance(debt, paidMap.get(debt.id) ?? 0)));
+  }),
+);
+
+/** Detalle de una deuda con el historial de pagos (transacciones con este debtId, orden desc). */
+router.get(
+  '/:id',
+  asyncHandler(async (req, res) => {
+    const existing = await prisma.debt.findFirst({
+      where: { id: req.params.id, userId: req.auth!.userId },
+      include: { category: true },
+    });
+    if (!existing) throw new HttpError(404, 'Deuda no encontrada');
+
+    const payments = await prisma.transaction.findMany({
+      where: { debtId: existing.id, userId: req.auth!.userId },
+      include: { category: true },
+      orderBy: { date: 'desc' },
+    });
+    const paid = payments.reduce((sum, p) => sum + p.amount.toNumber(), 0);
+    res.json({
+      ...withRemainingBalance(existing, paid),
+      payments: serialize(payments),
+    });
   }),
 );
 
@@ -109,29 +131,33 @@ router.delete(
   }),
 );
 
-/** Registra un pago parcial: crea la Transaction vinculada y salda la deuda si el saldo llega a 0. */
+/**
+ * Registra un pago parcial: crea la Transaction vinculada y salda la deuda si el saldo llega a 0.
+ * `accountId` y `date` son opcionales: default cuenta por defecto del usuario y fecha actual
+ * (mismo patrón que POST /api/recurring/:id/pay).
+ */
 router.post(
   '/:id/payments',
   asyncHandler(async (req, res) => {
-    const { amount } = paymentSchema.parse(req.body);
+    const input = paymentSchema.parse(req.body);
     const existing = await prisma.debt.findFirst({ where: { id: req.params.id, userId: req.auth!.userId } });
     if (!existing) throw new HttpError(404, 'Deuda no encontrada');
     if (existing.settledAt) throw new HttpError(400, 'La deuda ya está saldada');
 
     const paidSoFar = await getPaidAmount(existing.id);
-    const remainingBalance = round2(existing.totalAmount.toNumber() - paidSoFar);
-    if (amount > remainingBalance) throw new HttpError(400, 'El monto supera el saldo restante');
+    const balance = remainingBalance(existing.totalAmount.toNumber(), paidSoFar);
+    if (input.amount > balance) throw new HttpError(400, 'El monto supera el saldo restante');
 
     const type = existing.direction === 'I_OWE' ? 'EXPENSE' : 'INCOME';
-    const newRemaining = round2(remainingBalance - amount);
-    const accountId = await getDefaultAccountId(req.auth!.userId);
+    const newRemaining = remainingBalance(existing.totalAmount.toNumber(), paidSoFar + input.amount);
+    const accountId = await resolveAccountId(req.auth!.userId, input.accountId);
 
     const [transaction, debt] = await prisma.$transaction([
       prisma.transaction.create({
         data: {
           type,
-          amount,
-          date: new Date(),
+          amount: input.amount,
+          date: input.date ?? new Date(),
           note: `Pago de deuda: ${existing.counterparty}`,
           categoryId: existing.categoryId,
           accountId,
@@ -155,7 +181,7 @@ router.post(
 
     res.status(201).json({
       transaction: serialize(transaction),
-      debt: withRemainingBalance(debt, Math.max(0, paidSoFar + amount)),
+      debt: withRemainingBalance(debt, Math.max(0, paidSoFar + input.amount)),
     });
   }),
 );

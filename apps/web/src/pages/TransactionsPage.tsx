@@ -45,24 +45,119 @@ const TYPE_TABS: { value: '' | TransactionType; label: string }[] = [
   { value: 'EXPENSE', label: 'Gastos' },
 ];
 
+/** Hoy en UTC a medianoche: mismo criterio que `currentMonthKey()` (lib/months.ts) para no
+ *  desalinear los rangos rápidos con el "mes actual" del servidor cerca de la medianoche. */
+function todayUTC(): Date {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+}
+
+function toDateParam(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function monthRangeUTC(year: number, monthIndex: number): { from: string; to: string } {
+  return {
+    from: toDateParam(new Date(Date.UTC(year, monthIndex, 1))),
+    to: toDateParam(new Date(Date.UTC(year, monthIndex + 1, 0))),
+  };
+}
+
+type DateRange = { from: string; to: string } | null;
+
+const DATE_CHIPS: { key: string; label: string; range: () => DateRange }[] = [
+  {
+    key: 'month',
+    label: 'Este mes',
+    range: () => {
+      const t = todayUTC();
+      return monthRangeUTC(t.getUTCFullYear(), t.getUTCMonth());
+    },
+  },
+  {
+    key: 'lastMonth',
+    label: 'Mes pasado',
+    range: () => {
+      const t = todayUTC();
+      return monthRangeUTC(t.getUTCFullYear(), t.getUTCMonth() - 1);
+    },
+  },
+  {
+    key: 'last30',
+    label: 'Últimos 30 días',
+    range: () => {
+      const to = todayUTC();
+      const from = new Date(to);
+      from.setUTCDate(from.getUTCDate() - 29);
+      return { from: toDateParam(from), to: toDateParam(to) };
+    },
+  },
+  { key: 'all', label: 'Todo', range: () => null },
+];
+
 export function TransactionsPage() {
   const [error, setError] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
-  const [filterType, setFilterType] = useState<'' | TransactionType>('');
-  const [filterCategory, setFilterCategory] = useState('');
-  const [filterAccount, setFilterAccount] = useState('');
-  const [searchParams] = useSearchParams();
-  const initialQuery = searchParams.get('q') ?? '';
-  const [searchInput, setSearchInput] = useState(initialQuery);
-  const [search, setSearch] = useState(initialQuery);
+  const [searchParams, setSearchParams] = useSearchParams();
 
+  // Único filtro con estado local propio: la caja de búsqueda necesita un buffer
+  // separado del valor comprometido en la URL para poder debouncear sin reescribirla
+  // en cada tecla. El resto de los filtros se lee directo de la URL en cada render:
+  // no hay estado duplicado que se pueda desincronizar.
+  const [searchInput, setSearchInput] = useState(() => searchParams.get('q') ?? '');
+  const [search, setSearch] = useState(() => searchParams.get('q') ?? '');
+
+  const rawType = searchParams.get('type');
+  const filterType: '' | TransactionType = rawType === 'INCOME' || rawType === 'EXPENSE' ? rawType : '';
+  const filterCategory = searchParams.get('categoryId') ?? '';
+  const filterAccount = searchParams.get('accountId') ?? '';
+  const from = searchParams.get('from') ?? '';
+  const to = searchParams.get('to') ?? '';
+  const rawPage = Number(searchParams.get('page'));
+  const page = Number.isInteger(rawPage) && rawPage > 0 ? rawPage : 1;
+  const activeDateChip = DATE_CHIPS.find((c) => {
+    const r = c.range();
+    return r ? r.from === from && r.to === to : from === '' && to === '';
+  })?.key;
+
+  /**
+   * Actualiza filtros en la URL — única fuente de verdad. Un valor '' / undefined borra
+   * esa clave del query string. `replace: true` evita ensuciar el historial (se usa solo
+   * al comprometer la búsqueda debounceada); el resto de los filtros pushea una entrada
+   * nueva para que el botón "atrás" del navegador deshaga el último cambio.
+   */
+  function setFilter(patch: Record<string, string | undefined>, options?: { replace?: boolean }) {
+    const next = new URLSearchParams(searchParams);
+    for (const [key, value] of Object.entries(patch)) {
+      if (value) next.set(key, value);
+      else next.delete(key);
+    }
+    // Evita pushear una entrada de historial idéntica (ej: repetir clic en el chip ya activo).
+    if (next.toString() === searchParams.toString()) return;
+    setSearchParams(next, { replace: options?.replace ?? false });
+  }
+
+  // Debounce de la búsqueda: recién comprometemos a la URL cuando el usuario deja de tipear.
   useEffect(() => {
     const handle = setTimeout(() => {
-      setSearch(searchInput.trim());
-      setPage(1);
+      const trimmed = searchInput.trim();
+      setSearch(trimmed);
+      setFilter({ q: trimmed || undefined, page: undefined }, { replace: true });
     }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput]);
+
+  // Si la URL cambia con la página ya montada (ej: la búsqueda de la topbar navegando a
+  // /transacciones?q=... estando ya en esta ruta) resincroniza el buffer de búsqueda. El
+  // guard evita pisar texto recién tipeado y todavía no comprometido cuando el cambio de
+  // URL viene de otro filtro (categoría, cuenta, fecha...) y `q` en realidad no cambió.
+  useEffect(() => {
+    const q = searchParams.get('q') ?? '';
+    if (q === search) return;
+    setSearchInput(q);
+    setSearch(q);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   // Recibos adjuntos
   const fileRef = useRef<HTMLInputElement>(null);
@@ -74,7 +169,7 @@ export function TransactionsPage() {
   // Edición vía modal (reutiliza el de "Nuevo movimiento")
   const [editing, setEditing] = useState<Transaction | null>(null);
 
-  const listKey = `transactions:${JSON.stringify([page, filterType, filterCategory, filterAccount, search])}`;
+  const listKey = `transactions:${JSON.stringify([page, filterType, filterCategory, filterAccount, from, to, search])}`;
   const { data, error: loadError, refresh } = useCached<Paginated<Transaction>>(listKey, () =>
     api.listTransactions({
       page,
@@ -82,6 +177,8 @@ export function TransactionsPage() {
       type: filterType || undefined,
       categoryId: filterCategory || undefined,
       accountId: filterAccount || undefined,
+      from: from || undefined,
+      to: to || undefined,
       search: search || undefined,
     }),
   );
@@ -239,10 +336,7 @@ export function TransactionsPage() {
                 key={t.value || 'all'}
                 type="button"
                 className={filterType === t.value ? 'on neutral' : ''}
-                onClick={() => {
-                  setFilterType(t.value);
-                  setPage(1);
-                }}
+                onClick={() => setFilter({ type: t.value || undefined, page: undefined })}
               >
                 {t.label}
               </button>
@@ -251,10 +345,7 @@ export function TransactionsPage() {
           <select
             className="mf-select"
             value={filterCategory}
-            onChange={(e) => {
-              setFilterCategory(e.target.value);
-              setPage(1);
-            }}
+            onChange={(e) => setFilter({ categoryId: e.target.value || undefined, page: undefined })}
           >
             <option value="">Todas las categorías</option>
             {categories.map((c) => (
@@ -267,10 +358,7 @@ export function TransactionsPage() {
             <select
               className="mf-select"
               value={filterAccount}
-              onChange={(e) => {
-                setFilterAccount(e.target.value);
-                setPage(1);
-              }}
+              onChange={(e) => setFilter({ accountId: e.target.value || undefined, page: undefined })}
             >
               <option value="">Todas las cuentas</option>
               {accounts.map((a) => (
@@ -289,6 +377,43 @@ export function TransactionsPage() {
             />
           </label>
           <div className="mf-tx-count">{data ? `${data.total} movimientos` : ''}</div>
+        </div>
+
+        <div className="mf-tx-toolbar">
+          <div className="mf-seg mf-tx-typeseg">
+            {DATE_CHIPS.map((c) => (
+              <button
+                key={c.key}
+                type="button"
+                className={activeDateChip === c.key ? 'on neutral' : ''}
+                onClick={() => {
+                  const r = c.range();
+                  setFilter({ from: r?.from, to: r?.to, page: undefined });
+                }}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+          <div className="mf-tx-daterange">
+            <input
+              type="date"
+              value={from}
+              max={to || undefined}
+              aria-label="Desde"
+              title="Desde"
+              onChange={(e) => setFilter({ from: e.target.value || undefined, page: undefined })}
+            />
+            <span className="muted">–</span>
+            <input
+              type="date"
+              value={to}
+              min={from || undefined}
+              aria-label="Hasta"
+              title="Hasta"
+              onChange={(e) => setFilter({ to: e.target.value || undefined, page: undefined })}
+            />
+          </div>
         </div>
 
         {!data ? (
@@ -389,7 +514,7 @@ export function TransactionsPage() {
               className="mf-pagebtn"
               disabled={page <= 1}
               aria-label="Página anterior"
-              onClick={() => setPage(page - 1)}
+              onClick={() => setFilter({ page: page - 1 > 1 ? String(page - 1) : undefined })}
             >
               ←
             </button>
@@ -398,7 +523,7 @@ export function TransactionsPage() {
               className="mf-pagebtn"
               disabled={page >= totalPages}
               aria-label="Página siguiente"
-              onClick={() => setPage(page + 1)}
+              onClick={() => setFilter({ page: String(page + 1) })}
             >
               →
             </button>

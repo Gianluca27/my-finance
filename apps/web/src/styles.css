@@ -2383,6 +2383,18 @@ select option {
   color: var(--text-4);
 }
 
+/* Par de inputs date (desde/hasta) del filtro de fechas */
+.mf-tx-daterange {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mf-tx-daterange input {
+  padding: 6px 10px;
+  font-size: 12.5px;
+}
+
 .mf-tx-table {
   width: 100%;
   min-width: 640px;

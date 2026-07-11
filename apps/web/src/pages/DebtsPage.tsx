@@ -487,11 +487,13 @@ export function DebtsPage() {
         title={historyFor ? `Historial de pagos: ${historyFor.counterparty}` : ''}
       >
         {historyFor &&
-          (historyLoading || !historyDetail ? (
+          // El error va antes de chequear `historyDetail`: si la carga falla, detail queda null y
+          // el "Cargando…" sería permanente (el banner de página queda tapado por el backdrop).
+          (historyLoading ? (
             <p className="muted">Cargando…</p>
           ) : error ? (
             <div className="error-banner">{error}</div>
-          ) : historyDetail.payments.length === 0 ? (
+          ) : !historyDetail ? null : historyDetail.payments.length === 0 ? (
             <p className="muted">Todavía no registraste pagos para esta deuda.</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -502,10 +504,24 @@ export function DebtsPage() {
               </div>
               {historyDetail.payments.map((p) => (
                 <div className="mf-list-row" key={p.id}>
-                  <span className="muted" style={{ flex: 1 }}>
+                  <span className="muted" style={{ flexShrink: 0 }}>
                     {formatDate(p.date)}
                   </span>
-                  <span className="mono" style={{ fontWeight: 600 }}>
+                  {p.note && (
+                    <span
+                      className="muted"
+                      style={{
+                        flex: 1,
+                        fontSize: 13,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {p.note}
+                    </span>
+                  )}
+                  <span className="mono" style={{ fontWeight: 600, marginLeft: 'auto' }}>
                     {formatMoney(p.amount)}
                   </span>
                 </div>

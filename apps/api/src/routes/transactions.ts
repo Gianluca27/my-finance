@@ -159,8 +159,13 @@ router.post(
 
 /**
  * Acción en lote sobre movimientos propios (máx. 100 ids). Todo o nada: si algún id no
- * pertenece al usuario (o no existe), 404 sin ejecutar ningún cambio. `setCategory` además
+ * pertenece al usuario (o no existe), 404 sin dejar ningún cambio. `setCategory` además
  * exige que el tipo de la categoría coincida con el de CADA transacción seleccionada.
+ *
+ * La garantía es escribir-y-verificar dentro de una transacción interactiva: el
+ * deleteMany/updateMany corre primero y, si su conteo no coincide con los ids pedidos
+ * (id ajeno, inexistente, o modificado/borrado en forma concurrente), el HttpError hace
+ * rollback y el lote entero queda sin efecto. Sin ventana entre chequeo y escritura.
  */
 router.post(
   '/bulk',
@@ -168,35 +173,40 @@ router.post(
     const input = bulkSchema.parse(req.body);
     const userId = req.auth!.userId;
     const ids = [...new Set(input.ids)];
-
-    const ownedCount = await prisma.transaction.count({ where: { id: { in: ids }, userId } });
-    if (ownedCount !== ids.length) {
-      throw new HttpError(404, 'Alguno de los movimientos seleccionados no existe o no te pertenece');
-    }
+    const notFoundMsg = 'Alguno de los movimientos seleccionados no existe o no te pertenece';
 
     if (input.action === 'delete') {
-      const result = await prisma.transaction.deleteMany({ where: { id: { in: ids }, userId } });
-      return res.json({ affected: result.count });
+      const affected = await prisma.$transaction(async (tx) => {
+        const result = await tx.transaction.deleteMany({ where: { id: { in: ids }, userId } });
+        if (result.count !== ids.length) throw new HttpError(404, notFoundMsg);
+        return result.count;
+      });
+      return res.json({ affected });
     }
 
     // setCategory: la categoría debe existir y su tipo debe coincidir con el de cada movimiento.
     const category = await assertCategoryOwned(userId, input.categoryId);
     if (!category) throw new HttpError(400, 'Categoría inválida');
-    const mismatched = await prisma.transaction.count({
-      where: { id: { in: ids }, userId, type: { not: category.type } },
-    });
-    if (mismatched > 0) {
+    const affected = await prisma.$transaction(async (tx) => {
+      // El where con `type` hace que el update solo toque filas propias del tipo correcto;
+      // un conteo menor significa id faltante/ajeno o mezcla de tipos.
+      const result = await tx.transaction.updateMany({
+        where: { id: { in: ids }, userId, type: category.type },
+        data: { categoryId: category.id },
+      });
+      if (result.count === ids.length) return result.count;
+      // Diagnóstico solo para elegir el error (404 vs 400 con detalle); el throw deshace
+      // el update parcial vía rollback.
+      const owned = await tx.transaction.count({ where: { id: { in: ids }, userId } });
+      if (owned !== ids.length) throw new HttpError(404, notFoundMsg);
+      const mismatched = ids.length - result.count;
       const tipo = category.type === 'INCOME' ? 'ingreso' : 'gasto';
       throw new HttpError(
         400,
         `La categoría es de ${tipo} pero ${mismatched} de los ${ids.length} movimientos seleccionados son de otro tipo`,
       );
-    }
-    const result = await prisma.transaction.updateMany({
-      where: { id: { in: ids }, userId },
-      data: { categoryId: category.id },
     });
-    res.json({ affected: result.count });
+    res.json({ affected });
   }),
 );
 

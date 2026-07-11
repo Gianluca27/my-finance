@@ -33,6 +33,25 @@ describe('computeRuleMatches', () => {
     ]);
   });
 
+  it('no mezcla en byRule dos reglas con el mismo keyword pero categorías distintas', () => {
+    // Mismo keyword para una regla de ingreso y otra de gasto: cada una cuenta por separado.
+    const rules: LoadedRule[] = [
+      { keyword: 'alquiler', categoryId: 'cat-ingreso-alquiler', type: 'INCOME' },
+      { keyword: 'alquiler', categoryId: 'cat-vivienda', type: 'EXPENSE' },
+    ];
+    const txs = [
+      tx({ id: '1', note: 'Alquiler depto Córdoba', type: 'INCOME' }),
+      tx({ id: '2', note: 'Pago alquiler', type: 'EXPENSE' }),
+      tx({ id: '3', note: 'Alquiler cochera', type: 'EXPENSE' }),
+    ];
+    const result = computeRuleMatches(rules, txs);
+    expect(result.total).toBe(3);
+    expect(result.byRule).toEqual([
+      { keyword: 'alquiler', count: 1 },
+      { keyword: 'alquiler', count: 2 },
+    ]);
+  });
+
   it('no matchea si el tipo de la regla no coincide con el de la transacción', () => {
     // "sueldo" es una regla de INCOME; una transacción EXPENSE con esa nota no debe matchear.
     const txs = [tx({ id: '1', note: 'Adelanto de sueldo', type: 'EXPENSE' })];

@@ -343,8 +343,9 @@ export function CategoriesPage() {
               </p>
               {applyResult.byRule.length > 0 && (
                 <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: 'var(--text-3)' }}>
-                  {applyResult.byRule.map((r) => (
-                    <li key={r.keyword}>
+                  {/* El keyword puede repetirse (misma palabra en reglas de ingreso y gasto): clave por índice. */}
+                  {applyResult.byRule.map((r, i) => (
+                    <li key={`${r.keyword}-${i}`}>
                       “{r.keyword}”: {r.count}
                     </li>
                   ))}
@@ -370,8 +371,8 @@ export function CategoriesPage() {
                 {applyPreview.total === 1 ? '' : 's'}.
               </p>
               <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: 'var(--text-3)' }}>
-                {applyPreview.byRule.map((r) => (
-                  <li key={r.keyword}>
+                {applyPreview.byRule.map((r, i) => (
+                  <li key={`${r.keyword}-${i}`}>
                     “{r.keyword}”: {r.count}
                   </li>
                 ))}

@@ -599,7 +599,7 @@ export function TransactionsPage() {
                   <td>
                     <input
                       type="checkbox"
-                      aria-label="Seleccionar movimiento"
+                      aria-label={`Seleccionar ${tx.note || tx.category?.name || 'movimiento sin nota'} del ${formatRowDate(tx.date)} por ${formatMoney(tx.amount)}`}
                       checked={selected.has(tx.id)}
                       onChange={() => toggleOne(tx.id)}
                     />

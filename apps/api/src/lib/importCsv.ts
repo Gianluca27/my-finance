@@ -143,7 +143,10 @@ export function parseImportCsv(
     }
     const note = notaStr ? notaStr.slice(0, 500) : null;
 
-    const categoryName = categoriaStr?.trim();
+    // `categories.ts` valida el nombre con `.max(50)`; se trunca acá para que la clave de
+    // dedup/match y la categoría creada coincidan con ese límite (si no, el alta fallaría o
+    // dos nombres largos que sólo difieren después del char 50 quedarían sin unificar).
+    const categoryName = categoriaStr?.trim().slice(0, 50);
     let category: ImportCategoryResolution;
     if (categoryName && categoryName.toLowerCase() !== 'sin categoría') {
       const key = `${type}:${categoryName.toLowerCase()}`;

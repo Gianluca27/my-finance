@@ -125,6 +125,26 @@ describe('parseImportCsv', () => {
     expect(result.skipped).toBe(0);
   });
 
+  it('trunca nombres de categoría a 50 caracteres (cap de categories.ts) y unifica filas cuyo nombre coincide en los primeros 50', () => {
+    const base = 'X'.repeat(50);
+    const csv = [
+      HEADER,
+      `2026-01-05,gasto,100,${base}-primera-variante,nota1,`,
+      `2026-01-06,gasto,200,${base}-segunda-variante,nota2,`,
+    ].join('\n');
+    const result = parseImportCsv(csv, CATEGORIES, []);
+    expect(result.rows).toHaveLength(2);
+    // Una sola categoría a crear: la clave de dedup usa el nombre ya truncado, así que ambas
+    // filas (que sólo difieren después del char 50) colapsan en la misma entrada.
+    expect(result.categoriesToCreate).toEqual([
+      { key: `EXPENSE:${base.toLowerCase()}`, name: base, type: 'EXPENSE' as TransactionType },
+    ]);
+    expect(result.categoriesToCreate[0].name).toHaveLength(50);
+    for (const row of result.rows) {
+      expect(row.category).toEqual({ kind: 'toCreate', key: `EXPENSE:${base.toLowerCase()}`, label: 'se creará' });
+    }
+  });
+
   it('categoriesToCreate respeta el tipo: mismo nombre en INCOME y EXPENSE son entradas distintas', () => {
     const csv = [
       HEADER,

@@ -50,11 +50,14 @@ export function ReportsPage() {
   const { data: categoriesData } = useCached<Category[]>('categories', () => api.listCategories());
   const accounts = accountsData ?? [];
   const categories = categoriesData ?? [];
+  // El export de CSV mantiene las cuentas archivadas (su historial debe seguir siendo
+  // exportable), pero el destino de import es un alta: se excluyen (spec 12).
+  const importAccounts = accounts.filter((a) => !a.archivedAt);
   useEffect(() => {
-    if (!importAccountId && accounts.length) {
-      setImportAccountId(accounts.find((a) => a.isDefault)?.id ?? accounts[0].id);
+    if (!importAccountId && importAccounts.length) {
+      setImportAccountId(importAccounts.find((a) => a.isDefault)?.id ?? importAccounts[0].id);
     }
-  }, [accountsData, importAccountId, accounts]);
+  }, [accountsData, importAccountId, importAccounts]);
 
   async function downloadCsv() {
     setError(null);
@@ -267,11 +270,11 @@ export function ReportsPage() {
           categorías se emparejan por nombre; si no existen, se crean. Antes de escribir nada se muestra un
           preview para revisar.
         </p>
-        {accounts.length > 0 && (
+        {importAccounts.length > 0 && (
           <label className="field" style={{ marginBottom: 12 }}>
             Importar en la cuenta
             <select value={importAccountId} onChange={(e) => setImportAccountId(e.target.value)}>
-              {accounts.map((a) => (
+              {importAccounts.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.icon ? `${a.icon} ` : ''}
                   {a.name}

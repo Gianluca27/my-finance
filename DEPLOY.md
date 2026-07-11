@@ -60,6 +60,7 @@ JWT_SECRET=<el que generaste en el paso 0>
 JWT_EXPIRES_IN=7d
 PORT=4000                                  # Railway inyecta su propio $PORT igual; dejalo, config.ts lo respeta
 CORS_ORIGIN=https://TU-APP.vercel.app      # lo ajustás en el paso 3, por ahora poné algo
+WEB_URL=https://tu-proyecto.vercel.app     # lo ajustás en el paso 3; arma el link de los emails de reset de contraseña (si falta, cae en http://localhost:5173)
 REMINDERS_CRON=0 9 * * *
 
 # Opcionales — si faltan, esas features se desactivan solas
@@ -151,7 +152,13 @@ Volvé a Railway → variables de la API → actualizá:
 
 ```bash
 CORS_ORIGIN=https://tu-proyecto.vercel.app
+WEB_URL=https://tu-proyecto.vercel.app
 ```
+
+`WEB_URL` es la que arma el link de los emails de reset de contraseña
+(`${WEB_URL}/reset?token=...` en `routes/auth.ts`); si no la seteás, cae en
+`http://localhost:5173` y los emails de producción quedan apuntando a
+localhost.
 
 Soporta múltiples orígenes separados por coma (`config.ts` hace `.split(',')`),
 útil si además tenés un dominio custom o preview deployments de Vercel:

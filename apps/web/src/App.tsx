@@ -4,6 +4,7 @@ import { api } from './api';
 import { useAuth } from './auth';
 import { prefetch } from './cache';
 import { Layout } from './components/Layout';
+import { currentMonthKey } from './lib/months';
 
 // Cada página se carga bajo demanda: el bundle inicial no arrastra Recharts
 // (solo lo usa el Dashboard) ni el resto de las vistas.
@@ -33,8 +34,9 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     import('./pages/DashboardPage');
-    prefetch('dashboard', () => api.dashboard());
-    prefetch('budgets', () => api.listBudgets());
+    const month = currentMonthKey();
+    prefetch(`dashboard:${month}`, () => api.dashboard(month));
+    prefetch(`budgets:${month}`, () => api.listBudgets(month));
   }, [user]);
 
   if (loading) {

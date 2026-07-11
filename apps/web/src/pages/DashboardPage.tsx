@@ -3,7 +3,8 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, formatMoney } from '../api';
 import { useCached } from '../cache';
-import { currentMonthKey, MonthPicker } from '../components/MonthPicker';
+import { MonthPicker } from '../components/MonthPicker';
+import { currentMonthKey, monthLabel } from '../lib/months';
 
 const DONUT_R = 42;
 const DONUT_C = 2 * Math.PI * DONUT_R;
@@ -31,15 +32,6 @@ function hoverMonthLabel(month: string): string {
     timeZone: 'UTC',
   });
   return label.charAt(0).toUpperCase() + label.slice(1);
-}
-
-function monthLabel(month: string): string {
-  const [y, m] = month.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('es-AR', {
-    month: 'long',
-    year: 'numeric',
-    timeZone: 'UTC',
-  });
 }
 
 function dueInfo(nextDueDate: string): { label: string; color: string } {

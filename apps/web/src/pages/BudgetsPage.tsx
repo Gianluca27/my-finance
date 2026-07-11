@@ -4,7 +4,8 @@ import { api, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
 import { IcoPlus, IcoTrash } from '../components/icons';
 import { Modal } from '../components/Modal';
-import { currentMonthKey, monthLabel, MonthPicker } from '../components/MonthPicker';
+import { MonthPicker } from '../components/MonthPicker';
+import { currentMonthKey, monthLabel } from '../lib/months';
 
 export function BudgetsPage() {
   const [month, setMonth] = useState(currentMonthKey());

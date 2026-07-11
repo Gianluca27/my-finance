@@ -94,6 +94,102 @@ export function investmentMetrics(
   };
 }
 
+/** Operación con fecha, para cortes temporales y flujos de TIR. */
+export interface DatedPositionOp extends PositionOp {
+  date: Date;
+}
+
+/**
+ * Tenencia y costo a una fecha de corte: reusa `computePosition` sobre las
+ * operaciones con fecha `<= asOf`, en orden cronológico. Una posición válida
+ * mantiene la validez en cualquier prefijo (una venta nunca depende de compras
+ * posteriores), así que nunca devuelve `null` si la secuencia completa era válida.
+ */
+export function positionAsOf(ops: DatedPositionOp[], asOf: Date): Position | null {
+  const cutoff = asOf.getTime();
+  const upTo = ops
+    .filter((op) => op.date.getTime() <= cutoff)
+    .sort((a, b) => a.date.getTime() - b.date.getTime());
+  return computePosition(upTo);
+}
+
+/** Flujo de caja fechado para la TIR: negativo = egreso (compra), positivo = ingreso (venta/valuación). */
+export interface CashFlow {
+  date: Date;
+  amount: number;
+}
+
+const XIRR_TOLERANCE = 1e-6;
+/** Rango mínimo de flujos: por debajo, anualizar amplifica ruido y no es informativo. */
+const XIRR_MIN_DAYS = 30;
+const DAYS_PER_YEAR = 365;
+const MS_PER_DAY = 86_400_000;
+
+/**
+ * TIR anualizada (money-weighted / XIRR) de una serie de flujos fechados.
+ * Resuelve la tasa `r` que anula `Σ amount_i / (1 + r)^(años_i)` por
+ * Newton-Raphson, con bisección de respaldo sobre un bracket acotado.
+ *
+ * Devuelve `null` si hay menos de dos flujos, el rango es menor a
+ * {@link XIRR_MIN_DAYS} días, no hay flujos de ambos signos (la ecuación no
+ * tiene raíz) o el método no converge. Es genérica: los flujos de dividendos o
+ * cupones se agregan a la lista sin cambiar la firma.
+ */
+export function xirr(flows: CashFlow[]): number | null {
+  if (flows.length < 2) return null;
+  const sorted = [...flows].sort((a, b) => a.date.getTime() - b.date.getTime());
+  const t0 = sorted[0].date.getTime();
+  const spanDays = (sorted[sorted.length - 1].date.getTime() - t0) / MS_PER_DAY;
+  if (spanDays < XIRR_MIN_DAYS) return null;
+  // Sin al menos un flujo positivo y uno negativo la NPV no cruza cero.
+  if (!sorted.some((f) => f.amount > 0) || !sorted.some((f) => f.amount < 0)) return null;
+
+  const years = sorted.map((f) => (f.date.getTime() - t0) / (MS_PER_DAY * DAYS_PER_YEAR));
+  const npv = (rate: number): number => {
+    let sum = 0;
+    for (let i = 0; i < sorted.length; i++) sum += sorted[i].amount / (1 + rate) ** years[i];
+    return sum;
+  };
+  const dNpv = (rate: number): number => {
+    let sum = 0;
+    for (let i = 0; i < sorted.length; i++) sum -= (years[i] * sorted[i].amount) / (1 + rate) ** (years[i] + 1);
+    return sum;
+  };
+
+  // Newton-Raphson desde una tasa razonable.
+  let rate = 0.1;
+  for (let iter = 0; iter < 100; iter++) {
+    const value = npv(rate);
+    if (Math.abs(value) < XIRR_TOLERANCE) return rate;
+    const deriv = dNpv(rate);
+    if (!Number.isFinite(deriv) || deriv === 0) break;
+    const next = rate - value / deriv;
+    // (1 + r) debe ser positivo o las potencias se rompen; si Newton se va, cae a bisección.
+    if (!Number.isFinite(next) || next <= -1) break;
+    if (Math.abs(next - rate) < XIRR_TOLERANCE) return next;
+    rate = next;
+  }
+
+  // Bisección de respaldo: bracket amplio pero finito (-99.99% a +10000% anual).
+  let low = -0.9999;
+  let high = 100;
+  let fLow = npv(low);
+  const fHigh = npv(high);
+  if (!Number.isFinite(fLow) || !Number.isFinite(fHigh) || fLow * fHigh > 0) return null;
+  for (let iter = 0; iter < 200; iter++) {
+    const mid = (low + high) / 2;
+    const fMid = npv(mid);
+    if (Math.abs(fMid) < XIRR_TOLERANCE) return mid;
+    if (fLow * fMid < 0) {
+      high = mid;
+    } else {
+      low = mid;
+      fLow = fMid;
+    }
+  }
+  return null;
+}
+
 export interface PricePoint {
   date: Date;
   price: number;

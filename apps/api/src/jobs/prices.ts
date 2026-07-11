@@ -38,21 +38,34 @@ function isKnownSource(value: string | null): value is ProviderSource {
   return value !== null && (KNOWN_SOURCES as string[]).includes(value);
 }
 
-export async function runPricesJob(): Promise<PricesJobResult> {
-  const result: PricesJobResult = {
-    updated: { TWELVE_DATA: 0, DATA912: 0 },
-    usdRate: false,
-    mep: null,
-    ccl: null,
-  };
-  if (!twelveDataEnabled && !data912Enabled) return result;
+/** Datos mínimos de un activo vinculado para pedirle el precio a su proveedor. */
+interface LinkedInvestment {
+  id: string;
+  providerSymbol: string | null;
+  providerSource: string | null;
+  providerMarket: string | null;
+}
 
-  const investments = await prisma.investment.findMany({
-    where: { providerSymbol: { not: null }, archivedAt: null },
-    select: { id: true, providerSymbol: true, providerSource: true, providerMarket: true },
-  });
+/** Resultado del refresh acotado a un usuario (reusa la lógica del cron). */
+export interface RefreshResult {
+  /** Activos con precio actualizado en esta corrida. */
+  updated: number;
+  usdRate: boolean;
+  mep: number | null;
+  ccl: number | null;
+}
 
-  const bySource = new Map<ProviderSource, typeof investments>();
+/**
+ * Actualiza el precio de una lista de activos vinculados (agrupados por proveedor)
+ * y deja un snapshot por día. Devuelve cuántos se actualizaron por proveedor.
+ * Cada proveedor va en su propio try/catch: si uno se cae, el otro igual actualiza.
+ */
+async function updateInvestmentPrices(
+  investments: LinkedInvestment[],
+  now: Date,
+): Promise<Record<ProviderSource, number>> {
+  const updated: Record<ProviderSource, number> = { TWELVE_DATA: 0, DATA912: 0 };
+  const bySource = new Map<ProviderSource, LinkedInvestment[]>();
   for (const inv of investments) {
     if (!isKnownSource(inv.providerSource)) {
       console.warn(`[prices] Activo ${inv.id} con providerSource desconocido: ${inv.providerSource}`);
@@ -63,7 +76,6 @@ export async function runPricesJob(): Promise<PricesJobResult> {
     bySource.set(inv.providerSource, list);
   }
 
-  const now = new Date();
   for (const [source, group] of bySource) {
     const provider = getProvider(source);
     if (!provider.enabled) continue;
@@ -83,12 +95,31 @@ export async function runPricesJob(): Promise<PricesJobResult> {
           data: { currentPrice: price, priceUpdatedAt: now },
         });
         await upsertDailySnapshot(inv.id, price, now);
-        result.updated[source]++;
+        updated[source]++;
       }
     } catch (err) {
       console.error(`[prices] Error actualizando precios de ${source}:`, err);
     }
   }
+  return updated;
+}
+
+export async function runPricesJob(): Promise<PricesJobResult> {
+  const result: PricesJobResult = {
+    updated: { TWELVE_DATA: 0, DATA912: 0 },
+    usdRate: false,
+    mep: null,
+    ccl: null,
+  };
+  if (!twelveDataEnabled && !data912Enabled) return result;
+
+  const investments = await prisma.investment.findMany({
+    where: { providerSymbol: { not: null }, archivedAt: null },
+    select: { id: true, providerSymbol: true, providerSource: true, providerMarket: true },
+  });
+
+  const now = new Date();
+  result.updated = await updateInvestmentPrices(investments, now);
 
   if (twelveDataEnabled) {
     try {
@@ -117,15 +148,64 @@ export async function runPricesJob(): Promise<PricesJobResult> {
   return result;
 }
 
+/**
+ * Refresh on-demand acotado a un usuario: misma lógica que el cron pero solo
+ * sobre sus activos vinculados y sus cotizaciones. El rate-limit vive en la ruta.
+ */
+export async function refreshPricesForUser(userId: string): Promise<RefreshResult> {
+  const result: RefreshResult = { updated: 0, usdRate: false, mep: null, ccl: null };
+  if (!twelveDataEnabled && !data912Enabled) return result;
+
+  const investments = await prisma.investment.findMany({
+    where: { userId, providerSymbol: { not: null }, archivedAt: null },
+    select: { id: true, providerSymbol: true, providerSource: true, providerMarket: true },
+  });
+
+  const now = new Date();
+  const counts = await updateInvestmentPrices(investments, now);
+  result.updated = counts.TWELVE_DATA + counts.DATA912;
+
+  if (twelveDataEnabled) {
+    try {
+      const usdRate = await fetchOfficialUsdRate();
+      if (usdRate !== null) {
+        await upsertRateForUser(userId, 'USD', usdRate);
+        result.usdRate = true;
+      }
+    } catch (err) {
+      console.error('[prices] Error actualizando el dólar oficial:', err);
+    }
+  }
+
+  if (data912Enabled) {
+    try {
+      const { mep, ccl } = await fetchDolar();
+      if (mep !== null) await upsertRateForUser(userId, DOLAR_CURRENCIES.mep, mep);
+      if (ccl !== null) await upsertRateForUser(userId, DOLAR_CURRENCIES.ccl, ccl);
+      result.mep = mep;
+      result.ccl = ccl;
+    } catch (err) {
+      console.error('[prices] Error actualizando el dólar MEP/CCL:', err);
+    }
+  }
+
+  return result;
+}
+
+/** Upsert de una cotización automática para un usuario. */
+async function upsertRateForUser(userId: string, currency: string, rate: number): Promise<void> {
+  await prisma.exchangeRate.upsert({
+    where: { userId_currency: { userId, currency } },
+    update: { rate },
+    create: { userId, currency, rate },
+  });
+}
+
 /** Las cotizaciones automáticas son las mismas para todos: se replican por usuario. */
 async function upsertRateForAllUsers(currency: string, rate: number): Promise<void> {
   const users = await prisma.user.findMany({ select: { id: true } });
   for (const user of users) {
-    await prisma.exchangeRate.upsert({
-      where: { userId_currency: { userId: user.id, currency } },
-      update: { rate },
-      create: { userId: user.id, currency, rate },
-    });
+    await upsertRateForUser(user.id, currency, rate);
   }
 }
 

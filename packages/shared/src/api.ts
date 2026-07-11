@@ -42,9 +42,11 @@ import type {
   InvestmentUpdateInput,
   MessageResponse,
   Paginated,
+  PortfolioHistory,
   RecurringExpense,
   RecurringExpenseInput,
   RecurringPayInput,
+  RefreshPricesResult,
   ReportFilters,
   ResetPasswordInput,
   RuleApplyResult,
@@ -348,6 +350,15 @@ export class ApiClient {
   /** Detalle de un activo: operaciones + histórico de precios. */
   getInvestment(id: string) {
     return this.request<InvestmentDetail>('GET', `/api/investments/${id}`);
+  }
+  /** Curva de valor del portafolio en moneda base. `months`: 1–24 (default 12). */
+  getPortfolioHistory(months?: number) {
+    const qs = months ? `?months=${months}` : '';
+    return this.request<PortfolioHistory>('GET', `/api/investments/portfolio-history${qs}`);
+  }
+  /** Refresca los precios de los activos vinculados del usuario. 429 si se llamó hace <5 min. */
+  refreshInvestmentPrices() {
+    return this.request<RefreshPricesResult>('POST', '/api/investments/refresh-prices');
   }
   createInvestment(input: InvestmentInput) {
     return this.request<Investment>('POST', '/api/investments', input);

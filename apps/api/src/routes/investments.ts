@@ -6,8 +6,12 @@ import {
   closestPriceMatch,
   computePosition,
   investmentMetrics,
+  positionAsOf,
+  xirr,
+  type CashFlow,
   type PositionOp,
 } from '../lib/investments';
+import { refreshPricesForUser } from '../jobs/prices';
 import { serialize } from '../lib/serialize';
 import { requireAuth } from '../middleware/auth';
 import { asyncHandler, HttpError } from '../middleware/error';
@@ -134,11 +138,35 @@ function fetchOps(investmentId: string) {
   });
 }
 
-/** Activo serializado + métricas derivadas del ledger, en su moneda. */
-function toInvestmentJson(investment: Investment, ops: PositionOp[]) {
+const MS_PER_DAY = 86_400_000;
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/**
+ * TIR anualizada del activo, en %: compras negativas, ventas positivas y el
+ * valor actual como flujo final positivo. Los importes van en espacio monetario
+ * (divididos por el factor, igual que `currentValue`). Null si no hay señal.
+ */
+function assetTir(ops: DatedOp[], priceFactor: number, currentValue: number, now: Date): number | null {
+  const factor = priceFactor > 0 ? priceFactor : 1;
+  const flows: CashFlow[] = ops.map((op) => ({
+    date: op.date,
+    amount: ((op.type === 'COMPRA' ? -1 : 1) * (op.quantity * op.unitPrice)) / factor,
+  }));
+  if (currentValue > 0) flows.push({ date: now, amount: currentValue });
+  const rate = xirr(flows);
+  return rate === null ? null : round2(rate * 100);
+}
+
+/** Activo serializado + métricas derivadas del ledger (incl. TIR), en su moneda. */
+function toInvestmentJson(investment: Investment, ops: DatedOp[]) {
+  const metrics = investmentMetrics(investment.currentPrice?.toNumber() ?? null, ops, investment.priceFactor);
   return {
     ...(serialize(investment) as Record<string, unknown>),
-    ...investmentMetrics(investment.currentPrice?.toNumber() ?? null, ops, investment.priceFactor),
+    ...metrics,
+    tir: assetTir(ops, investment.priceFactor, metrics.currentValue, new Date()),
   };
 }
 
@@ -331,11 +359,195 @@ router.get(
       rateMap,
     );
 
+    // TIR del portafolio: flujos de todos los activos incluidos, convertidos a base,
+    // con el valor total actual como flujo final. Excluye monedas sin cotización.
+    const now = new Date();
+    const portfolioFlows: CashFlow[] = [];
+    for (const { investment } of items) {
+      if (investment.archivedAt !== null) continue;
+      const rate = investment.currency === null ? 1 : rateMap.get(investment.currency);
+      if (rate === undefined) continue;
+      const factor = investment.priceFactor > 0 ? investment.priceFactor : 1;
+      for (const op of toDatedOps(opsByInvestment.get(investment.id) ?? [])) {
+        portfolioFlows.push({
+          date: op.date,
+          amount: (((op.type === 'COMPRA' ? -1 : 1) * (op.quantity * op.unitPrice)) / factor) * rate,
+        });
+      }
+    }
+    if (summary.totalValue > 0) portfolioFlows.push({ date: now, amount: summary.totalValue });
+    const portfolioTir = xirr(portfolioFlows);
+
     res.json({
       items: items.map(({ json }) => json),
       rates: serialize(rates),
-      summary,
+      summary: { ...summary, tir: portfolioTir === null ? null : round2(portfolioTir * 100) },
       providers: providerAvailability(),
+    });
+  }),
+);
+
+// --- Curva de valor del portafolio (antes de '/:id' para no matchear como id) ---
+
+const historyQuerySchema = z.object({
+  months: z.coerce.number().int().optional(),
+});
+
+/**
+ * Curva de valor total del portafolio en moneda base. Un punto por día con
+ * snapshots (union entre activos); para cada día se valúa cada activo con la
+ * tenencia a esa fecha (corte temporal) y su último precio conocido (forward-fill,
+ * para que huecos de notes/corp no serruchen la curva). Conversión con el TC
+ * vigente (no hay historial de TC); monedas sin cotización se excluyen.
+ */
+router.get(
+  '/portfolio-history',
+  asyncHandler(async (req, res) => {
+    const userId = req.auth!.userId;
+    const { months: rawMonths } = historyQuerySchema.parse(req.query);
+    const months = Math.min(24, Math.max(1, rawMonths ?? 12));
+
+    const now = new Date();
+    const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    from.setUTCMonth(from.getUTCMonth() - months);
+
+    const [investments, allOps, snapshots, rates] = await Promise.all([
+      prisma.investment.findMany({
+        where: { userId, archivedAt: null },
+        select: { id: true, currency: true, priceFactor: true },
+      }),
+      prisma.investmentOperation.findMany({
+        where: { userId },
+        orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+      }),
+      prisma.investmentPriceSnapshot.findMany({
+        where: { investment: { userId, archivedAt: null } },
+        orderBy: { date: 'asc' },
+        select: { investmentId: true, price: true, date: true },
+      }),
+      prisma.exchangeRate.findMany({ where: { userId } }),
+    ]);
+
+    const rateMap = new Map(rates.map((r) => [r.currency, r.rate.toNumber()]));
+
+    // Activos incluidos: los que tienen cotización (o están en moneda base). El
+    // resto queda fuera de la curva y su moneda se reporta en missingRates.
+    const missing = new Set<string>();
+    const included = investments.filter((inv) => {
+      if (inv.currency === null || rateMap.has(inv.currency)) return true;
+      missing.add(inv.currency);
+      return false;
+    });
+
+    const rawByInv = new Map<string, InvestmentOperation[]>();
+    for (const op of allOps) {
+      const list = rawByInv.get(op.investmentId);
+      if (list) list.push(op);
+      else rawByInv.set(op.investmentId, [op]);
+    }
+    const opsByInv = new Map<string, DatedOp[]>();
+    for (const [id, list] of rawByInv) opsByInv.set(id, toDatedOps(list));
+
+    // Snapshots por activo, en orden cronológico (la query ya ordena por fecha).
+    const snapsByInv = new Map<string, { t: number; price: number }[]>();
+    for (const s of snapshots) {
+      const list = snapsByInv.get(s.investmentId);
+      const point = { t: s.date.getTime(), price: s.price.toNumber() };
+      if (list) list.push(point);
+      else snapsByInv.set(s.investmentId, [point]);
+    }
+
+    // Eje X: días con al menos un snapshot dentro del rango.
+    const fromT = from.getTime();
+    const nowT = now.getTime();
+    const daySet = new Set<string>();
+    for (const s of snapshots) {
+      const t = s.date.getTime();
+      if (t >= fromT && t <= nowT) daySet.add(dayKey(s.date));
+    }
+    const days = [...daySet].sort();
+
+    // Puntero de forward-fill por activo: avanza a medida que crecen los días.
+    const ffIndex = new Map<string, number>();
+    const points = days.map((dayStr) => {
+      const dayEnd = Date.parse(`${dayStr}T00:00:00.000Z`) + MS_PER_DAY - 1;
+      const asOf = new Date(dayEnd);
+      let value = 0;
+      for (const inv of included) {
+        const snaps = snapsByInv.get(inv.id);
+        if (!snaps) continue;
+        let idx = ffIndex.get(inv.id) ?? -1;
+        while (idx + 1 < snaps.length && snaps[idx + 1].t <= dayEnd) idx++;
+        ffIndex.set(inv.id, idx);
+        if (idx < 0) continue; // todavía no hay precio conocido a esta fecha
+        const pos = positionAsOf(opsByInv.get(inv.id) ?? [], asOf);
+        const qty = pos?.quantity ?? 0;
+        if (qty <= 0) continue;
+        const factor = inv.priceFactor > 0 ? inv.priceFactor : 1;
+        const rate = inv.currency === null ? 1 : rateMap.get(inv.currency)!;
+        value += ((qty * snaps[idx].price) / factor) * rate;
+      }
+      return { date: dayStr, value: round2(value) };
+    });
+
+    // Línea de referencia: costo invertido acumulado actual, en moneda base.
+    let invested = 0;
+    for (const inv of included) {
+      const pos = computePosition(opsByInv.get(inv.id) ?? []);
+      if (!pos || pos.quantity <= 0) continue;
+      const factor = inv.priceFactor > 0 ? inv.priceFactor : 1;
+      const rate = inv.currency === null ? 1 : rateMap.get(inv.currency)!;
+      invested += (pos.investedCost / factor) * rate;
+    }
+
+    res.json({ points, invested: round2(invested), missingRates: [...missing].sort() });
+  }),
+);
+
+// --- Refresh de precios on-demand ---
+
+const REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
+/**
+ * Última corrida de refresh por usuario (memoria del proceso). Acota el gasto de
+ * créditos de Twelve Data a 1 corrida cada 5 min. El mapa crece a lo sumo un
+ * entry por usuario activo (escala personal): no necesita limpieza.
+ */
+const lastRefreshByUser = new Map<string, number>();
+
+function formatRetry(seconds: number): string {
+  return seconds >= 60 ? `${Math.ceil(seconds / 60)} min` : `${seconds} s`;
+}
+
+/**
+ * Corre la lógica del cron de precios acotada al usuario. Rate-limit en memoria:
+ * máx. 1 cada 5 min; si se excede, 429 con `retryAfter` (segundos) para proteger
+ * los créditos de Twelve Data.
+ */
+router.post(
+  '/refresh-prices',
+  asyncHandler(async (req, res) => {
+    const userId = req.auth!.userId;
+    const now = Date.now();
+    const last = lastRefreshByUser.get(userId);
+    if (last !== undefined && now - last < REFRESH_COOLDOWN_MS) {
+      const retryAfter = Math.ceil((REFRESH_COOLDOWN_MS - (now - last)) / 1000);
+      res.status(429).json({
+        error: `Ya actualizaste los precios hace poco. Volvé a intentar en ${formatRetry(retryAfter)}.`,
+        retryAfter,
+      });
+      return;
+    }
+    lastRefreshByUser.set(userId, now);
+
+    const result = await refreshPricesForUser(userId);
+    const latest = await prisma.investment.findFirst({
+      where: { userId, priceUpdatedAt: { not: null } },
+      orderBy: { priceUpdatedAt: 'desc' },
+      select: { priceUpdatedAt: true },
+    });
+    res.json({
+      updated: result.updated,
+      lastUpdatedAt: latest?.priceUpdatedAt ? latest.priceUpdatedAt.toISOString() : null,
     });
   }),
 );

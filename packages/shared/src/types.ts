@@ -173,6 +173,9 @@ export interface Investment {
   /** currentValue - investedCost (no realizado). */
   pnl: number;
   pnlPercent: number;
+  /** TIR anualizada (money-weighted) del activo, en %. Null si no converge o hay
+   * poco historial (<2 flujos o <30 días). Opcional: no lo devuelven todos los endpoints. */
+  tir?: number | null;
   operationCount: number;
 }
 
@@ -215,6 +218,37 @@ export interface InvestmentsSummary {
   pnlPercent: number;
   /** Monedas usadas por activos sin cotización cargada (excluidos de los totales). */
   missingRates: string[];
+  /** TIR anualizada del portafolio (money-weighted), en %. Null si no converge.
+   * Opcional: solo la calcula `GET /api/investments`, no el resumen del dashboard. */
+  tir?: number | null;
+}
+
+/** Un punto de la curva de valor del portafolio (un día con snapshots). */
+export interface PortfolioHistoryPoint {
+  /** Día del punto (YYYY-MM-DD, UTC). */
+  date: string;
+  /** Valor total en moneda base: Σ tenencia × precio snapshot / priceFactor, al TC vigente. */
+  value: number;
+}
+
+/**
+ * Curva de valor del portafolio. El TC usado es el vigente (no hay historial de
+ * cotizaciones), así que la conversión multi-moneda es aproximada hacia atrás.
+ */
+export interface PortfolioHistory {
+  points: PortfolioHistoryPoint[];
+  /** Costo invertido acumulado actual en moneda base: línea de referencia de la curva. */
+  invested: number;
+  /** Monedas sin cotización, excluidas de la curva (mismo criterio que el resumen). */
+  missingRates: string[];
+}
+
+/** Resultado del refresh de precios on-demand. */
+export interface RefreshPricesResult {
+  /** Cantidad de activos con precio actualizado. */
+  updated: number;
+  /** Timestamp (ISO) del precio más reciente tras la corrida, para "Actualizado hace {x}". */
+  lastUpdatedAt: string | null;
 }
 
 /** Qué proveedores de precio automático tiene configurados la API. */

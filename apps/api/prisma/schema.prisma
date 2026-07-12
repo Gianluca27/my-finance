@@ -243,6 +243,12 @@ model Debt {
   totalAmount     Decimal       @db.Decimal(12, 2)
   /// Fecha de vencimiento opcional (solo día). Se usa para resaltar deudas vencidas.
   dueDate         DateTime?
+  /// Cantidad de cuotas (null = deuda simple sin cronograma). El cronograma se deriva, nunca se persiste (spec 17).
+  installmentCount Int?
+  /// Monto por cuota; si null se deriva totalAmount / installmentCount. La última cuota ajusta contra el total.
+  installmentAmount Decimal?    @db.Decimal(12, 2)
+  /// Vencimiento de la cuota 1 (solo día); las siguientes son mensuales, mismo día con clamp a fin de mes.
+  firstDueDate    DateTime?
   /// Vencimiento para el cual ya se envió recordatorio (evita duplicados; mismo patrón que RecurringExpense.lastRemindedFor)
   lastRemindedFor DateTime?
   /// Se completa automáticamente cuando el saldo restante llega a 0

@@ -30,7 +30,7 @@ Specs numeradas por orden recomendado. Cada una es implementable como branch/PR 
 | 15 | [Inversiones: renta y edición de operaciones](15-inversiones-renta.md) | M/L | 14 |
 | 16 | [Presupuestos avanzados](16-presupuestos-avanzados.md) — rollover + total mensual | M | 04 |
 | **Fase 6 — expansión** | | | |
-| 17 | [Deudas en cuotas](17-deudas-cuotas.md) | M/L | 09 |
+| 17 | ✅ [Deudas en cuotas](17-deudas-cuotas.md) — **implementado** (cronograma derivado, sin tabla nueva; mobile queda para la 18) | ~~M/L~~ | 09 |
 | 18 | [Mobile: registro e Inversiones](18-mobile-paridad.md) | L | 14/15 |
 | 19 | [Multi-moneda](19-multi-moneda.md) | L/XL | 12, ideal 16 |
 | 20 | [Tarjetas de crédito](20-tarjetas-credito.md) (exploratorio) | L | 19, 12 |

@@ -293,7 +293,7 @@ export class ApiClient {
   listDebts() {
     return this.request<Debt[]>('GET', '/api/debts');
   }
-  /** Detalle de una deuda con el historial de pagos vinculados. */
+  /** Detalle de una deuda con el historial de pagos y, si está en cuotas, el cronograma derivado. */
   getDebt(id: string) {
     return this.request<DebtDetail>('GET', `/api/debts/${id}`);
   }

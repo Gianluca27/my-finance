@@ -10,8 +10,9 @@ function daysInMonth(year: number, monthIndex: number): number {
   return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
 }
 
-/** Fecha UTC con el día clampeado a la longitud del mes (ej: 31 → 30/28). */
-function utcDateClamped(year: number, monthIndex: number, day: number): Date {
+/** Fecha UTC con el día clampeado a la longitud del mes (ej: 31 → 30/28).
+ * `monthIndex` admite desborde (12 = enero del año siguiente), igual que `Date.UTC`. */
+export function utcDateClamped(year: number, monthIndex: number, day: number): Date {
   return new Date(Date.UTC(year, monthIndex, Math.min(day, daysInMonth(year, monthIndex))));
 }
 

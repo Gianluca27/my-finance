@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { config } from '../config';
 import { advanceDueDate, startOfTodayUTC } from '../lib/dates';
 import { debtReminderContent, getPaidAmount, isDebtReminderDue, remainingBalance } from '../lib/debts';
+import { buildSchedule, nextInstallment, planFromDebt } from '../lib/installments';
 import { prisma } from '../prisma';
 import { notifyUser } from '../services/notifications';
 
@@ -62,25 +63,40 @@ export async function runRemindersJob(): Promise<{ rolled: number; reminded: num
 
   // 3. Recordatorios de deudas por vencer. Bloque aislado (mismo patrón que runPricesJob): si
   //    falla, no debe perderse lo ya procesado arriba para los recurrentes.
+  //    Para deudas en cuotas (spec 17) el vencimiento efectivo es el de la próxima cuota impaga
+  //    y `lastRemindedFor` guarda esa fecha: al pagarse una cuota la fecha efectiva cambia y el
+  //    recordatorio se rearma solo para la siguiente.
   try {
     const debts = await prisma.debt.findMany({
-      where: { settledAt: null, dueDate: { not: null } },
+      where: { settledAt: null, OR: [{ dueDate: { not: null } }, { firstDueDate: { not: null } }] },
     });
     for (const debt of debts) {
-      if (!debt.dueDate) continue; // ya filtrado en la query; angosta el tipo para TS
-      if (!isDebtReminderDue(debt.dueDate, debt.lastRemindedFor, today)) continue;
+      const plan = planFromDebt(debt);
+      let effectiveDueDate = debt.dueDate;
+      let paid: number | null = null;
+      let installment: { n: number; count: number; amount: number } | undefined;
+      if (plan) {
+        paid = await getPaidAmount(debt.id);
+        const next = nextInstallment(buildSchedule(plan, paid));
+        if (!next) continue; // todas las cuotas pagas (deuda a punto de saldarse): nada que recordar
+        effectiveDueDate = next.dueDate;
+        installment = { n: next.n, count: plan.installmentCount, amount: next.amount };
+      }
+      if (!effectiveDueDate) continue;
+      if (!isDebtReminderDue(effectiveDueDate, debt.lastRemindedFor, today)) continue;
 
-      const paid = await getPaidAmount(debt.id);
+      paid ??= await getPaidAmount(debt.id);
       const balance = remainingBalance(debt.totalAmount.toNumber(), paid);
       const { title, body } = debtReminderContent({
         direction: debt.direction,
         counterparty: debt.counterparty,
-        dueDate: debt.dueDate,
+        dueDate: effectiveDueDate,
         remainingBalance: balance,
+        installment,
       });
 
       await notifyUser(debt.userId, { title, body, emailHtml: `<h2>${title}</h2><p>${body}</p>` });
-      await prisma.debt.update({ where: { id: debt.id }, data: { lastRemindedFor: debt.dueDate } });
+      await prisma.debt.update({ where: { id: debt.id }, data: { lastRemindedFor: effectiveDueDate } });
       debtsReminded++;
     }
   } catch (err) {

@@ -120,15 +120,38 @@ export interface Debt {
   remainingBalance: number;
   /** Vencimiento opcional (ISO). Solo se usa la parte de fecha. */
   dueDate: string | null;
+  /** Cantidad de cuotas (null = deuda simple sin cronograma). */
+  installmentCount: number | null;
+  /** Monto por cuota; null = totalAmount / installmentCount. La última cuota ajusta contra el total. */
+  installmentAmount: number | null;
+  /** Vencimiento de la cuota 1 (ISO); las siguientes son mensuales, mismo día con clamp a fin de mes. */
+  firstDueDate: string | null;
+  /** Derivado: cuotas completamente pagadas (floor(pagado / monto por cuota)). Null sin cuotas. */
+  paidInstallments: number | null;
+  /** Derivado: próxima cuota impaga. Null sin cuotas o con todas pagas. */
+  nextInstallment: DebtScheduleItem | null;
   settledAt: string | null;
   categoryId: string | null;
   category: Category | null;
   createdAt: string;
 }
 
+/** Una cuota del cronograma derivado de una deuda en cuotas (no se persiste, se recalcula). */
+export interface DebtScheduleItem {
+  n: number;
+  dueDate: string;
+  amount: number;
+  paid: boolean;
+}
+
+/** Cronograma derivado completo de una deuda en cuotas. */
+export type DebtSchedule = DebtScheduleItem[];
+
 export interface DebtDetail extends Debt {
   /** Pagos vinculados a esta deuda (transacciones con este debtId), orden desc por fecha. */
   payments: Transaction[];
+  /** Cronograma derivado (null para deudas sin cuotas). Editar los campos de cuotas lo regenera. */
+  schedule: DebtSchedule | null;
 }
 
 export type InvestmentType = 'ACCION' | 'ETF' | 'CEDEAR' | 'CRIPTO' | 'FCI' | 'PLAZO_FIJO' | 'BONO' | 'OTRO';
@@ -602,9 +625,16 @@ export interface DebtInput {
   categoryId?: string | null;
   /** Vencimiento opcional como `YYYY-MM-DD` o null. */
   dueDate?: string | null;
+  /** Cuotas: si se envía, exige también `firstDueDate`. Null = deuda simple. */
+  installmentCount?: number | null;
+  /** Monto por cuota opcional; null = totalAmount / installmentCount (última cuota ajusta). */
+  installmentAmount?: number | null;
+  /** Vencimiento de la cuota 1 como `YYYY-MM-DD`. Requerido si hay `installmentCount`. */
+  firstDueDate?: string | null;
 }
 
-/** Edición: no permite cambiar `direction` (ver spec de deudas). */
+/** Edición: no permite cambiar `direction` (ver spec de deudas). Editar los campos de
+ * cuotas regenera el cronograma derivado (las cuotas pagadas se recalculan de los pagos). */
 export type DebtUpdateInput = Partial<Omit<DebtInput, 'direction'>>;
 
 export interface Goal {

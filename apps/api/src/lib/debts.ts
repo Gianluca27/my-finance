@@ -45,24 +45,32 @@ export function isDebtReminderDue(
 
 /**
  * Texto del recordatorio según la dirección: I_OWE avisa que hay que pagar la deuda propia;
- * OWED_TO_ME avisa que vence lo que le deben al usuario (cobrar).
+ * OWED_TO_ME avisa que vence lo que le deben al usuario (cobrar). Para deudas en cuotas
+ * (spec 17) `installment` identifica la cuota que vence, en vez del total global.
  */
 export function debtReminderContent(debt: {
   direction: DebtDirection;
   counterparty: string;
   dueDate: Date;
   remainingBalance: number;
+  /** Presente solo en deudas en cuotas: la próxima cuota impaga. */
+  installment?: { n: number; count: number; amount: number };
 }): { title: string; body: string } {
   const dueStr = debt.dueDate.toISOString().slice(0, 10);
   const amount = debt.remainingBalance.toFixed(2);
+  const vence = debt.installment
+    ? `vence la cuota ${debt.installment.n}/${debt.installment.count} ($${debt.installment.amount.toFixed(2)}) el ${dueStr}`
+    : `vence el ${dueStr}`;
   if (debt.direction === 'I_OWE') {
     return {
       title: `Deuda por vencer: ${debt.counterparty}`,
-      body: `Tu deuda con ${debt.counterparty} vence el ${dueStr}, restan $${amount}.`,
+      body: debt.installment
+        ? `Tu deuda con ${debt.counterparty}: ${vence}, restan $${amount}.`
+        : `Tu deuda con ${debt.counterparty} ${vence}, restan $${amount}.`,
     };
   }
   return {
     title: `Cobro por vencer: ${debt.counterparty}`,
-    body: `${debt.counterparty} te debe y vence el ${dueStr}, restan $${amount} por cobrar.`,
+    body: `${debt.counterparty} te debe y ${vence}, restan $${amount} por cobrar.`,
   };
 }

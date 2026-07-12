@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
+  Linking,
   Platform,
   ScrollView,
   StyleSheet,
@@ -8,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { useAuth } from '../auth';
+import { webUrl } from '../api';
 import { Field, Input, PrimaryButton } from '../components/ui';
 import { LogoMark } from '../components/icons';
 import { fonts, radius, spacing, type ThemeColors } from '../theme';
@@ -30,6 +32,10 @@ export function LoginScreen() {
 
   async function onSubmit() {
     setError(null);
+    if (mode === 'register' && password.length < 8) {
+      setError('La contraseña debe tener al menos 8 caracteres.');
+      return;
+    }
     setBusy(true);
     try {
       if (mode === 'login') await login(email.trim(), password);
@@ -92,6 +98,12 @@ export function LoginScreen() {
             <Input value={password} onChangeText={setPassword} secureTextEntry />
           </Field>
 
+          {mode === 'login' && (
+            <Text style={styles.forgotLink} onPress={() => Linking.openURL(`${webUrl}/login`)}>
+              ¿Olvidaste tu contraseña?
+            </Text>
+          )}
+
           <View style={{ marginTop: spacing.xs }}>
             <PrimaryButton label={cta} onPress={onSubmit} busy={busy} />
           </View>
@@ -153,5 +165,12 @@ function createStyles(colors: ThemeColors) {
       fontSize: 13.5,
     },
     switchLink: { color: colors.accent, fontFamily: fonts.semibold },
+    forgotLink: {
+      color: colors.accent,
+      fontFamily: fonts.medium,
+      fontSize: 13,
+      textAlign: 'right',
+      marginTop: -4,
+    },
   });
 }

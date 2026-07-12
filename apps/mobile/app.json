@@ -16,7 +16,8 @@
     },
     "plugins": ["expo-notifications", "expo-font"],
     "extra": {
-      "apiUrl": "http://192.168.68.110:4000"
+      "apiUrl": "http://192.168.68.110:4000",
+      "webUrl": "http://192.168.68.110:5173"
     }
   }
 }

@@ -7,7 +7,7 @@ import type {
   PriceHistoryRange,
 } from '@myfinance/shared';
 import { useFocusEffect } from '@react-navigation/native';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Svg, { Defs, LinearGradient, Path, Stop } from 'react-native-svg';
 import { api } from '../api';
@@ -143,21 +143,29 @@ export function InvestmentsScreen() {
   const [selected, setSelected] = useState<Investment | null>(null);
   const [detail, setDetail] = useState<InvestmentDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const detailRequestId = useRef(0);
 
   function onOpenDetail(inv: Investment) {
     setSelected(inv);
     setDetail(null);
     setDetailError(null);
+    const requestId = ++detailRequestId.current;
     api
       .getInvestment(inv.id)
-      .then(setDetail)
-      .catch((err) => setDetailError(err instanceof Error ? err.message : 'Error inesperado'));
+      .then((res) => {
+        if (detailRequestId.current === requestId) setDetail(res);
+      })
+      .catch((err) => {
+        if (detailRequestId.current === requestId) {
+          setDetailError(err instanceof Error ? err.message : 'Error inesperado');
+        }
+      });
   }
 
   function renderAssetCard(inv: Investment) {
     const missingRate = inv.currency !== null && !rateMap.has(inv.currency);
     return (
-      <Card key={inv.id} style={{ gap: 6 }}>
+      <Card key={inv.id}>
         <Pressable onPress={() => onOpenDetail(inv)} style={{ gap: 6 }}>
         <View style={styles.assetHead}>
           <View style={[styles.mark, { backgroundColor: `${inv.color}26`, borderColor: `${inv.color}4d` }]}>

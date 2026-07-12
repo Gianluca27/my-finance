@@ -12,6 +12,7 @@ import { requireAuth } from '../middleware/auth';
 import { asyncHandler, HttpError } from '../middleware/error';
 import { prisma } from '../prisma';
 import { checkBudgetAlert } from '../services/budgetAlerts';
+import { checkCardLimitAlert } from '../services/cardAlerts';
 
 const router = Router();
 router.use(requireAuth);
@@ -150,6 +151,10 @@ router.post(
       checkBudgetAlert(req.auth!.userId, transaction.categoryId).catch((err) =>
         console.error('[budgets] Error evaluando alerta:', err),
       );
+      // Ídem para la alerta de límite de tarjeta (no hace nada si la cuenta no es CARD).
+      checkCardLimitAlert(req.auth!.userId, transaction.accountId).catch((err) =>
+        console.error('[cards] Error evaluando alerta de límite:', err),
+      );
     }
     res.status(201).json(serialize(transaction));
   }),
@@ -257,6 +262,9 @@ router.put(
     if (transaction.type === 'EXPENSE') {
       checkBudgetAlert(req.auth!.userId, transaction.categoryId).catch((err) =>
         console.error('[budgets] Error evaluando alerta:', err),
+      );
+      checkCardLimitAlert(req.auth!.userId, transaction.accountId).catch((err) =>
+        console.error('[cards] Error evaluando alerta de límite:', err),
       );
     }
     res.json(serialize(transaction));

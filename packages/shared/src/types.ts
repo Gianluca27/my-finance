@@ -591,12 +591,50 @@ export interface Account {
   color: string;
   icon: string | null;
   isDefault: boolean;
+  /** Solo tarjetas (CARD, spec 20): límite de crédito en la moneda de la cuenta. */
+  creditLimit: number | null;
+  /** Solo CARD: día de cierre del resumen (1-31, clamp a fin de mes). */
+  closingDay: number | null;
+  /** Solo CARD: día de vencimiento del pago (1-31; si es <= closingDay cae al mes
+   * siguiente del cierre). Requiere closingDay. */
+  paymentDay: number | null;
   archivedAt: string | null;
-  /** Calculado: inicial + ingresos - gastos + transferencias netas. En la moneda de la cuenta. */
+  /** Calculado: inicial + ingresos - gastos + transferencias netas. En la moneda de la
+   * cuenta. En una CARD el saldo negativo ES la deuda de la tarjeta. */
   balance: number;
   /** Calculado: true si tiene transacciones o transferencias (la moneda ya no se puede cambiar). */
   hasMovements: boolean;
+  /** Derivado (spec 20): estado del ciclo de la tarjeta. Solo CARD con closingDay;
+   * null (o ausente en respuestas viejas) para el resto. */
+  card?: CardSummary | null;
   createdAt: string;
+}
+
+/**
+ * Estado derivado del ciclo de una tarjeta de crédito (spec 20). Nada de esto se
+ * persiste: el ciclo N son las transacciones en (cierre N-1, cierre N], con el día
+ * de cierre clampeado a fin de mes. Montos en la moneda de la cuenta.
+ */
+export interface CardSummary {
+  /** Primer día del ciclo actual (ISO). */
+  cycleStart: string;
+  /** Fecha de cierre del ciclo actual (ISO; los consumos de ese día entran al ciclo). */
+  cycleClosing: string;
+  /** Consumo neto del ciclo actual: gastos − reintegros (los pagos por transferencia no restan). */
+  cycleSpent: number;
+  /** Crédito disponible: creditLimit + saldo (el saldo negativo es la deuda).
+   * Null si la cuenta no tiene creditLimit cargado. */
+  availableCredit: number | null;
+  /** Próxima fecha de cierre (== cycleClosing). */
+  nextClosingDate: string;
+  /** Próximo vencimiento de pago (>= hoy). Null si la cuenta no tiene paymentDay. */
+  nextPaymentDate: string | null;
+  /** Último ciclo cerrado: límites y total del resumen ("Resumen al {closing}: {total}"). */
+  lastCycle: {
+    start: string;
+    closing: string;
+    total: number;
+  };
 }
 
 /** Un monto en una moneda concreta (desgloses por moneda). */
@@ -635,6 +673,12 @@ export interface AccountInput {
   color?: string;
   icon?: string | null;
   isDefault?: boolean;
+  /** Solo tipo CARD (la API rechaza en otros tipos): límite de crédito. */
+  creditLimit?: number | null;
+  /** Solo CARD: día de cierre del resumen (1-31). */
+  closingDay?: number | null;
+  /** Solo CARD: día de vencimiento del pago (1-31). Requiere closingDay. */
+  paymentDay?: number | null;
 }
 
 /** Edición; `archived` mapea a archivedAt (patrón Account/Investment). */

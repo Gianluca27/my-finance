@@ -328,6 +328,20 @@ model Account {
   icon           String?
   /// Cuenta usada por defecto cuando un movimiento no especifica cuenta. Una por usuario.
   isDefault      Boolean     @default(false)
+  /// Solo cuentas CARD (spec 20): límite de crédito, en la moneda de la cuenta.
+  creditLimit    Decimal?    @db.Decimal(12, 2)
+  /// Solo CARD: día de cierre del resumen (1-31, clamp a fin de mes como advanceDueDate).
+  /// El ciclo N son las transacciones en (cierre N-1, cierre N]; se deriva, no se persiste.
+  closingDay     Int?
+  /// Solo CARD: día de vencimiento del pago del resumen (1-31). Si es <= closingDay el
+  /// vencimiento cae al mes siguiente del cierre.
+  paymentDay     Int?
+  /// Vencimiento de resumen para el cual ya se envió recordatorio (patrón
+  /// RecurringExpense.lastRemindedFor; evita duplicados del job diario).
+  cardLastRemindedFor DateTime?
+  /// Cierre (YYYY-MM-DD) del ciclo en que ya se alertó por consumo cercano al límite
+  /// (patrón Budget.lastAlertMonth: máximo una alerta por ciclo).
+  cardLastAlertCycle  String?
   archivedAt     DateTime?
   userId         String
   user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)

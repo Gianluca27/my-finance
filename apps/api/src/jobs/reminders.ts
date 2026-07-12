@@ -1,8 +1,9 @@
 import cron from 'node-cron';
 import { config } from '../config';
+import { CARD_REMINDER_DAYS_BEFORE, cardCycleSpent, paymentDateFor, previousCycle } from '../lib/cards';
 import { moneyLabel } from '../lib/currency';
 import { advanceDueDate, startOfTodayUTC } from '../lib/dates';
-import { debtReminderContent, getPaidAmount, isDebtReminderDue, remainingBalance } from '../lib/debts';
+import { daysUntil, debtReminderContent, getPaidAmount, isDebtReminderDue, remainingBalance } from '../lib/debts';
 import { buildSchedule, nextInstallment, planFromDebt } from '../lib/installments';
 import { prisma } from '../prisma';
 import { notifyUser } from '../services/notifications';
@@ -13,12 +14,19 @@ import { notifyUser } from '../services/notifications';
  * 2. Envía recordatorio de recurrentes cuando faltan <= reminderDaysBefore días para el
  *    vencimiento, una sola vez por vencimiento (lastRemindedFor).
  * 3. Envía recordatorio de deudas por vencer (bloque propio, ver más abajo).
+ * 4. Envía recordatorio de vencimiento de resúmenes de tarjeta (spec 20).
  */
-export async function runRemindersJob(): Promise<{ rolled: number; reminded: number; debtsReminded: number }> {
+export async function runRemindersJob(): Promise<{
+  rolled: number;
+  reminded: number;
+  debtsReminded: number;
+  cardsReminded: number;
+}> {
   const today = startOfTodayUTC();
   let rolled = 0;
   let reminded = 0;
   let debtsReminded = 0;
+  let cardsReminded = 0;
 
   // 1. Vencimientos pasados → avanzar al próximo período
   const overdue = await prisma.recurringExpense.findMany({
@@ -107,7 +115,40 @@ export async function runRemindersJob(): Promise<{ rolled: number; reminded: num
     console.error('[reminders] Error en recordatorios de deudas:', err);
   }
 
-  return { rolled, reminded, debtsReminded };
+  // 4. Recordatorios de vencimiento de resumen de tarjeta (spec 20). Bloque aislado, mismo
+  //    patrón que las deudas. El vencimiento del último ciclo cerrado se DERIVA (nunca se
+  //    persiste); `cardLastRemindedFor` guarda la fecha ya avisada para no duplicar. Si el
+  //    vencimiento pasó sin pago no se insiste: el próximo cierre genera el aviso siguiente.
+  try {
+    const cards = await prisma.account.findMany({
+      where: { type: 'CARD', archivedAt: null, closingDay: { not: null }, paymentDay: { not: null } },
+    });
+    for (const card of cards) {
+      const lastCycle = previousCycle(card.closingDay!, today);
+      const paymentDate = paymentDateFor(lastCycle.closing, card.closingDay!, card.paymentDay!);
+      if (paymentDate < today) continue;
+      if (daysUntil(paymentDate, today) > CARD_REMINDER_DAYS_BEFORE) continue;
+      if (card.cardLastRemindedFor && card.cardLastRemindedFor.getTime() === paymentDate.getTime()) continue;
+
+      const total = await cardCycleSpent(card.id, lastCycle);
+      if (total <= 0) continue; // resumen sin consumos: nada que pagar ni recordar
+
+      const closingStr = lastCycle.closing.toISOString().slice(0, 10);
+      const dueStr = paymentDate.toISOString().slice(0, 10);
+      const days = daysUntil(paymentDate, today);
+      const when = days === 0 ? 'vence hoy' : `vence en ${days} día${days === 1 ? '' : 's'} (${dueStr})`;
+      const title = `Resumen de tarjeta por vencer: ${card.name}`;
+      const body = `El resumen de ${card.name} cerrado el ${closingStr} por ${moneyLabel(total, card.currency)} ${when}.`;
+
+      await notifyUser(card.userId, { title, body, emailHtml: `<h2>${title}</h2><p>${body}</p>` });
+      await prisma.account.update({ where: { id: card.id }, data: { cardLastRemindedFor: paymentDate } });
+      cardsReminded++;
+    }
+  } catch (err) {
+    console.error('[reminders] Error en recordatorios de tarjetas:', err);
+  }
+
+  return { rolled, reminded, debtsReminded, cardsReminded };
 }
 
 export function scheduleRemindersJob(): void {
@@ -115,7 +156,7 @@ export function scheduleRemindersJob(): void {
     try {
       const result = await runRemindersJob();
       console.log(
-        `[reminders] rolled=${result.rolled} reminded=${result.reminded} debtsReminded=${result.debtsReminded}`,
+        `[reminders] rolled=${result.rolled} reminded=${result.reminded} debtsReminded=${result.debtsReminded} cardsReminded=${result.cardsReminded}`,
       );
     } catch (err) {
       console.error('[reminders] Error en job de recordatorios:', err);

@@ -7,6 +7,7 @@ import { requireAuth } from '../middleware/auth';
 import { asyncHandler, HttpError } from '../middleware/error';
 import { prisma } from '../prisma';
 import { checkBudgetAlert } from '../services/budgetAlerts';
+import { checkCardLimitAlert } from '../services/cardAlerts';
 
 const router = Router();
 router.use(requireAuth);
@@ -166,6 +167,10 @@ router.post(
     if (existing.type === 'EXPENSE') {
       checkBudgetAlert(req.auth!.userId, existing.categoryId).catch((err) =>
         console.error('[budgets] Error evaluando alerta:', err),
+      );
+      // Un recurrente pagado con la tarjeta también cuenta contra el límite del ciclo (spec 20).
+      checkCardLimitAlert(req.auth!.userId, accountId).catch((err) =>
+        console.error('[cards] Error evaluando alerta de límite:', err),
       );
     }
     res.status(201).json({ transaction: serialize(transaction), recurring: serialize(recurring) });

@@ -5,6 +5,7 @@ import type {
   AccountInput,
   AccountReconcileInput,
   AccountReconcileResult,
+  AccountsOverview,
   AccountUpdateInput,
   AuthResponse,
   Budget,
@@ -138,6 +139,8 @@ export class ApiClient {
     digestFrequency?: DigestFrequency;
     /** Nombre del perfil — mismo endpoint, ya soportado por la API. */
     name?: string;
+    /** Moneda base para consolidar totales (ej: ARS, USD). */
+    baseCurrency?: string;
   }) {
     return this.request<User>('PATCH', '/api/auth/me', input);
   }
@@ -146,8 +149,9 @@ export class ApiClient {
   }
 
   // --- Cuentas ---
+  /** Cuentas con saldo calculado + patrimonio neto consolidado a moneda base. */
   listAccounts() {
-    return this.request<Account[]>('GET', '/api/accounts');
+    return this.request<AccountsOverview>('GET', '/api/accounts');
   }
   createAccount(input: AccountInput) {
     return this.request<Account>('POST', '/api/accounts', input);

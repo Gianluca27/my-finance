@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { consolidateToBase } from '../lib/currency';
 import { currentMonth, isValidMonth, monthLength, monthRange, shiftMonth, startOfTodayUTC } from '../lib/dates';
 import { buildInvestmentsSummary, investmentMetrics, type PositionOp } from '../lib/investments';
 import { serialize } from '../lib/serialize';
@@ -79,23 +80,28 @@ router.get(
       debtPaymentSums,
       categories,
       committedAgg,
-      initialBalancesAgg,
+      accountRows,
       activeInvestments,
       investmentOps,
       exchangeRates,
       deltaBeforeRows,
       nwMonthlyRows,
+      userRow,
+      transferOutSums,
+      transferInSums,
     ] = await Promise.all([
-      // Balance histórico (todos los ingresos - todos los gastos). No excluye goalId: el balance
-      // real de la cuenta sí baja con los aportes y sube con los retiros, eso es correcto.
+      // Balance histórico (todos los ingresos - todos los gastos), por cuenta para poder
+      // agrupar por moneda. No excluye goalId: el balance real de la cuenta sí baja con
+      // los aportes y sube con los retiros, eso es correcto.
       prisma.transaction.groupBy({
-        by: ['type'],
+        by: ['type', 'accountId'],
         where: { userId },
         _sum: { amount: true },
       }),
-      // Totales del mes seleccionado (excluye aportes/retiros de metas: no son gasto/ingreso real)
+      // Totales del mes seleccionado, por cuenta para agrupar por moneda
+      // (excluye aportes/retiros de metas: no son gasto/ingreso real)
       prisma.transaction.groupBy({
-        by: ['type'],
+        by: ['type', 'accountId'],
         where: { userId, date: { gte: start, lt: end }, goalId: null },
         _sum: { amount: true },
       }),
@@ -175,8 +181,8 @@ router.get(
         where: { userId, active: true, type: 'EXPENSE', nextDueDate: { gte: today, lt: end } },
         _sum: { amount: true },
       }),
-      // Saldos iniciales de todas las cuentas
-      prisma.account.aggregate({ where: { userId }, _sum: { initialBalance: true } }),
+      // Cuentas con su moneda y saldo inicial: base de todos los agregados por moneda
+      prisma.account.findMany({ where: { userId }, select: { id: true, currency: true, initialBalance: true } }),
       // Inversiones activas para el resumen del portafolio
       prisma.investment.findMany({
         where: { userId, archivedAt: null },
@@ -189,26 +195,98 @@ router.get(
         select: { investmentId: true, type: true, quantity: true, unitPrice: true },
       }),
       prisma.exchangeRate.findMany({ where: { userId } }),
-      // Delta acumulado (ingresos - gastos) previo a la ventana de patrimonio neto
-      prisma.$queryRaw<Array<{ delta: number }>>`
-        SELECT COALESCE(SUM(CASE WHEN "type" = 'INCOME' THEN "amount" ELSE -"amount" END), 0)::float8 AS delta
-        FROM "Transaction"
-        WHERE "userId" = ${userId} AND "date" < ${nwWindowStart}
-      `,
-      // Delta mensual dentro de la ventana de patrimonio neto
-      prisma.$queryRaw<Array<{ month: string; delta: number }>>`
-        SELECT to_char("date", 'YYYY-MM') AS month,
-               SUM(CASE WHEN "type" = 'INCOME' THEN "amount" ELSE -"amount" END)::float8 AS delta
-        FROM "Transaction"
-        WHERE "userId" = ${userId} AND "date" >= ${nwWindowStart} AND "date" < ${nwWindowEnd}
+      // Delta acumulado previo a la ventana de patrimonio neto, por moneda de cuenta.
+      // Incluye las patas de transferencias: entre monedas distintas NO se cancelan
+      // (mueven valor de una moneda a otra); dentro de la misma moneda sí.
+      prisma.$queryRaw<Array<{ currency: string; delta: number }>>`
+        SELECT d.currency AS currency, SUM(d.delta)::float8 AS delta
+        FROM (
+          SELECT a."currency" AS currency, t."date" AS date,
+                 CASE WHEN t."type" = 'INCOME' THEN t."amount" ELSE -t."amount" END AS delta
+          FROM "Transaction" t JOIN "Account" a ON a."id" = t."accountId"
+          WHERE t."userId" = ${userId}
+          UNION ALL
+          SELECT a."currency", tr."date", tr."amountTo"
+          FROM "Transfer" tr JOIN "Account" a ON a."id" = tr."toAccountId"
+          WHERE tr."userId" = ${userId}
+          UNION ALL
+          SELECT a."currency", tr."date", -tr."amount"
+          FROM "Transfer" tr JOIN "Account" a ON a."id" = tr."fromAccountId"
+          WHERE tr."userId" = ${userId}
+        ) d
+        WHERE d.date < ${nwWindowStart}
         GROUP BY 1
       `,
+      // Delta mensual dentro de la ventana de patrimonio neto, por moneda de cuenta
+      // (misma unión de movimientos + patas de transferencias que la query anterior).
+      prisma.$queryRaw<Array<{ month: string; currency: string; delta: number }>>`
+        SELECT to_char(d.date, 'YYYY-MM') AS month, d.currency AS currency, SUM(d.delta)::float8 AS delta
+        FROM (
+          SELECT a."currency" AS currency, t."date" AS date,
+                 CASE WHEN t."type" = 'INCOME' THEN t."amount" ELSE -t."amount" END AS delta
+          FROM "Transaction" t JOIN "Account" a ON a."id" = t."accountId"
+          WHERE t."userId" = ${userId}
+          UNION ALL
+          SELECT a."currency", tr."date", tr."amountTo"
+          FROM "Transfer" tr JOIN "Account" a ON a."id" = tr."toAccountId"
+          WHERE tr."userId" = ${userId}
+          UNION ALL
+          SELECT a."currency", tr."date", -tr."amount"
+          FROM "Transfer" tr JOIN "Account" a ON a."id" = tr."fromAccountId"
+          WHERE tr."userId" = ${userId}
+        ) d
+        WHERE d.date >= ${nwWindowStart} AND d.date < ${nwWindowEnd}
+        GROUP BY 1, 2
+      `,
+      // Moneda base del usuario para consolidar los totales
+      prisma.user.findUnique({ where: { id: userId }, select: { baseCurrency: true } }),
+      // Transferencias enviadas/recibidas por cuenta: entran al balance por moneda
+      prisma.transfer.groupBy({ by: ['fromAccountId'], where: { userId }, _sum: { amount: true } }),
+      prisma.transfer.groupBy({ by: ['toAccountId'], where: { userId }, _sum: { amountTo: true } }),
     ]);
 
-    const totalIncome = totals.find((t) => t.type === 'INCOME')?._sum.amount?.toNumber() ?? 0;
-    const totalExpense = totals.find((t) => t.type === 'EXPENSE')?._sum.amount?.toNumber() ?? 0;
-    const monthIncome = monthTotals.find((t) => t.type === 'INCOME')?._sum.amount?.toNumber() ?? 0;
-    const monthExpense = monthTotals.find((t) => t.type === 'EXPENSE')?._sum.amount?.toNumber() ?? 0;
+    // --- Consolidación multi-moneda (spec 19, fase A) ---
+    // Balance, ingresos/gastos del mes, netWorthTrend y safe-to-spend se agrupan por
+    // moneda de cuenta y se convierten a la moneda base del usuario. Las monedas sin
+    // cotización quedan fuera de los totales y se reportan en `currency.missingRates`.
+    // El resto de los agregados (categorías, comparativas, anomalías, metas) sigue
+    // sumando nominales sin convertir: se consolidan en fases B/C.
+    const baseCurrency = userRow?.baseCurrency ?? 'ARS';
+    const rateMap = new Map(exchangeRates.map((r) => [r.currency, r.rate.toNumber()]));
+    const currencyByAccount = new Map(accountRows.map((a) => [a.id, a.currency]));
+    const addTo = (map: Map<string, number>, currency: string, value: number) =>
+      map.set(currency, (map.get(currency) ?? 0) + value);
+    const toCurrencyAmounts = (map: Map<string, number>) =>
+      Array.from(map, ([currency, amount]) => ({ currency, amount: round2(amount) }));
+
+    // Balance histórico por moneda: inicial + ingresos - gastos + transferencias
+    // recibidas - enviadas (cada pata en la moneda de su cuenta).
+    const balanceByCurrency = new Map<string, number>();
+    for (const a of accountRows) addTo(balanceByCurrency, a.currency, a.initialBalance.toNumber());
+    for (const row of totals) {
+      const sign = row.type === 'INCOME' ? 1 : -1;
+      addTo(balanceByCurrency, currencyByAccount.get(row.accountId) ?? 'ARS', sign * (row._sum.amount?.toNumber() ?? 0));
+    }
+    for (const row of transferInSums) {
+      addTo(balanceByCurrency, currencyByAccount.get(row.toAccountId) ?? 'ARS', row._sum.amountTo?.toNumber() ?? 0);
+    }
+    for (const row of transferOutSums) {
+      addTo(balanceByCurrency, currencyByAccount.get(row.fromAccountId) ?? 'ARS', -(row._sum.amount?.toNumber() ?? 0));
+    }
+    const balanceC = consolidateToBase(balanceByCurrency, baseCurrency, rateMap);
+    const balance = balanceC.total;
+
+    // Ingresos/gastos del mes por moneda, consolidados a base.
+    const monthIncomeByCurrency = new Map<string, number>();
+    const monthExpenseByCurrency = new Map<string, number>();
+    for (const row of monthTotals) {
+      const target = row.type === 'INCOME' ? monthIncomeByCurrency : monthExpenseByCurrency;
+      addTo(target, currencyByAccount.get(row.accountId) ?? 'ARS', row._sum.amount?.toNumber() ?? 0);
+    }
+    const monthIncomeC = consolidateToBase(monthIncomeByCurrency, baseCurrency, rateMap);
+    const monthExpenseC = consolidateToBase(monthExpenseByCurrency, baseCurrency, rateMap);
+    const monthIncome = monthIncomeC.total;
+    const monthExpense = monthExpenseC.total;
 
     // Ahorro neto en metas del mes: aportes (EXPENSE con goalId) menos retiros (INCOME con goalId).
     // Se muestra como línea propia ("Ahorro en metas") en vez de contarse como gasto o ingreso.
@@ -339,10 +417,9 @@ router.get(
     );
 
     // --- Disponible para gastar (Safe-to-spend) ---
-    // Balance real menos gastos fijos activos que todavía vencen antes de fin del mes seleccionado.
-    // Patrimonio neto = saldos iniciales + ingresos - gastos (las transferencias se cancelan globalmente).
-    const initialBalances = initialBalancesAgg._sum.initialBalance?.toNumber() ?? 0;
-    const balance = round2(initialBalances + totalIncome - totalExpense);
+    // Balance consolidado a moneda base menos gastos fijos activos que todavía vencen antes
+    // de fin del mes seleccionado. Los recurrentes no tienen moneda propia: sus montos se
+    // asumen en moneda base (deuda de fase A, ver spec 19).
     const committedExpenses = round2(committedAgg._sum.amount?.toNumber() ?? 0);
     const safeToSpend = {
       balance,
@@ -366,20 +443,51 @@ router.get(
     );
 
     // --- Tendencia de patrimonio neto (12 meses) ---
-    // Se reconstruye desde el historial: patrimonio a fin de mes = saldos iniciales
-    // + (ingresos - gastos) acumulados hasta ese mes. Las transferencias se cancelan globalmente.
-    const nwDeltaByMonth = new Map(nwMonthlyRows.map((r) => [r.month, r.delta]));
-    let runningNetWorth = initialBalances + (deltaBeforeRows[0]?.delta ?? 0);
+    // Se reconstruye por moneda: saldos iniciales + deltas acumulados (movimientos y
+    // patas de transferencias, cada una en la moneda de su cuenta). Cada punto se
+    // consolida a moneda base al TC vigente — aproximación: no hay historial de
+    // cotizaciones (fuera de alcance de spec 19; ver nota en spec 14).
+    const runningByCurrency = new Map<string, number>();
+    for (const a of accountRows) addTo(runningByCurrency, a.currency, a.initialBalance.toNumber());
+    for (const row of deltaBeforeRows) addTo(runningByCurrency, row.currency, row.delta);
+    const nwDeltasByMonth = new Map<string, Array<{ currency: string; delta: number }>>();
+    for (const row of nwMonthlyRows) {
+      const list = nwDeltasByMonth.get(row.month) ?? [];
+      list.push(row);
+      nwDeltasByMonth.set(row.month, list);
+    }
+    let nwConverted = false;
+    const nwMissing = new Set<string>();
     const netWorthTrend = nwMonths.map((m) => {
-      runningNetWorth += nwDeltaByMonth.get(m) ?? 0;
-      return { month: m, netWorth: round2(runningNetWorth) };
+      for (const row of nwDeltasByMonth.get(m) ?? []) addTo(runningByCurrency, row.currency, row.delta);
+      const point = consolidateToBase(runningByCurrency, baseCurrency, rateMap);
+      nwConverted = nwConverted || point.converted;
+      for (const c of point.missingRates) nwMissing.add(c);
+      return { month: m, netWorth: point.total };
     });
+
+    // Unión de faltantes/conversiones de todos los totales consolidados.
+    const missingRates = new Set([
+      ...balanceC.missingRates,
+      ...monthIncomeC.missingRates,
+      ...monthExpenseC.missingRates,
+      ...nwMissing,
+    ]);
+    const converted = balanceC.converted || monthIncomeC.converted || monthExpenseC.converted || nwConverted;
 
     res.json({
       balance,
       month,
       monthIncome,
       monthExpense,
+      currency: {
+        baseCurrency,
+        converted,
+        missingRates: Array.from(missingRates).sort(),
+        balanceByCurrency: toCurrencyAmounts(balanceByCurrency),
+        monthIncomeByCurrency: toCurrencyAmounts(monthIncomeByCurrency),
+        monthExpenseByCurrency: toCurrencyAmounts(monthExpenseByCurrency),
+      },
       monthTransactionCount,
       goalContributions,
       expensesByCategory,

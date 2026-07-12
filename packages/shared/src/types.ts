@@ -12,6 +12,8 @@ export interface User {
   emailAlerts: boolean;
   pushAlerts: boolean;
   digestFrequency: DigestFrequency;
+  /** Moneda en la que se consolidan los totales (código libre, ej: ARS, USD). */
+  baseCurrency: string;
   createdAt: string;
 }
 
@@ -428,12 +430,31 @@ export interface DashboardInsights {
 }
 
 export interface SafeToSpend {
-  /** Balance total actual (base del cálculo). */
+  /** Balance total actual (base del cálculo), en moneda base. */
   balance: number;
-  /** Gastos fijos activos aún por vencer antes de fin del mes seleccionado. */
+  /** Gastos fijos activos aún por vencer antes de fin del mes seleccionado.
+   * Los recurrentes no tienen moneda propia: se asumen en moneda base. */
   committedExpenses: number;
   /** balance - committedExpenses. Puede ser negativo si los compromisos superan el balance. */
   available: number;
+}
+
+/** Consolidación multi-moneda de los totales del dashboard (spec 19, fase A). */
+export interface DashboardCurrency {
+  /** Moneda base del usuario: balance, ingresos/gastos del mes, netWorthTrend y
+   * safe-to-spend vienen consolidados en esta moneda. */
+  baseCurrency: string;
+  /** true si algún total incluyó conversión desde otra moneda (la UI muestra "≈"). */
+  converted: boolean;
+  /** Monedas de cuenta sin cotización cargada: sus montos quedan fuera de los
+   * totales consolidados (patrón missingRates de Inversiones). */
+  missingRates: string[];
+  /** Desglose del balance total por moneda de cuenta (montos originales). */
+  balanceByCurrency: CurrencyAmount[];
+  /** Desglose de los ingresos del mes por moneda. */
+  monthIncomeByCurrency: CurrencyAmount[];
+  /** Desglose de los gastos del mes por moneda. */
+  monthExpenseByCurrency: CurrencyAmount[];
 }
 
 export interface DebtsSummary {
@@ -443,17 +464,23 @@ export interface DebtsSummary {
   totalOwedToMe: number;
 }
 
-/** Patrimonio neto a fin de un mes "YYYY-MM" (saldos iniciales + ingresos - gastos acumulados). */
+/** Patrimonio neto a fin de un mes "YYYY-MM" (saldos iniciales + ingresos - gastos
+ * ± transferencias, acumulados por moneda y consolidados a moneda base al TC vigente). */
 export interface NetWorthPoint {
   month: string;
   netWorth: number;
 }
 
 export interface DashboardData {
+  /** Balance total (todas las cuentas), consolidado a moneda base. */
   balance: number;
   month: string;
+  /** Ingresos del mes seleccionado, consolidados a moneda base. */
   monthIncome: number;
+  /** Gastos del mes seleccionado, consolidados a moneda base. */
   monthExpense: number;
+  /** Detalle multi-moneda de los totales consolidados. */
+  currency: DashboardCurrency;
   /** Total de movimientos del mes (incluye aportes/retiros de metas, a diferencia de
    * monthIncome/monthExpense). Alimenta el footnote de Reportes sin pedir un listado aparte. */
   monthTransactionCount: number;
@@ -515,19 +542,53 @@ export interface Account {
   name: string;
   type: AccountType;
   initialBalance: number;
+  /** Moneda de la cuenta (código libre, ej: ARS, USD). Sus movimientos están en
+   * esta moneda; inmutable una vez que la cuenta tiene movimientos. */
+  currency: string;
   color: string;
   icon: string | null;
   isDefault: boolean;
   archivedAt: string | null;
-  /** Calculado: inicial + ingresos - gastos + transferencias netas. No se persiste. */
+  /** Calculado: inicial + ingresos - gastos + transferencias netas. En la moneda de la cuenta. */
   balance: number;
+  /** Calculado: true si tiene transacciones o transferencias (la moneda ya no se puede cambiar). */
+  hasMovements: boolean;
   createdAt: string;
+}
+
+/** Un monto en una moneda concreta (desgloses por moneda). */
+export interface CurrencyAmount {
+  currency: string;
+  amount: number;
+}
+
+/** Total consolidado a la moneda base del usuario, con desglose por moneda. */
+export interface ConsolidatedTotal {
+  /** Moneda base del usuario: `total` está expresado en ella. */
+  baseCurrency: string;
+  /** Total en moneda base. Excluye las monedas listadas en `missingRates`. */
+  total: number;
+  /** true si algún monto entró convertido desde otra moneda (la UI muestra "≈"). */
+  converted: boolean;
+  /** Desglose por moneda, en los montos originales de cada una. */
+  byCurrency: CurrencyAmount[];
+  /** Monedas sin cotización cargada, excluidas del total (patrón de Inversiones). */
+  missingRates: string[];
+}
+
+/** Respuesta de `GET /api/accounts`: cuentas + patrimonio consolidado a moneda base. */
+export interface AccountsOverview {
+  items: Account[];
+  /** Suma del saldo de todas las cuentas (incluidas archivadas), consolidada. */
+  netWorth: ConsolidatedTotal;
 }
 
 export interface AccountInput {
   name: string;
   type?: AccountType;
   initialBalance?: number;
+  /** Moneda de la cuenta. Default ARS. Solo editable mientras no tenga movimientos. */
+  currency?: string;
   color?: string;
   icon?: string | null;
   isDefault?: boolean;
@@ -555,11 +616,16 @@ export interface TransferAccountRef {
   color: string;
   icon: string | null;
   type: AccountType;
+  currency: string;
 }
 
 export interface Transfer {
   id: string;
+  /** Monto que sale de la cuenta origen, en su moneda. */
   amount: number;
+  /** Monto que entra en la cuenta destino, en su moneda. Igual a `amount` entre
+   * cuentas de la misma moneda; si difieren, el par registra el TC implícito. */
+  amountTo: number;
   date: string;
   note: string | null;
   fromAccountId: string;
@@ -572,7 +638,11 @@ export interface Transfer {
 export interface TransferInput {
   fromAccountId: string;
   toAccountId: string;
+  /** Monto que sale de la cuenta origen, en su moneda. */
   amount: number;
+  /** Monto que entra en la cuenta destino. Obligatorio cuando las cuentas están
+   * en monedas distintas; se ignora (== amount) cuando comparten moneda. */
+  amountTo?: number;
   date?: string;
   note?: string | null;
 }

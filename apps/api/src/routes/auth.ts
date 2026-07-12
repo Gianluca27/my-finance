@@ -67,10 +67,11 @@ function publicUser(user: {
   emailAlerts: boolean;
   pushAlerts: boolean;
   digestFrequency: DigestFrequency;
+  baseCurrency: string;
   createdAt: Date;
 }) {
-  const { id, email, name, emailAlerts, pushAlerts, digestFrequency, createdAt } = user;
-  return serialize({ id, email, name, emailAlerts, pushAlerts, digestFrequency, createdAt });
+  const { id, email, name, emailAlerts, pushAlerts, digestFrequency, baseCurrency, createdAt } = user;
+  return serialize({ id, email, name, emailAlerts, pushAlerts, digestFrequency, baseCurrency, createdAt });
 }
 
 router.post(
@@ -190,6 +191,13 @@ const prefsSchema = z.object({
   pushAlerts: z.boolean().optional(),
   digestFrequency: z.nativeEnum(DigestFrequency).optional(),
   name: z.string().min(1).max(100).optional(),
+  /** Moneda base para consolidar totales (código libre; la UI ofrece ARS/USD). */
+  baseCurrency: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z]{2,8}$/, 'Código de moneda inválido')
+    .transform((s) => s.toUpperCase())
+    .optional(),
 });
 
 router.patch(

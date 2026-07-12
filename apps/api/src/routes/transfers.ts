@@ -8,12 +8,16 @@ import { prisma } from '../prisma';
 const router = Router();
 router.use(requireAuth);
 
-const accountSelect = { select: { id: true, name: true, color: true, icon: true, type: true } };
+const accountSelect = { select: { id: true, name: true, color: true, icon: true, type: true, currency: true } };
 
 const createSchema = z.object({
   fromAccountId: z.string().min(1),
   toAccountId: z.string().min(1),
+  /** Monto que sale de la cuenta origen, en su moneda. */
   amount: z.number().positive().max(999_999_999),
+  /** Monto que entra en destino. Obligatorio entre monedas distintas (queda
+   * registrado el TC implícito); entre cuentas de la misma moneda se ignora. */
+  amountTo: z.number().positive().max(999_999_999).optional(),
   date: z.coerce.date().optional(),
   note: z.string().max(500).nullable().optional(),
 });
@@ -27,6 +31,28 @@ async function validateAccounts(userId: string, fromAccountId: string, toAccount
     where: { id: { in: [fromAccountId, toAccountId] }, userId },
   });
   if (accounts.length !== 2) throw new HttpError(400, 'Cuenta de origen o destino inválida');
+  return accounts;
+}
+
+/**
+ * Monto que entra en la cuenta destino: igual al que sale si ambas cuentas
+ * comparten moneda; entre monedas distintas el cliente debe indicar ambas
+ * puntas (no se aplica ningún TC automático: el implícito queda registrado).
+ */
+function resolveAmountTo(
+  accounts: Array<{ id: string; currency: string }>,
+  input: { fromAccountId: string; toAccountId: string; amount: number; amountTo?: number },
+): number {
+  const from = accounts.find((a) => a.id === input.fromAccountId)!;
+  const to = accounts.find((a) => a.id === input.toAccountId)!;
+  if (from.currency === to.currency) return input.amount;
+  if (input.amountTo === undefined) {
+    throw new HttpError(
+      400,
+      `Las cuentas están en monedas distintas (${from.currency} → ${to.currency}): indicá también cuánto entra en la cuenta destino.`,
+    );
+  }
+  return input.amountTo;
 }
 
 router.get(
@@ -46,13 +72,14 @@ router.post(
   asyncHandler(async (req, res) => {
     const input = createSchema.parse(req.body);
     const userId = req.auth!.userId;
-    await validateAccounts(userId, input.fromAccountId, input.toAccountId);
+    const accounts = await validateAccounts(userId, input.fromAccountId, input.toAccountId);
 
     const transfer = await prisma.transfer.create({
       data: {
         fromAccountId: input.fromAccountId,
         toAccountId: input.toAccountId,
         amount: input.amount,
+        amountTo: resolveAmountTo(accounts, input),
         date: input.date ?? new Date(),
         note: input.note ?? null,
         userId,
@@ -70,7 +97,7 @@ router.put(
     const userId = req.auth!.userId;
     const existing = await prisma.transfer.findFirst({ where: { id: req.params.id, userId } });
     if (!existing) throw new HttpError(404, 'Transferencia no encontrada');
-    await validateAccounts(userId, input.fromAccountId, input.toAccountId);
+    const accounts = await validateAccounts(userId, input.fromAccountId, input.toAccountId);
 
     const transfer = await prisma.transfer.update({
       where: { id: existing.id },
@@ -78,6 +105,7 @@ router.put(
         fromAccountId: input.fromAccountId,
         toAccountId: input.toAccountId,
         amount: input.amount,
+        amountTo: resolveAmountTo(accounts, input),
         date: input.date ?? existing.date,
         note: input.note ?? null,
       },

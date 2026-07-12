@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { computeReconcileAdjustment } from '../lib/accounts';
+import { consolidateToBase } from '../lib/currency';
 import { serialize } from '../lib/serialize';
 import { requireAuth } from '../middleware/auth';
 import { asyncHandler, HttpError } from '../middleware/error';
@@ -17,6 +18,13 @@ const createSchema = z.object({
   name: z.string().min(1).max(60),
   type: z.enum(['CASH', 'BANK', 'CARD', 'OTHER']).default('BANK'),
   initialBalance: z.number().min(-999_999_999).max(999_999_999).default(0),
+  /** Moneda de la cuenta. Modelo free-string; la UI ofrece ARS/USD primero. */
+  currency: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z]{2,8}$/, 'Código de moneda inválido')
+    .transform((s) => s.toUpperCase())
+    .default('ARS'),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   icon: z.string().max(16).nullable().optional(),
   isDefault: z.boolean().optional(),
@@ -32,13 +40,24 @@ const reconcileSchema = z.object({
   date: z.coerce.date().optional(),
 });
 
-/** Calcula el balance de cada cuenta: inicial + ingresos - gastos + transferencias recibidas - enviadas. */
-async function balancesByAccount(userId: string, accounts: { id: string; initialBalance: { toNumber(): number } }[]) {
+interface AccountComputed {
+  /** Inicial + ingresos - gastos + transferencias recibidas - enviadas, en la moneda de la cuenta. */
+  balance: number;
+  /** true si tiene transacciones o transferencias: la moneda ya no se puede cambiar. */
+  hasMovements: boolean;
+}
+
+/** Calcula balance y presencia de movimientos de cada cuenta. Las transferencias
+ * entran por `amountTo` en destino y `amount` en origen (cada pata en su moneda). */
+async function computeAccountFields(
+  userId: string,
+  accounts: { id: string; initialBalance: { toNumber(): number } }[],
+): Promise<Map<string, AccountComputed>> {
   const ids = accounts.map((a) => a.id);
   const [txSums, fromSums, toSums] = await Promise.all([
     prisma.transaction.groupBy({ by: ['accountId', 'type'], where: { userId, accountId: { in: ids } }, _sum: { amount: true } }),
     prisma.transfer.groupBy({ by: ['fromAccountId'], where: { userId }, _sum: { amount: true } }),
-    prisma.transfer.groupBy({ by: ['toAccountId'], where: { userId }, _sum: { amount: true } }),
+    prisma.transfer.groupBy({ by: ['toAccountId'], where: { userId }, _sum: { amountTo: true } }),
   ]);
   const income = new Map<string, number>();
   const expense = new Map<string, number>();
@@ -47,9 +66,9 @@ async function balancesByAccount(userId: string, accounts: { id: string; initial
     target.set(row.accountId, (target.get(row.accountId) ?? 0) + (row._sum.amount?.toNumber() ?? 0));
   }
   const out = new Map(fromSums.map((r) => [r.fromAccountId, r._sum.amount?.toNumber() ?? 0]));
-  const inn = new Map(toSums.map((r) => [r.toAccountId, r._sum.amount?.toNumber() ?? 0]));
+  const inn = new Map(toSums.map((r) => [r.toAccountId, r._sum.amountTo?.toNumber() ?? 0]));
 
-  const map = new Map<string, number>();
+  const map = new Map<string, AccountComputed>();
   for (const a of accounts) {
     const balance =
       a.initialBalance.toNumber() +
@@ -57,7 +76,11 @@ async function balancesByAccount(userId: string, accounts: { id: string; initial
       (expense.get(a.id) ?? 0) +
       (inn.get(a.id) ?? 0) -
       (out.get(a.id) ?? 0);
-    map.set(a.id, round2(balance));
+    // Los groupBy solo devuelven filas para cuentas con datos: la sola presencia
+    // en alguno de los mapas implica que la cuenta tiene movimientos.
+    const hasMovements =
+      income.has(a.id) || expense.has(a.id) || inn.has(a.id) || out.has(a.id);
+    map.set(a.id, { balance: round2(balance), hasMovements });
   }
   return map;
 }
@@ -66,12 +89,44 @@ router.get(
   '/',
   asyncHandler(async (req, res) => {
     const userId = req.auth!.userId;
-    const accounts = await prisma.account.findMany({
-      where: { userId },
-      orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+    const [accounts, user, exchangeRates] = await Promise.all([
+      prisma.account.findMany({
+        where: { userId },
+        orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+      }),
+      prisma.user.findUnique({ where: { id: userId }, select: { baseCurrency: true } }),
+      prisma.exchangeRate.findMany({ where: { userId } }),
+    ]);
+    const computed = await computeAccountFields(userId, accounts);
+
+    // Patrimonio neto agrupado por moneda de cuenta (incluye archivadas: el
+    // dinero existió) y consolidado a la moneda base del usuario.
+    const baseCurrency = user?.baseCurrency ?? 'ARS';
+    const balanceByCurrency = new Map<string, number>();
+    for (const a of accounts) {
+      const balance = computed.get(a.id)?.balance ?? 0;
+      balanceByCurrency.set(a.currency, (balanceByCurrency.get(a.currency) ?? 0) + balance);
+    }
+    const consolidated = consolidateToBase(
+      balanceByCurrency,
+      baseCurrency,
+      new Map(exchangeRates.map((r) => [r.currency, r.rate.toNumber()])),
+    );
+
+    res.json({
+      items: accounts.map((a) => ({
+        ...(serialize(a) as Record<string, unknown>),
+        balance: computed.get(a.id)?.balance ?? 0,
+        hasMovements: computed.get(a.id)?.hasMovements ?? false,
+      })),
+      netWorth: {
+        baseCurrency,
+        total: consolidated.total,
+        converted: consolidated.converted,
+        byCurrency: Array.from(balanceByCurrency, ([currency, amount]) => ({ currency, amount: round2(amount) })),
+        missingRates: consolidated.missingRates,
+      },
     });
-    const balances = await balancesByAccount(userId, accounts);
-    res.json(accounts.map((a) => ({ ...(serialize(a) as Record<string, unknown>), balance: balances.get(a.id) ?? 0 })));
   }),
 );
 
@@ -87,7 +142,11 @@ router.post(
       await prisma.account.updateMany({ where: { userId, isDefault: true }, data: { isDefault: false } });
     }
     const account = await prisma.account.create({ data: { ...input, isDefault: makeDefault, userId } });
-    res.status(201).json({ ...(serialize(account) as Record<string, unknown>), balance: account.initialBalance.toNumber() });
+    res.status(201).json({
+      ...(serialize(account) as Record<string, unknown>),
+      balance: account.initialBalance.toNumber(),
+      hasMovements: false,
+    });
   }),
 );
 
@@ -112,6 +171,20 @@ router.put(
     if (input.isDefault === true && staysArchived) {
       throw new HttpError(400, 'Una cuenta archivada no puede ser la predeterminada. Desarchivala primero.');
     }
+    // Regla dura de spec 19: la moneda es inmutable con movimientos existentes.
+    // Cambiarla reinterpretaría todo el historial de la cuenta en otra moneda.
+    if (input.currency !== undefined && input.currency !== existing.currency) {
+      const [txCount, transferCount] = await Promise.all([
+        prisma.transaction.count({ where: { accountId: existing.id } }),
+        prisma.transfer.count({ where: { OR: [{ fromAccountId: existing.id }, { toAccountId: existing.id }] } }),
+      ]);
+      if (txCount > 0 || transferCount > 0) {
+        throw new HttpError(
+          400,
+          'No se puede cambiar la moneda: la cuenta ya tiene movimientos o transferencias registrados en su moneda original.',
+        );
+      }
+    }
 
     const { archived, ...fields } = input;
     const data: Record<string, unknown> = { ...fields };
@@ -126,8 +199,12 @@ router.put(
     ops.push(prisma.account.update({ where: { id: existing.id }, data }));
     const results = await prisma.$transaction(ops);
     const account = results[results.length - 1] as Awaited<ReturnType<typeof prisma.account.update>>;
-    const balances = await balancesByAccount(userId, [account]);
-    res.json({ ...(serialize(account) as Record<string, unknown>), balance: balances.get(account.id) ?? 0 });
+    const computed = await computeAccountFields(userId, [account]);
+    res.json({
+      ...(serialize(account) as Record<string, unknown>),
+      balance: computed.get(account.id)?.balance ?? 0,
+      hasMovements: computed.get(account.id)?.hasMovements ?? false,
+    });
   }),
 );
 
@@ -144,8 +221,8 @@ router.post(
     const existing = await prisma.account.findFirst({ where: { id: req.params.id, userId } });
     if (!existing) throw new HttpError(404, 'Cuenta no encontrada');
 
-    const balances = await balancesByAccount(userId, [existing]);
-    const calculated = balances.get(existing.id) ?? 0;
+    const computed = await computeAccountFields(userId, [existing]);
+    const calculated = computed.get(existing.id)?.balance ?? 0;
     const adjustment = computeReconcileAdjustment(calculated, input.actualBalance);
     if (!adjustment) {
       res.json({ adjustment: 0, newBalance: calculated });

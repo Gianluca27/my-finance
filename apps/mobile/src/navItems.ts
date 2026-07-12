@@ -10,6 +10,7 @@ import {
   IcoSpark,
   IcoTag,
   IcoTarget,
+  IcoTrend,
   IcoWallet,
   type IconProps,
 } from './components/icons';
@@ -35,6 +36,7 @@ export const PRIMARY_ITEMS: NavItem[] = [
 
 export const SECONDARY_ITEMS: NavItem[] = [
   { route: 'Sugerencias', label: 'Sugerencias', icon: IcoSpark },
+  { route: 'Inversiones', label: 'Inversiones', icon: IcoTrend },
   { route: 'Cuentas', label: 'Cuentas', icon: IcoWallet },
   { route: 'Deudas', label: 'Deudas', icon: IcoDebt },
   { route: 'Metas', label: 'Metas', icon: IcoTarget },

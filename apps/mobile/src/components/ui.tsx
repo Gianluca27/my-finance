@@ -61,10 +61,12 @@ export function SummaryTile({
   label,
   value,
   tone = 'default',
+  caption,
 }: {
   label: string;
   value: string;
   tone?: 'default' | 'income' | 'expense' | 'good' | 'critical';
+  caption?: string;
 }) {
   const { colors } = useTheme();
   const s = useMemo(() => baseStyles(colors), [colors]);
@@ -80,6 +82,7 @@ export function SummaryTile({
     <View style={[s.card, { flex: 1 }]}>
       <Text style={s.tileLabel}>{label}</Text>
       <Text style={[s.tileValue, { color: toneColor }]}>{value}</Text>
+      {caption ? <Text style={{ color: colors.textMuted, fontSize: 11.5, marginTop: 2 }}>{caption}</Text> : null}
     </View>
   );
 }

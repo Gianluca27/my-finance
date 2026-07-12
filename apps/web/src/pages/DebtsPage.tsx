@@ -21,6 +21,12 @@ function toDateInput(iso: string): string {
   return iso.slice(0, 10);
 }
 
+/** Fecha corta dd/mm de un ISO, sin reinterpretar zona horaria. */
+function shortDate(iso: string): string {
+  const [, m, d] = toDateInput(iso).split('-');
+  return `${d}/${m}`;
+}
+
 type DueBadge = { text: string; modifier: 'overdue' | 'soon' | 'plain' };
 
 /** Badge de vencimiento comparando solo la parte de fecha contra hoy. */
@@ -57,6 +63,13 @@ export function DebtsPage() {
   const [totalAmount, setTotalAmount] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [dueDate, setDueDate] = useState('');
+  // Deuda en cuotas (spec 17): el monto por cuota se autocalcula (total / cuotas) mientras el
+  // usuario no lo edite a mano (installmentAmountEdited).
+  const [inInstallments, setInInstallments] = useState(false);
+  const [installmentCount, setInstallmentCount] = useState('');
+  const [installmentAmount, setInstallmentAmount] = useState('');
+  const [installmentAmountEdited, setInstallmentAmountEdited] = useState(false);
+  const [firstDueDate, setFirstDueDate] = useState('');
   const [busy, setBusy] = useState(false);
 
   const [payingId, setPayingId] = useState<string | null>(null);
@@ -91,6 +104,18 @@ export function DebtsPage() {
     refresh();
   }
 
+  /** Monto por cuota autocalculado (total / cuotas, 2 decimales) o '' si aún no se puede. */
+  function autoInstallmentAmount(total: string, count: string): string {
+    const t = Number(total);
+    const c = Number(count);
+    return t > 0 && c > 0 ? String(Math.round((t / c) * 100) / 100) : '';
+  }
+
+  /** Recalcula el monto por cuota cuando cambian total o cuotas, salvo que el usuario lo haya editado. */
+  function syncInstallmentAmount(total: string, count: string) {
+    if (!installmentAmountEdited) setInstallmentAmount(autoInstallmentAmount(total, count));
+  }
+
   function resetForm() {
     setEditingId(null);
     setDirection('I_OWE');
@@ -99,6 +124,11 @@ export function DebtsPage() {
     setTotalAmount('');
     setCategoryId('');
     setDueDate('');
+    setInInstallments(false);
+    setInstallmentCount('');
+    setInstallmentAmount('');
+    setInstallmentAmountEdited(false);
+    setFirstDueDate('');
   }
 
   function onOpenCreate() {
@@ -115,6 +145,19 @@ export function DebtsPage() {
     setTotalAmount(String(debt.totalAmount));
     setCategoryId(debt.categoryId ?? '');
     setDueDate(debt.dueDate ? toDateInput(debt.dueDate) : '');
+    const hasPlan = debt.installmentCount != null;
+    setInInstallments(hasPlan);
+    setInstallmentCount(hasPlan ? String(debt.installmentCount) : '');
+    setInstallmentAmount(
+      hasPlan
+        ? debt.installmentAmount != null
+          ? String(debt.installmentAmount)
+          : autoInstallmentAmount(String(debt.totalAmount), String(debt.installmentCount))
+        : '',
+    );
+    // Si el monto guardado fue explícito, no lo pisamos al recalcular total/cuotas.
+    setInstallmentAmountEdited(hasPlan && debt.installmentAmount != null);
+    setFirstDueDate(debt.firstDueDate ? toDateInput(debt.firstDueDate) : '');
     setError(null);
     setFormOpen(true);
   }
@@ -135,6 +178,10 @@ export function DebtsPage() {
         totalAmount: Number(totalAmount),
         categoryId: categoryId || null,
         dueDate: dueDate || null,
+        // Con el toggle apagado se mandan null explícitos: al editar, quita el plan de cuotas.
+        installmentCount: inInstallments ? Number(installmentCount) : null,
+        installmentAmount: inInstallments && installmentAmount ? Number(installmentAmount) : null,
+        firstDueDate: inInstallments ? firstDueDate || null : null,
       };
       if (editingId) {
         await api.updateDebt(editingId, payload);
@@ -152,7 +199,11 @@ export function DebtsPage() {
 
   function onStartPay(debt: Debt) {
     setPayingId(debt.id);
-    setPayAmount(String(debt.remainingBalance));
+    // En cuotas precarga el monto de la próxima cuota (editable: adelantar capital sigue siendo
+    // un pago parcial normal); sin cuotas, el saldo restante como siempre.
+    setPayAmount(
+      String(debt.nextInstallment ? Math.min(debt.nextInstallment.amount, debt.remainingBalance) : debt.remainingBalance),
+    );
     setPayAccountId(accounts.find((a) => a.isDefault)?.id ?? accounts[0]?.id ?? '');
     setPayDate(todayISODate());
     setError(null);
@@ -207,11 +258,15 @@ export function DebtsPage() {
 
   const activeDebts = (debts ?? []).filter((d) => !d.settledAt);
   const settledDebts = (debts ?? []).filter((d) => d.settledAt);
+  // Vencimiento efectivo: en cuotas manda la próxima cuota impaga; si no, la dueDate global.
+  const effectiveDueDate = (d: Debt) => d.nextInstallment?.dueDate ?? d.dueDate;
   // Deudas con vencimiento primero (más próximo/vencido arriba); sin fecha al final.
   const byDueDate = (a: Debt, b: Debt) => {
-    if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
-    if (a.dueDate) return -1;
-    if (b.dueDate) return 1;
+    const dueA = effectiveDueDate(a);
+    const dueB = effectiveDueDate(b);
+    if (dueA && dueB) return dueA.localeCompare(dueB);
+    if (dueA) return -1;
+    if (dueB) return 1;
     return 0;
   };
   const oweDebts = activeDebts.filter((d) => d.direction === 'I_OWE').sort(byDueDate);
@@ -223,10 +278,16 @@ export function DebtsPage() {
 
   function renderDebtCard(debt: Debt) {
     const paid = debt.totalAmount - debt.remainingBalance;
-    const percentPaid = debt.totalAmount > 0 ? Math.min(100, Math.round((paid / debt.totalAmount) * 100)) : 100;
+    const isInstallment = debt.installmentCount != null && debt.paidInstallments != null;
+    // En cuotas la barra avanza por cuotas pagadas (un pago parcial no la mueve hasta completar la cuota).
+    const percentPaid = isInstallment
+      ? Math.min(100, Math.round((debt.paidInstallments! / debt.installmentCount!) * 100))
+      : debt.totalAmount > 0
+        ? Math.min(100, Math.round((paid / debt.totalAmount) * 100))
+        : 100;
     const color = avatarColor(debt.counterparty);
     const barModifier = debt.direction === 'I_OWE' ? 'owe' : 'owed';
-    const badge = dueBadge(debt.dueDate);
+    const badge = dueBadge(effectiveDueDate(debt));
     return (
       <div className="card mf-debt-card" key={debt.id}>
         <div className="mf-debt-head">
@@ -276,6 +337,18 @@ export function DebtsPage() {
         </div>
 
         {!debt.settledAt && badge && <span className={`mf-due-badge ${badge.modifier}`}>{badge.text}</span>}
+
+        {!debt.settledAt && isInstallment && (
+          <div className="muted mono" style={{ marginTop: 8, fontSize: 13 }}>
+            Cuota {debt.paidInstallments}/{debt.installmentCount}
+            {debt.nextInstallment && (
+              <>
+                {' '}
+                · próxima {shortDate(debt.nextInstallment.dueDate)} · {formatMoney(debt.nextInstallment.amount)}
+              </>
+            )}
+          </div>
+        )}
 
         {debt.settledAt ? (
           <p className="muted mono" style={{ margin: '10px 0 0' }}>
@@ -328,7 +401,7 @@ export function DebtsPage() {
             </div>
           ) : (
             <button type="button" className="mf-debt-pay" onClick={() => onStartPay(debt)}>
-              Registrar pago
+              {isInstallment ? 'Pagar cuota' : 'Registrar pago'}
             </button>
           ))}
       </div>
@@ -452,7 +525,10 @@ export function DebtsPage() {
               min="0.01"
               step="0.01"
               value={totalAmount}
-              onChange={(e) => setTotalAmount(e.target.value)}
+              onChange={(e) => {
+                setTotalAmount(e.target.value);
+                if (inInstallments) syncInstallmentAmount(e.target.value, installmentCount);
+              }}
               required
             />
           </label>
@@ -472,6 +548,67 @@ export function DebtsPage() {
             Vencimiento
             <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
           </label>
+          <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <input
+              type="checkbox"
+              checked={inInstallments}
+              onChange={(e) => {
+                setInInstallments(e.target.checked);
+                if (e.target.checked) syncInstallmentAmount(totalAmount, installmentCount);
+              }}
+              style={{ width: 'auto' }}
+            />
+            En cuotas
+          </label>
+          {inInstallments && (
+            <>
+              <div className="form-row">
+                <label className="field">
+                  Cuotas
+                  <input
+                    type="number"
+                    min="1"
+                    max="360"
+                    step="1"
+                    value={installmentCount}
+                    onChange={(e) => {
+                      setInstallmentCount(e.target.value);
+                      syncInstallmentAmount(totalAmount, e.target.value);
+                    }}
+                    required
+                  />
+                </label>
+                <label className="field">
+                  Monto por cuota
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={installmentAmount}
+                    onChange={(e) => {
+                      setInstallmentAmount(e.target.value);
+                      setInstallmentAmountEdited(true);
+                    }}
+                  />
+                </label>
+                <label className="field">
+                  Primer vencimiento
+                  <input
+                    type="date"
+                    value={firstDueDate}
+                    onChange={(e) => setFirstDueDate(e.target.value)}
+                    required
+                  />
+                </label>
+              </div>
+              <p className="muted" style={{ margin: 0 }}>
+                Las cuotas vencen todos los meses el mismo día (con ajuste a fin de mes) y la última
+                ajusta la diferencia contra el total.
+                {editingId &&
+                  ' Editar estos campos regenera el cronograma: las cuotas pagadas se recalculan según los pagos ya registrados.'}
+              </p>
+            </>
+          )}
           <label className="field">
             Descripción
             <input value={description} onChange={(e) => setDescription(e.target.value)} maxLength={500} />

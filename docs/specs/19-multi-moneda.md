@@ -59,10 +59,37 @@ Principio de diseño: **la moneda vive en la cuenta**. Una transacción está en
   anomalías), "Ahorro en metas", deudas y presupuestos. Solo balance,
   ingresos/gastos del mes, netWorthTrend y safe-to-spend consolidan a moneda base.
   Para usuarios multi-moneda la dona puede no cuadrar exactamente con el total de
-  gastos consolidado.
+  gastos consolidado. *(Actualización fase B: "Ahorro en metas" y el resumen de
+  deudas ya consolidan a moneda base; quedan dona, comparativas, insights y
+  presupuestos para la fase C.)*
 - **Gastos recurrentes sin moneda propia:** el "safe-to-spend" asume los fijos
   comprometidos en moneda base.
 - **Inversiones no cambia:** sus totales siguen convirtiendo con la fila `USD`
   (oficial) hacia el pivote ARS, independiente de `User.baseCurrency`. El flujo
   personal (cuentas/dashboard) usa `USDMEP` con fallback al oficial
   (`PERSONAL_USD_RATE` en `apps/api/src/lib/currency.ts`).
+
+### Deuda registrada al implementar la fase B
+
+- **Mobile sin paridad multi-moneda en deudas/metas:** compila y opera contra la
+  nueva API pero sigue formateando todo como ARS aunque la entidad tenga
+  `currency` USD, no ofrece selector de moneda al crear/editar deudas o metas
+  (las altas nuevas heredan la moneda base del usuario vía el default de la API)
+  y sus formularios de pago/aporte/retiro no muestran la conversión: el monto
+  ingresado se registra en la moneda de la cuenta usada (la por defecto en
+  pagos de deuda) y la API lo convierte al TC del día o rechaza con 400 si falta
+  cotización. El prellenado y la validación local del monto usan
+  `remainingBalance`/`saved` (moneda de la entidad) aunque la cuenta esté en
+  otra moneda, y los totales del dashboard/resúmenes se muestran sin "≈" ni
+  aviso de `missingRates`.
+- **Recordatorios de deudas con "$" fijo:** el copy de email/push
+  (`debtReminderContent`) prefija `$` sin distinguir la moneda de la deuda; una
+  deuda USD avisa "restan $500". Estructuralmente no cambió nada (los montos ya
+  están en la moneda de la deuda), falta solo el símbolo/código.
+- **Presupuestos y `spent` en nominales (fase C):** un pago de deuda EXPENSE
+  desde una cuenta no-base sigue contando su monto nominal contra el
+  presupuesto de la categoría, igual que cualquier gasto (los presupuestos aún
+  no tienen moneda).
+- **La dona de gastos y las comparativas siguen en nominales (fase C):** los
+  pagos de deuda cross-currency entran a esos agregados por el monto de la
+  transacción (moneda de la cuenta), no por el convertido.

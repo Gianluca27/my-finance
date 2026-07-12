@@ -305,7 +305,8 @@ export function DashboardPage() {
                 <div className="mf-stat-label">Tasa de ahorro</div>
                 <div className="mf-stat-value">{savingsRate}%</div>
               </div>
-              {/* Aportes y retiros de metas no cuentan como gasto/ingreso: se muestran aparte. */}
+              {/* Aportes y retiros de metas no cuentan como gasto/ingreso: se muestran aparte.
+                  Consolidado a moneda base (fase B), como el resto del hero. */}
               {data.goalContributions !== 0 && (
                 <div>
                   <div className="mf-stat-label">Ahorro en metas</div>
@@ -313,7 +314,8 @@ export function DashboardPage() {
                     className="mf-stat-value"
                     style={{ color: data.goalContributions > 0 ? 'var(--pos)' : 'var(--neg)' }}
                   >
-                    {formatMoney(data.goalContributions)}
+                    {approx}
+                    {formatMoney(data.goalContributions, baseCurrency)}
                   </div>
                 </div>
               )}
@@ -394,24 +396,34 @@ export function DashboardPage() {
             </div>
           )}
 
+          {/* Consolidado a moneda base (fase B): "≈" cuando algún saldo entró convertido.
+              Accesos defensivos (?.) por si hay un dashboard viejo en el cache de sesión. */}
           <div className="card mf-debt-strip">
             <div style={{ flex: 1 }}>
               <div className="mf-eyebrow">Debo</div>
               <div className="mf-figure" style={{ fontSize: 17, marginTop: 3, color: 'var(--neg)' }}>
-                {formatMoney(data.debtsSummary.totalIOwe)}
+                {data.debtsSummary.converted ? '≈ ' : ''}
+                {formatMoney(data.debtsSummary.totalIOwe, data.debtsSummary.baseCurrency ?? baseCurrency)}
               </div>
             </div>
             <div className="mf-debt-divider" />
             <div style={{ flex: 1 }}>
               <div className="mf-eyebrow">Me deben</div>
               <div className="mf-figure" style={{ fontSize: 17, marginTop: 3, color: 'var(--pos)' }}>
-                {formatMoney(data.debtsSummary.totalOwedToMe)}
+                {data.debtsSummary.converted ? '≈ ' : ''}
+                {formatMoney(data.debtsSummary.totalOwedToMe, data.debtsSummary.baseCurrency ?? baseCurrency)}
               </div>
             </div>
             <Link to="/deudas" className="mf-link" style={{ alignSelf: 'center' }}>
               Ver →
             </Link>
           </div>
+          {(data.debtsSummary.missingRates?.length ?? 0) > 0 && (
+            <div style={{ fontSize: 12, color: 'var(--warn)', marginTop: -6 }}>
+              Deudas sin cotización: {data.debtsSummary.missingRates.join(', ')} — quedan fuera del
+              resumen (se carga en Inversiones).
+            </div>
+          )}
 
           <div className="card">
             <div className="mf-card-head">

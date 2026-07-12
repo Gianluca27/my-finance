@@ -1,14 +1,19 @@
-import type { Account, AccountsOverview, Category, Debt, DebtDetail, DebtDirection } from '@myfinance/shared';
+import type { Account, AccountsOverview, Category, Debt, DebtDetail, DebtDirection, ExchangeRate } from '@myfinance/shared';
 import { useState, type FormEvent } from 'react';
 import { api, formatDate, formatMoney } from '../api';
+import { useAuth } from '../auth';
 import { invalidate, useCached } from '../cache';
 import { IcoPencil, IcoPlus, IcoTrash, IcoTrend } from '../components/icons';
 import { Modal } from '../components/Modal';
+import { crossRate, floor2, rateLabel } from '../lib/currency';
 
 const DIRECTION_LABEL: Record<DebtDirection, string> = {
   I_OWE: 'Debés',
   OWED_TO_ME: 'Te deben',
 };
+
+/** Monedas first-class en la UI. El modelo acepta cualquier código (free-string). */
+const CURRENCY_OPTIONS = ['ARS', 'USD'];
 
 /** Fecha local YYYY-MM-DD (evita corrimiento de zona horaria de toISOString). */
 function todayISODate(): string {
@@ -52,6 +57,7 @@ function avatarColor(name: string): string {
 }
 
 export function DebtsPage() {
+  const { user } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [showSettled, setShowSettled] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
@@ -61,6 +67,7 @@ export function DebtsPage() {
   const [counterparty, setCounterparty] = useState('');
   const [description, setDescription] = useState('');
   const [totalAmount, setTotalAmount] = useState('');
+  const [currency, setCurrency] = useState('ARS');
   const [categoryId, setCategoryId] = useState('');
   const [dueDate, setDueDate] = useState('');
   // Deuda en cuotas (spec 17): el monto por cuota se autocalcula (total / cuotas) mientras el
@@ -90,6 +97,14 @@ export function DebtsPage() {
   const { data: accountsData } = useCached<AccountsOverview>('accounts', () => api.listAccounts());
   // Las archivadas no se ofrecen para registrar nuevos pagos.
   const accounts = (accountsData?.items ?? []).filter((a) => !a.archivedAt);
+  // Cotizaciones vigentes: previsualizan la conversión de pagos cross-currency
+  // (el servidor convierte con las mismas reglas al confirmar).
+  const { data: ratesData } = useCached<ExchangeRate[]>('rates', () => api.listExchangeRates());
+  const rates = ratesData ?? [];
+
+  // La moneda es inmutable con pagos registrados (regla de la API, espejo de cuentas).
+  const editingDebt = editingId ? (debts ?? []).find((d) => d.id === editingId) : undefined;
+  const currencyLocked = editingDebt?.hasPayments ?? false;
 
   // El pago genera EXPENSE (I_OWE) o INCOME (OWED_TO_ME): la categoría elegible sigue esa dirección.
   const formCategories = categories.filter((c) => c.type === (direction === 'I_OWE' ? 'EXPENSE' : 'INCOME'));
@@ -122,6 +137,8 @@ export function DebtsPage() {
     setCounterparty('');
     setDescription('');
     setTotalAmount('');
+    // Default de moneda: la base del usuario (spec 19 fase B).
+    setCurrency(user?.baseCurrency ?? 'ARS');
     setCategoryId('');
     setDueDate('');
     setInInstallments(false);
@@ -143,6 +160,7 @@ export function DebtsPage() {
     setCounterparty(debt.counterparty);
     setDescription(debt.description ?? '');
     setTotalAmount(String(debt.totalAmount));
+    setCurrency(debt.currency ?? 'ARS');
     setCategoryId(debt.categoryId ?? '');
     setDueDate(debt.dueDate ? toDateInput(debt.dueDate) : '');
     const hasPlan = debt.installmentCount != null;
@@ -176,6 +194,7 @@ export function DebtsPage() {
         counterparty,
         description: description || null,
         totalAmount: Number(totalAmount),
+        currency,
         categoryId: categoryId || null,
         dueDate: dueDate || null,
         // Con el toggle apagado se mandan null explícitos: al editar, quita el plan de cuotas.
@@ -197,14 +216,26 @@ export function DebtsPage() {
     }
   }
 
+  /** Prellenado del monto del pago, en la MONEDA DE LA CUENTA elegida: la próxima cuota
+   * (capada al saldo) o el saldo restante. Cross-currency se convierte con piso a centavos,
+   * así el reconvertido del servidor nunca supera el saldo; sin cotización queda vacío. */
+  function payPrefill(debt: Debt, account: Account | undefined): string {
+    const target = debt.nextInstallment
+      ? Math.min(debt.nextInstallment.amount, debt.remainingBalance)
+      : debt.remainingBalance;
+    const debtCurrency = debt.currency ?? 'ARS';
+    if (!account || account.currency === debtCurrency) return String(target);
+    const rate = crossRate(debtCurrency, account.currency, rates);
+    return rate === null ? '' : String(floor2(target * rate));
+  }
+
   function onStartPay(debt: Debt) {
+    const account = accounts.find((a) => a.isDefault) ?? accounts[0];
     setPayingId(debt.id);
     // En cuotas precarga el monto de la próxima cuota (editable: adelantar capital sigue siendo
     // un pago parcial normal); sin cuotas, el saldo restante como siempre.
-    setPayAmount(
-      String(debt.nextInstallment ? Math.min(debt.nextInstallment.amount, debt.remainingBalance) : debt.remainingBalance),
-    );
-    setPayAccountId(accounts.find((a) => a.isDefault)?.id ?? accounts[0]?.id ?? '');
+    setPayAmount(payPrefill(debt, account));
+    setPayAccountId(account?.id ?? '');
     setPayDate(todayISODate());
     setError(null);
   }
@@ -272,11 +303,28 @@ export function DebtsPage() {
   const oweDebts = activeDebts.filter((d) => d.direction === 'I_OWE').sort(byDueDate);
   const owedDebts = activeDebts.filter((d) => d.direction === 'OWED_TO_ME').sort(byDueDate);
 
-  const totalIOwe = oweDebts.reduce((sum, d) => sum + d.remainingBalance, 0);
-  const totalOwedToMe = owedDebts.reduce((sum, d) => sum + d.remainingBalance, 0);
-  const netBalance = totalOwedToMe - totalIOwe;
+  // Totales por moneda de deuda, sin convertir: acá se muestran los nominales de cada
+  // moneda (el consolidado a base con "≈" vive en el dashboard).
+  const sumByCurrency = (list: Debt[]) => {
+    const map = new Map<string, number>();
+    for (const d of list) {
+      const c = d.currency ?? 'ARS';
+      map.set(c, (map.get(c) ?? 0) + d.remainingBalance);
+    }
+    return map;
+  };
+  const oweByCurrency = sumByCurrency(oweDebts);
+  const owedByCurrency = sumByCurrency(owedDebts);
+  const netByCurrency = new Map<string, number>(owedByCurrency);
+  for (const [c, v] of oweByCurrency) netByCurrency.set(c, (netByCurrency.get(c) ?? 0) - v);
+  const multiCurrency = new Set([...oweByCurrency.keys(), ...owedByCurrency.keys()]).size > 1;
+  const moneyList = (map: Map<string, number>) =>
+    map.size === 0 ? formatMoney(0) : Array.from(map, ([c, v]) => formatMoney(v, c)).join(' + ');
+  const netEntries = Array.from(netByCurrency);
+  const netAllNonNegative = netEntries.every(([, v]) => v >= 0);
 
   function renderDebtCard(debt: Debt) {
+    const debtCurrency = debt.currency ?? 'ARS';
     const paid = debt.totalAmount - debt.remainingBalance;
     const isInstallment = debt.installmentCount != null && debt.paidInstallments != null;
     // En cuotas la barra avanza por cuotas pagadas (un pago parcial no la mueve hasta completar la cuota).
@@ -300,8 +348,8 @@ export function DebtsPage() {
           </div>
           {!debt.settledAt && (
             <div className="mf-debt-amounts">
-              <div className="mf-debt-remaining">{formatMoney(debt.remainingBalance)}</div>
-              <div className="mf-debt-total">de {formatMoney(debt.totalAmount)}</div>
+              <div className="mf-debt-remaining">{formatMoney(debt.remainingBalance, debtCurrency)}</div>
+              <div className="mf-debt-total">de {formatMoney(debt.totalAmount, debtCurrency)}</div>
             </div>
           )}
           <div className="mf-debt-actions">
@@ -344,7 +392,8 @@ export function DebtsPage() {
             {debt.nextInstallment && (
               <>
                 {' '}
-                · próxima {shortDate(debt.nextInstallment.dueDate)} · {formatMoney(debt.nextInstallment.amount)}
+                · próxima {shortDate(debt.nextInstallment.dueDate)} ·{' '}
+                {formatMoney(debt.nextInstallment.amount, debtCurrency)}
               </>
             )}
           </div>
@@ -352,7 +401,7 @@ export function DebtsPage() {
 
         {debt.settledAt ? (
           <p className="muted mono" style={{ margin: '10px 0 0' }}>
-            Saldada · {formatMoney(debt.totalAmount)}
+            Saldada · {formatMoney(debt.totalAmount, debtCurrency)}
           </p>
         ) : (
           <div className="mf-progress" style={{ marginTop: 12 }}>
@@ -362,43 +411,83 @@ export function DebtsPage() {
 
         {!debt.settledAt &&
           (payingId === debt.id ? (
-            <div className="form-row" style={{ marginTop: 10 }}>
-              <label className="field">
-                Monto
-                <input
-                  type="number"
-                  min="0.01"
-                  max={debt.remainingBalance}
-                  step="0.01"
-                  value={payAmount}
-                  onChange={(e) => setPayAmount(e.target.value)}
-                  autoFocus
-                />
-              </label>
-              {accounts.length > 0 && (
-                <label className="field">
-                  Cuenta
-                  <select value={payAccountId} onChange={(e) => setPayAccountId(e.target.value)}>
-                    {accounts.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.icon ? `${a.icon} ` : ''}
-                        {a.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-              <label className="field">
-                Fecha
-                <input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} />
-              </label>
-              <button disabled={payBusy} onClick={() => onConfirmPay(debt)}>
-                {payBusy ? 'Guardando…' : 'Confirmar'}
-              </button>
-              <button className="secondary" disabled={payBusy} onClick={onCancelPay}>
-                Cancelar
-              </button>
-            </div>
+            (() => {
+              // El monto se ingresa en la moneda de la cuenta elegida; si difiere de la de la
+              // deuda se muestra la conversión (TC + convertido) antes de confirmar.
+              const payAccount = accounts.find((a) => a.id === payAccountId);
+              const cross = payAccount !== undefined && payAccount.currency !== debtCurrency;
+              const rateToDebt = cross ? crossRate(payAccount.currency, debtCurrency, rates) : 1;
+              const rateMissing = cross && rateToDebt === null;
+              const converted =
+                cross && rateToDebt !== null && payAmount !== ''
+                  ? Math.round(Number(payAmount) * rateToDebt * 100) / 100
+                  : null;
+              const maxAmount = !cross
+                ? debt.remainingBalance
+                : rateToDebt !== null
+                  ? floor2(debt.remainingBalance / rateToDebt)
+                  : undefined;
+              return (
+                <div style={{ marginTop: 10 }}>
+                  <div className="form-row">
+                    <label className="field">
+                      {cross ? `Monto (${payAccount.currency})` : 'Monto'}
+                      <input
+                        type="number"
+                        min="0.01"
+                        max={maxAmount}
+                        step="0.01"
+                        value={payAmount}
+                        onChange={(e) => setPayAmount(e.target.value)}
+                        autoFocus
+                      />
+                    </label>
+                    {accounts.length > 0 && (
+                      <label className="field">
+                        Cuenta
+                        <select
+                          value={payAccountId}
+                          onChange={(e) => {
+                            setPayAccountId(e.target.value);
+                            // Cambiar de cuenta re-prellena el monto en su moneda.
+                            setPayAmount(payPrefill(debt, accounts.find((a) => a.id === e.target.value)));
+                          }}
+                        >
+                          {accounts.map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {a.icon ? `${a.icon} ` : ''}
+                              {a.name} ({a.currency})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                    <label className="field">
+                      Fecha
+                      <input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} />
+                    </label>
+                    <button disabled={payBusy || rateMissing} onClick={() => onConfirmPay(debt)}>
+                      {payBusy ? 'Guardando…' : 'Confirmar'}
+                    </button>
+                    <button className="secondary" disabled={payBusy} onClick={onCancelPay}>
+                      Cancelar
+                    </button>
+                  </div>
+                  {rateMissing && (
+                    <div style={{ fontSize: 12, color: 'var(--warn)', marginTop: 6 }}>
+                      Falta cotización para convertir {payAccount.currency} a {debtCurrency}: cargala en
+                      Inversiones para pagar desde esta cuenta.
+                    </div>
+                  )}
+                  {cross && converted !== null && (
+                    <div className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>
+                      ≈ {formatMoney(converted, debtCurrency)} se descuentan de la deuda ·{' '}
+                      {rateLabel(payAccount.currency, debtCurrency, rates)}
+                    </div>
+                  )}
+                </div>
+              );
+            })()
           ) : (
             <button type="button" className="mf-debt-pay" onClick={() => onStartPay(debt)}>
               {isInstallment ? 'Pagar cuota' : 'Registrar pago'}
@@ -415,26 +504,30 @@ export function DebtsPage() {
       <div className="mf-grid-3" style={{ marginBottom: 14 }}>
         <div className="card">
           <div className="mf-label">Debo</div>
-          <div className="mf-figure mf-figure--stat" style={{ fontSize: 32, color: 'var(--neg)' }}>
-            {formatMoney(totalIOwe)}
+          <div className="mf-figure mf-figure--stat" style={{ fontSize: multiCurrency ? 22 : 32, color: 'var(--neg)' }}>
+            {moneyList(oweByCurrency)}
           </div>
         </div>
         <div className="card">
           <div className="mf-label">Me deben</div>
-          <div className="mf-figure mf-figure--stat" style={{ fontSize: 32, color: 'var(--pos)' }}>
-            {formatMoney(totalOwedToMe)}
+          <div className="mf-figure mf-figure--stat" style={{ fontSize: multiCurrency ? 22 : 32, color: 'var(--pos)' }}>
+            {moneyList(owedByCurrency)}
           </div>
         </div>
         <div className="mf-hero-card">
           <div className="mf-hero-glow" />
           <div className="mf-hero-body">
             <div className="mf-label">Balance neto</div>
+            {/* Con varias monedas el neto se muestra por moneda, sin convertir. */}
             <div
               className="mf-figure mf-figure--stat"
-              style={{ fontSize: 32, color: netBalance < 0 ? 'var(--neg)' : 'var(--pos)' }}
+              style={{ fontSize: multiCurrency ? 22 : 32, color: netAllNonNegative ? 'var(--pos)' : 'var(--neg)' }}
             >
-              {netBalance < 0 ? '−' : ''}
-              {formatMoney(Math.abs(netBalance))}
+              {netEntries.length === 0
+                ? formatMoney(0)
+                : netEntries
+                    .map(([c, v]) => `${v < 0 ? '−' : ''}${formatMoney(Math.abs(v), c)}`)
+                    .join(' · ')}
             </div>
           </div>
         </div>
@@ -518,20 +611,39 @@ export function DebtsPage() {
               autoFocus
             />
           </label>
-          <label className="field">
-            Monto total
-            <input
-              type="number"
-              min="0.01"
-              step="0.01"
-              value={totalAmount}
-              onChange={(e) => {
-                setTotalAmount(e.target.value);
-                if (inInstallments) syncInstallmentAmount(e.target.value, installmentCount);
-              }}
-              required
-            />
-          </label>
+          <div className="form-row">
+            <label className="field" style={{ flex: 2 }}>
+              Monto total
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={totalAmount}
+                onChange={(e) => {
+                  setTotalAmount(e.target.value);
+                  if (inInstallments) syncInstallmentAmount(e.target.value, installmentCount);
+                }}
+                required
+              />
+            </label>
+            <label className="field" style={{ flex: 1 }}>
+              Moneda
+              <select value={currency} onChange={(e) => setCurrency(e.target.value)} disabled={currencyLocked}>
+                {/* Si la deuda ya está en otra moneda (modelo free-string), se muestra igual. */}
+                {!CURRENCY_OPTIONS.includes(currency) && <option value={currency}>{currency}</option>}
+                {CURRENCY_OPTIONS.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          {currencyLocked && (
+            <p className="muted" style={{ margin: 0 }}>
+              La moneda no se puede cambiar: la deuda ya tiene pagos registrados en {currency}.
+            </p>
+          )}
           <label className="field">
             Categoría
             <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
@@ -637,8 +749,8 @@ export function DebtsPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <div className="mf-label" style={{ marginBottom: 6 }}>
                 {historyFor.direction === 'I_OWE' ? 'Pagaste' : 'Te pagaron'}{' '}
-                {formatMoney(historyDetail.totalAmount - historyDetail.remainingBalance)} de{' '}
-                {formatMoney(historyDetail.totalAmount)} en {historyDetail.payments.length} pago
+                {formatMoney(historyDetail.totalAmount - historyDetail.remainingBalance, historyDetail.currency)} de{' '}
+                {formatMoney(historyDetail.totalAmount, historyDetail.currency)} en {historyDetail.payments.length} pago
                 {historyDetail.payments.length === 1 ? '' : 's'}.
               </div>
               {historyDetail.payments.map((p) => (
@@ -660,8 +772,9 @@ export function DebtsPage() {
                       {p.note}
                     </span>
                   )}
+                  {/* Lo que impactó en la deuda, en su moneda: el convertido si el pago cruzó monedas. */}
                   <span className="mono" style={{ fontWeight: 600, marginLeft: 'auto' }}>
-                    {formatMoney(p.amount)}
+                    {formatMoney(p.entityAmount ?? p.amount, historyDetail.currency)}
                   </span>
                 </div>
               ))}

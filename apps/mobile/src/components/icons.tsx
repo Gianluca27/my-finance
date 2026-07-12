@@ -76,6 +76,9 @@ export const IcoTarget = (p: IconProps) => (
 export const IcoDoc = (p: IconProps) => (
   <PathIcon {...p} paths={[{ d: 'M6 3h5l4 4v10H6z' }, { d: 'M11 3v4h4M8.5 11h5M8.5 14h3' }]} />
 );
+export const IcoTrend = (p: IconProps) => (
+  <PathIcon {...p} paths={[{ d: 'M3 16l4.5-5 3 3L16 7' }, { d: 'M12.5 6.5H16V10' }]} />
+);
 export const IcoPlus = (p: IconProps) => <PathIcon {...p} paths={[{ d: 'M10 4v12M4 10h12', w: 2.2 }]} />;
 export const IcoMenu = (p: IconProps) => <PathIcon {...p} paths={[{ d: 'M3 5h14M3 10h14M3 15h14', w: 1.8 }]} />;
 export const IcoLogout = (p: IconProps) => (

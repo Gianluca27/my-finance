@@ -2,6 +2,7 @@ import type { BudgetStatus, Category } from '@myfinance/shared';
 import { useState, type FormEvent, type KeyboardEvent, type MouseEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, formatMoney } from '../api';
+import { useAuth } from '../auth';
 import { invalidate, useCached } from '../cache';
 import { IcoPlus, IcoTrash } from '../components/icons';
 import { Modal } from '../components/Modal';
@@ -28,8 +29,9 @@ function CarryBreakdown({ budget }: { budget: BudgetStatus }) {
   return (
     <div className="mf-budget-foot" style={{ marginTop: 4 }}>
       <span className="muted" style={{ fontSize: 12 }}>
-        Límite {formatMoney(budget.amount)} {sign} arrastre {formatMoney(Math.abs(budget.carryOver))} ={' '}
-        {formatMoney(budget.effectiveLimit)}
+        Límite {formatMoney(budget.amount, budget.baseCurrency)} {sign} arrastre{' '}
+        {formatMoney(Math.abs(budget.carryOver), budget.baseCurrency)} ={' '}
+        {formatMoney(budget.effectiveLimit, budget.baseCurrency)}
       </span>
     </div>
   );
@@ -52,6 +54,7 @@ export function BudgetsPage() {
   const [busy, setBusy] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
 
+  const { user } = useAuth();
   const { data: budgets, error: loadError, refresh } = useCached<BudgetStatus[]>(`budgets:${month}`, () =>
     api.listBudgets(month),
   );
@@ -63,6 +66,16 @@ export function BudgetsPage() {
   const categoryBudgets = (budgets ?? []).filter(
     (b): b is BudgetStatus & { category: Category } => b.category !== null,
   );
+
+  // Multi-moneda (spec 19, fase C): los presupuestos están siempre en la moneda base y el
+  // `spent` llega consolidado por la API ("≈" cuando hubo conversión al TC vigente). Los
+  // gastos en monedas sin cotización quedan fuera del gastado: se avisa con un banner.
+  // Accesos defensivos (?.) por si hay presupuestos viejos en el cache de sesión.
+  const baseCurrency = (budgets ?? []).find((b) => b.baseCurrency)?.baseCurrency ?? user?.baseCurrency;
+  const anyConverted = (budgets ?? []).some((b) => b.converted);
+  const missingRates = Array.from(
+    new Set((budgets ?? []).flatMap((b) => b.missingRates ?? [])),
+  ).sort();
 
   // Los totales resumen solo cuentan presupuestos por categoría: el global sumaría doble.
   const totalBudgeted = categoryBudgets.reduce((sum, b) => sum + b.effectiveLimit, 0);
@@ -121,17 +134,25 @@ export function BudgetsPage() {
 
       {(error ?? loadError) && <div className="error-banner">{error ?? loadError}</div>}
 
+      {missingRates.length > 0 && (
+        <div style={{ fontSize: 12, color: 'var(--warn)', marginBottom: 12 }}>
+          Sin cotización para {missingRates.join(', ')}: los gastos en esas monedas no se cuentan
+          en lo gastado (se carga en Inversiones).
+        </div>
+      )}
+
       <div className="mf-grid-3" style={{ marginBottom: 14 }}>
         <div className="card">
-          <div className="mf-label">Presupuestado</div>
+          <div className="mf-label">Presupuestado{baseCurrency ? ` · ${baseCurrency}` : ''}</div>
           <div className="mf-figure mf-figure--stat">
-            {formatMoney(totalBudgeted)}
+            {formatMoney(totalBudgeted, baseCurrency)}
           </div>
         </div>
         <div className="card">
           <div className="mf-label">Gastado en {monthLabel(month)}</div>
           <div className="mf-figure mf-figure--stat" style={{ color: 'var(--neg)' }}>
-            {formatMoney(totalSpent)}
+            {anyConverted && '≈ '}
+            {formatMoney(totalSpent, baseCurrency)}
           </div>
         </div>
         <div className="mf-hero-card">
@@ -139,7 +160,8 @@ export function BudgetsPage() {
           <div className="mf-hero-body">
             <div className="mf-label">Restante</div>
             <div className="mf-figure mf-figure--stat" style={{ color: 'var(--pos)' }}>
-              {formatMoney(totalBudgeted - totalSpent)}
+              {anyConverted && '≈ '}
+              {formatMoney(totalBudgeted - totalSpent, baseCurrency)}
             </div>
           </div>
         </div>
@@ -197,9 +219,11 @@ export function BudgetsPage() {
             </div>
             <div className="mf-budget-foot">
               <span className="mono muted">
-                {formatMoney(globalBudget.spent)} de {formatMoney(globalBudget.effectiveLimit)}
+                {globalBudget.converted && '≈ '}
+                {formatMoney(globalBudget.spent, baseCurrency)} de{' '}
+                {formatMoney(globalBudget.effectiveLimit, baseCurrency)}
               </span>
-              <span className="muted">Quedan {formatMoney(remaining)}</span>
+              <span className="muted">Quedan {formatMoney(remaining, baseCurrency)}</span>
             </div>
             <CarryBreakdown budget={globalBudget} />
           </div>
@@ -267,9 +291,11 @@ export function BudgetsPage() {
                 </div>
                 <div className="mf-budget-foot">
                   <span className="mono muted">
-                    {formatMoney(budget.spent)} de {formatMoney(budget.effectiveLimit)}
+                    {budget.converted && '≈ '}
+                    {formatMoney(budget.spent, baseCurrency)} de{' '}
+                    {formatMoney(budget.effectiveLimit, baseCurrency)}
                   </span>
-                  <span className="muted">Quedan {formatMoney(remainingBudget)}</span>
+                  <span className="muted">Quedan {formatMoney(remainingBudget, baseCurrency)}</span>
                 </div>
                 <CarryBreakdown budget={budget} />
                 <div className="mf-budget-foot" style={{ marginTop: 4 }}>
@@ -277,7 +303,7 @@ export function BudgetsPage() {
                     <>
                       <span className="muted">{daysLeft} días para fin de mes</span>
                       <span className={over ? '' : 'mono'} style={{ color: over ? 'var(--neg)' : 'var(--pos)' }}>
-                        {over ? 'Presupuesto superado' : `${formatMoney(perDay)}/día disponible`}
+                        {over ? 'Presupuesto superado' : `${formatMoney(perDay, baseCurrency)}/día disponible`}
                       </span>
                     </>
                   ) : (
@@ -320,7 +346,7 @@ export function BudgetsPage() {
             </select>
           </label>
           <label className="field">
-            Límite mensual
+            Límite mensual{baseCurrency ? ` (${baseCurrency})` : ''}
             <input
               type="number"
               min="0.01"
@@ -352,7 +378,9 @@ export function BudgetsPage() {
           </label>
           <p className="muted" style={{ margin: 0 }}>
             Con acumulación, lo que no gastes (o el exceso) pasa al mes siguiente, desde que la activás.
-            Si ya existe el presupuesto, se actualiza.
+            Si ya existe el presupuesto, se actualiza. Los presupuestos se definen en tu moneda base
+            {baseCurrency ? ` (${baseCurrency})` : ''}: los gastos de cuentas en otra moneda se
+            convierten con la cotización vigente.
           </p>
           <button disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</button>
         </form>

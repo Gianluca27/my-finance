@@ -146,7 +146,9 @@ export function SettingsPage() {
             <div className="settings-row-title">Moneda base</div>
             <div className="muted">
               Los totales consolidados (dashboard, patrimonio neto) se muestran en esta moneda; las
-              cuentas en otra moneda se convierten con la cotización vigente.
+              cuentas en otra moneda se convierten con la cotización vigente. Ojo: los montos de
+              presupuestos y gastos fijos no se convierten al cambiarla — pasan a interpretarse en
+              la nueva moneda base.
             </div>
           </div>
           <select

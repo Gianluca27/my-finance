@@ -61,9 +61,15 @@ Principio de diseño: **la moneda vive en la cuenta**. Una transacción está en
   Para usuarios multi-moneda la dona puede no cuadrar exactamente con el total de
   gastos consolidado. *(Actualización fase B: "Ahorro en metas" y el resumen de
   deudas ya consolidan a moneda base; quedan dona, comparativas, insights y
-  presupuestos para la fase C.)*
+  presupuestos para la fase C.)* *(Actualización fase C: cerrado — dona,
+  comparativa de 6 meses, insights/anomalías y presupuestos consolidan a moneda
+  base al TC vigente y reportan en `currency.missingRates`; la dona vuelve a
+  cuadrar con el total de gastos consolidado.)*
 - **Gastos recurrentes sin moneda propia:** el "safe-to-spend" asume los fijos
-  comprometidos en moneda base.
+  comprometidos en moneda base. *(Actualización fase C: deja de ser deuda y pasa a
+  ser regla documentada — los montos de recurrentes son nominales que se
+  INTERPRETAN en la moneda base, igual que los presupuestos: al cambiar la base no
+  se convierten. Darles moneda propia queda fuera de alcance de la spec.)*
 - **Inversiones no cambia:** sus totales siguen convirtiendo con la fila `USD`
   (oficial) hacia el pivote ARS, independiente de `User.baseCurrency`. El flujo
   personal (cuentas/dashboard) usa `USDMEP` con fallback al oficial
@@ -85,11 +91,48 @@ Principio de diseño: **la moneda vive en la cuenta**. Una transacción está en
 - **Recordatorios de deudas con "$" fijo:** el copy de email/push
   (`debtReminderContent`) prefija `$` sin distinguir la moneda de la deuda; una
   deuda USD avisa "restan $500". Estructuralmente no cambió nada (los montos ya
-  están en la moneda de la deuda), falta solo el símbolo/código.
+  están en la moneda de la deuda), falta solo el símbolo/código. *(Actualización
+  fase C: cerrado — `moneyLabel` en `lib/currency.ts` pone el símbolo según la
+  moneda de la deuda; mismo helper para alertas de presupuesto y PDF.)*
 - **Presupuestos y `spent` en nominales (fase C):** un pago de deuda EXPENSE
   desde una cuenta no-base sigue contando su monto nominal contra el
   presupuesto de la categoría, igual que cualquier gasto (los presupuestos aún
-  no tienen moneda).
+  no tienen moneda). *(Actualización fase C: cerrado — el `spent` consolida por
+  moneda de cuenta a la base al TC vigente, ver sección de fase C.)*
 - **La dona de gastos y las comparativas siguen en nominales (fase C):** los
   pagos de deuda cross-currency entran a esos agregados por el monto de la
-  transacción (moneda de la cuenta), no por el convertido.
+  transacción (moneda de la cuenta), no por el convertido. *(Actualización
+  fase C: cerrado — esos agregados consolidan a base por moneda de cuenta; el
+  monto que entra sigue siendo el de la transacción convertido al TC vigente,
+  no el `entityAmount`, coherente con que son agregados de flujo de caja.)*
+
+### Deuda registrada al implementar la fase C
+
+- **Mobile sin paridad multi-moneda en presupuestos/dashboard:** compila y opera
+  sin cambios (los campos nuevos de `BudgetStatus` — `baseCurrency`, `converted`,
+  `missingRates` — son aditivos y los ignora). Sigue formateando todo como ARS
+  aunque la moneda base sea otra, no muestra "≈" en gastado/dona/comparativa/
+  insights ni banner de cotizaciones faltantes (si falta un rate, el gastado
+  simplemente excluye esos gastos sin avisar), y su formulario de presupuesto no
+  indica la moneda base. Reportes mobile (CSV/PDF/import) usan los mismos
+  endpoints que web, así que la columna `moneda` y el PDF multi-moneda llegan
+  gratis; el copy de la pantalla no explica la regla de import (la moneda es la
+  de la cuenta destino).
+- **Decisiones documentadas de la fase C** (no son deuda, son la regla):
+  - Presupuestos SIEMPRE en moneda base, sin columna `Budget.currency`. El
+    `spent` (y el arrastre del rollover, mes a mes) convierte los gastos de
+    cuentas no-base al **TC vigente** — no hay historial de rates (fuera de
+    alcance; ver spec 14) — y excluye+reporta monedas sin cotización por
+    presupuesto. Las alertas de umbral evalúan ese mismo `spent` consolidado.
+  - Al cambiar `User.baseCurrency` los montos de presupuestos y recurrentes NO
+    se convierten (son nominales del usuario): pasan a interpretarse en la base
+    nueva. Preferencias lo advierte.
+  - Import CSV: las filas quedan en la cuenta elegida y por lo tanto en SU
+    moneda; el monto se toma tal cual, sin conversión (columna `moneda` del
+    export ignorada, como `meta`/`cuenta`).
+  - CSV: `moneda` = moneda de la cuenta del movimiento, sin conversión. No se
+    exporta el `entityAmount` de pagos cross-currency (su moneda es la de la
+    deuda/meta y complicaría el formato).
+  - PDF: resumen y categorías consolidados a base con "≈" y desglose por moneda
+    cuando hay más de una; el listado de transacciones muestra cada monto en la
+    moneda de su cuenta (`moneyLabel`).

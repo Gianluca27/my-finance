@@ -53,6 +53,9 @@ export function ReportsPage() {
   // El export de CSV mantiene las cuentas archivadas (su historial debe seguir siendo
   // exportable), pero el destino de import es un alta: se excluyen (spec 12).
   const importAccounts = accounts.filter((a) => !a.archivedAt);
+  // Los montos importados son nominales en la moneda de la cuenta destino (spec 19, fase C):
+  // el preview los muestra en esa moneda.
+  const importCurrency = importAccounts.find((a) => a.id === importAccountId)?.currency;
   useEffect(() => {
     if (!importAccountId && importAccounts.length) {
       setImportAccountId(importAccounts.find((a) => a.isDefault)?.id ?? importAccounts[0].id);
@@ -196,7 +199,8 @@ export function ReportsPage() {
           </div>
           <p className="mf-report-desc">
             Exportá tus movimientos del período seleccionado en formato CSV para tu planilla. El rango es libre,
-            independiente del mes de arriba.
+            independiente del mes de arriba. Cada fila incluye la moneda de su cuenta (columna{' '}
+            <code>moneda</code>), sin conversión.
           </p>
           <div className="mf-report-range">
             <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} title="Desde" />
@@ -271,9 +275,10 @@ export function ReportsPage() {
         </div>
         <p className="mf-report-desc">
           Subí un CSV con el mismo formato que exporta la app (<code>fecha,tipo,monto,categoria,nota</code>; las
-          columnas <code>meta</code> y <code>cuenta</code> de la exportación se ignoran al importar). Las
-          categorías se emparejan por nombre; si no existen, se crean. Antes de escribir nada se muestra un
-          preview para revisar.
+          columnas <code>meta</code>, <code>cuenta</code> y <code>moneda</code> de la exportación se ignoran al
+          importar). Las categorías se emparejan por nombre; si no existen, se crean. Los movimientos quedan en
+          la cuenta elegida y por lo tanto en su moneda: los montos se toman tal cual, sin conversión. Antes de
+          escribir nada se muestra un preview para revisar.
         </p>
         {importAccounts.length > 0 && (
           <label className="field" style={{ marginBottom: 12 }}>
@@ -326,7 +331,7 @@ export function ReportsPage() {
                       <tr key={i}>
                         <td>{row.fecha}</td>
                         <td>{row.tipo === 'ingreso' ? 'Ingreso' : 'Gasto'}</td>
-                        <td className="mono">{formatMoney(row.monto)}</td>
+                        <td className="mono">{formatMoney(row.monto, importCurrency)}</td>
                         <td>{row.categoria}</td>
                         <td>{row.nota || '—'}</td>
                       </tr>

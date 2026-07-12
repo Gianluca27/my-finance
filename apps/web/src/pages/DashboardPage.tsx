@@ -11,11 +11,12 @@ const DONUT_R = 42;
 const DONUT_C = 2 * Math.PI * DONUT_R;
 const OTHER_COLOR = '#5a6472';
 
-function formatMoneyShort(n: number): string {
+function formatMoneyShort(n: number, currency?: string): string {
+  const sym = !currency || currency === 'ARS' ? '$' : currency === 'USD' ? 'US$' : `${currency} `;
   const v = Math.abs(n);
-  if (v >= 1_000_000) return `$ ${(v / 1_000_000).toFixed(1).replace('.', ',')}M`;
-  if (v >= 1000) return `$ ${Math.round(v / 1000)}k`;
-  return `$ ${Math.round(v)}`;
+  if (v >= 1_000_000) return `${sym} ${(v / 1_000_000).toFixed(1).replace('.', ',')}M`;
+  if (v >= 1000) return `${sym} ${Math.round(v / 1000)}k`;
+  return `${sym} ${Math.round(v)}`;
 }
 
 function shortMonthLabel(month: string): string {
@@ -207,9 +208,10 @@ export function DashboardPage() {
   // drill-down hacia Movimientos (spec 11).
   const range = monthDateRange(data.month);
 
-  // Multi-moneda (spec 19, fase A): balance, ingresos/gastos del mes, patrimonio y
-  // disponible vienen consolidados a la moneda base; "≈" indica que hubo conversión.
-  // El resto de los agregados (categorías, comparativas, deudas) sigue en nominales.
+  // Multi-moneda (spec 19, fases A-C): todos los agregados del dashboard (balance,
+  // ingresos/gastos, dona de categorías, comparativa de 6 meses, insights, patrimonio,
+  // disponible y deudas) vienen consolidados a la moneda base; "≈" indica que hubo
+  // conversión al TC vigente.
   // Los accesos son defensivos (?.) por si hay un dashboard viejo en el cache de sesión.
   const baseCurrency = data.currency?.baseCurrency;
   const approx = data.currency?.converted ? '≈ ' : '';
@@ -295,7 +297,7 @@ export function DashboardPage() {
                         color: expenseDeltaUp ? 'var(--neg)' : 'var(--pos)',
                       }}
                     >
-                      {expenseDeltaUp ? '▲' : '▼'} {formatMoney(Math.abs(expenseDelta))}
+                      {expenseDeltaUp ? '▲' : '▼'} {formatMoney(Math.abs(expenseDelta), baseCurrency)}
                     </span>
                     <span>vs. mismo día del mes pasado</span>
                   </div>
@@ -361,8 +363,8 @@ export function DashboardPage() {
                     aria-label={`Ver movimientos de ${a.name} este mes`}
                   >
                     <span style={{ flex: 1 }}>
-                      <strong>{a.name}</strong>: gastaste {formatMoney(a.currentAmount)} vs. promedio{' '}
-                      {formatMoney(a.avgAmount)}
+                      <strong>{a.name}</strong>: gastaste {formatMoney(a.currentAmount, baseCurrency)} vs.
+                      promedio {formatMoney(a.avgAmount, baseCurrency)}
                     </span>
                     <span className="mf-anomaly-pct">+{a.percentOfAvg - 100}%</span>
                   </Link>
@@ -545,7 +547,7 @@ export function DashboardPage() {
                   <div className="mf-catdelta-row" key={c.categoryId}>
                     <span className="mf-catdelta-name">{c.name}</span>
                     <span className="mf-catdelta-values">
-                      {formatMoney(c.previous)} → {formatMoney(c.current)}
+                      {formatMoney(c.previous, baseCurrency)} → {formatMoney(c.current, baseCurrency)}
                     </span>
                     <span
                       className="mf-delta-badge"
@@ -605,7 +607,7 @@ export function DashboardPage() {
                   })}
                 </svg>
                 <div className="mf-donut-center">
-                  <div className="mf-donut-total">{formatMoneyShort(data.monthExpense)}</div>
+                  <div className="mf-donut-total">{formatMoneyShort(data.monthExpense, baseCurrency)}</div>
                   <div className="mf-caption" style={{ marginTop: 0 }}>
                     total
                   </div>
@@ -718,7 +720,8 @@ export function DashboardPage() {
                   className="mf-bar-tooltip"
                   style={{ left: barHover.left, top: barHover.top }}
                 >
-                  {hoverMonthLabel(m.month)}: Ingresos: {formatMoney(m.income)}. Gastos: {formatMoney(m.expense)}.
+                  {hoverMonthLabel(m.month)}: Ingresos: {formatMoney(m.income, baseCurrency)}. Gastos:{' '}
+                  {formatMoney(m.expense, baseCurrency)}.
                 </div>
               );
             })()}
@@ -751,8 +754,9 @@ export function DashboardPage() {
                         <div className="mf-list-title">{p.name}</div>
                         <div style={{ fontSize: 11.5, color: due.color }}>{due.label}</div>
                       </div>
+                      {/* Los recurrentes no tienen moneda propia: se interpretan en moneda base (spec 19). */}
                       <div className="mono" style={{ fontWeight: 600, fontSize: 13 }}>
-                        {formatMoney(p.amount)}
+                        {formatMoney(p.amount, baseCurrency)}
                       </div>
                     </Link>
                   );
@@ -786,7 +790,7 @@ export function DashboardPage() {
                       {b.category.name}
                     </span>
                     <span className="mono">
-                      {formatMoney(b.spent)} / {formatMoney(b.amount)}
+                      {formatMoney(b.spent, b.baseCurrency)} / {formatMoney(b.amount, b.baseCurrency)}
                     </span>
                   </div>
                   <div className="meter">

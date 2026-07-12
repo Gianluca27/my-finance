@@ -33,7 +33,7 @@ Specs numeradas por orden recomendado. Cada una es implementable como branch/PR 
 | 17 | ✅ [Deudas en cuotas](17-deudas-cuotas.md) — **implementado** (cronograma derivado, sin tabla nueva; mobile queda para la 18) | ~~M/L~~ | 09 |
 | 18 | [Mobile: registro e Inversiones](18-mobile-paridad.md) | L | 14/15 |
 | 19 | ✅ [Multi-moneda](19-multi-moneda.md) — **implementado** (fases A, B y C: cuentas, deudas/metas, presupuestos y reportes; paridad mobile queda para la 18, deuda anotada en la spec) | ~~L/XL~~ | 12, ideal 16 |
-| 20 | [Tarjetas de crédito](20-tarjetas-credito.md) (exploratorio) | L | 19, 12 |
+| 20 | ✅ [Tarjetas de crédito](20-tarjetas-credito.md) — **implementado** (fase 1: ciclo derivado, resumen, recordatorio y alerta de límite; diseño resuelto y deuda mobile anotados en la spec) | ~~L~~ | 19, 12 |
 
 ## Racional del orden
 
@@ -42,7 +42,7 @@ Specs numeradas por orden recomendado. Cada una es implementable como branch/PR 
 3. **Fase 2 antes que features grandes**: cuatro specs S que en conjunto suman más valor percibido que cualquier feature L, y destraban dependencias (04 → 13/16, 05 → 10/11).
 4. **Fase 3 temprano a propósito**: cada mes que pasa sin 07/08 acumula pagos de recurrentes con monto falso y aportes a metas contados como gasto — datos que después nadie corrige. 08 además **cambia números históricos visibles** (el gasto de meses con aportes baja): mejor que pase pronto.
 5. **Multi-moneda (19) al final del roadmap corto**: toca todos los agregados; hacerla con 12/16 ya estables reduce el frente de conflicto. Todo lo anterior está diseñado para no estorbarla (la moneda vive en la cuenta).
-6. **20 es exploratorio**: pasada de diseño previa obligatoria; no comprometerse al modelado sin resolver las preguntas abiertas de la spec.
+6. **20 es exploratorio**: pasada de diseño previa obligatoria; no comprometerse al modelado sin resolver las preguntas abiertas de la spec. *(Hecho: las preguntas se resolvieron al implementar la fase 1 — ver "Diseño resuelto al implementar" en la spec.)*
 
 Dentro de cada fase el orden es sugerido; entre fases 2 y 3 se puede intercalar sin riesgo.
 

@@ -1,5 +1,6 @@
 import type { Account, AccountsOverview, AccountType, Transfer } from '@myfinance/shared';
 import { useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { api, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
 import { IcoPlus, IcoTrash } from '../components/icons';
@@ -33,6 +34,52 @@ function isThisMonth(iso: string): boolean {
   return d.getUTCFullYear() === now.getUTCFullYear() && d.getUTCMonth() === now.getUTCMonth();
 }
 
+/** Link al listado de movimientos filtrado por cuenta + rango de un ciclo (filtros de spec 05/11). */
+function cycleLink(accountId: string, startIso: string, endIso: string): string {
+  return `/transacciones?accountId=${accountId}&from=${startIso.slice(0, 10)}&to=${endIso.slice(0, 10)}`;
+}
+
+/** Bloque de ciclo de una cuenta CARD: consumido, disponible, cierre/vencimiento y último resumen. */
+function CardCycleInfo({ account: a, onPayStatement }: { account: Account; onPayStatement: (a: Account) => void }) {
+  const card = a.card;
+  if (!card) return null;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8, fontSize: 13 }}>
+      <div className="muted">
+        Consumido del ciclo{' '}
+        <Link to={cycleLink(a.id, card.cycleStart, card.cycleClosing)} className="mono" style={{ fontWeight: 600 }}>
+          {formatMoney(card.cycleSpent, a.currency)}
+        </Link>
+        {card.availableCredit !== null && (
+          <>
+            {' '}· disponible{' '}
+            <span className="mono" style={{ fontWeight: 600, color: card.availableCredit < 0 ? 'var(--neg)' : undefined }}>
+              {formatMoney(card.availableCredit, a.currency)}
+            </span>
+          </>
+        )}
+      </div>
+      <div className="muted">
+        Cierra el {formatDate(card.nextClosingDate)}
+        {card.nextPaymentDate && <> · vence el {formatDate(card.nextPaymentDate)}</>}
+      </div>
+      <div className="muted" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span>
+          Resumen al {formatDate(card.lastCycle.closing)}:{' '}
+          <Link to={cycleLink(a.id, card.lastCycle.start, card.lastCycle.closing)} className="mono" style={{ fontWeight: 600 }}>
+            {formatMoney(card.lastCycle.total, a.currency)}
+          </Link>
+        </span>
+        {card.lastCycle.total > 0 && !a.archivedAt && (
+          <button type="button" className="mf-link-btn" onClick={() => onPayStatement(a)}>
+            Pagar resumen
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** Card de una cuenta, reusada tanto en el listado activo como en la sección de archivadas. */
 function AccountCard({
   account: a,
@@ -41,6 +88,7 @@ function AccountCard({
   onSetDefault,
   onToggleArchive,
   onReconcile,
+  onPayStatement,
 }: {
   account: Account;
   onEdit: (a: Account) => void;
@@ -48,6 +96,7 @@ function AccountCard({
   onSetDefault: (a: Account) => void;
   onToggleArchive: (a: Account) => void;
   onReconcile: (a: Account) => void;
+  onPayStatement: (a: Account) => void;
 }) {
   return (
     <div className="card mf-account-card">
@@ -75,6 +124,7 @@ function AccountCard({
       <div className="mf-figure" style={{ color: a.balance < 0 ? 'var(--neg)' : undefined }}>
         {formatMoney(a.balance, a.currency)}
       </div>
+      {a.type === 'CARD' && <CardCycleInfo account={a} onPayStatement={onPayStatement} />}
       <div className="mf-account-foot">
         <span className="muted">
           Saldo inicial <span className="mono">{formatMoney(a.initialBalance, a.currency)}</span>
@@ -128,6 +178,10 @@ export function AccountsPage() {
   const [color, setColor] = useState(COLOR_PALETTE[0]);
   const [icon, setIcon] = useState('');
   const [isDefault, setIsDefault] = useState(false);
+  // Campos de tarjeta (spec 20), solo visibles/enviados con tipo CARD.
+  const [creditLimit, setCreditLimit] = useState('');
+  const [closingDay, setClosingDay] = useState('');
+  const [paymentDay, setPaymentDay] = useState('');
   const [busy, setBusy] = useState(false);
 
   // Transferencia (alta o edición, según transferEditId)
@@ -189,6 +243,9 @@ export function AccountsPage() {
     setColor(COLOR_PALETTE[0]);
     setIcon('');
     setIsDefault(false);
+    setCreditLimit('');
+    setClosingDay('');
+    setPaymentDay('');
     setError(null);
     setFormOpen(true);
   }
@@ -202,6 +259,9 @@ export function AccountsPage() {
     setColor(a.color);
     setIcon(a.icon ?? '');
     setIsDefault(a.isDefault);
+    setCreditLimit(a.creditLimit != null ? String(a.creditLimit) : '');
+    setClosingDay(a.closingDay != null ? String(a.closingDay) : '');
+    setPaymentDay(a.paymentDay != null ? String(a.paymentDay) : '');
     setError(null);
     setFormOpen(true);
   }
@@ -219,6 +279,12 @@ export function AccountsPage() {
         color,
         icon: icon || null,
         isDefault,
+        // Solo las tarjetas llevan límite/cierre/vencimiento; en el resto viajan null
+        // (y la API limpia los previos si una CARD cambia de tipo).
+        creditLimit: type === 'CARD' && creditLimit !== '' ? Number(creditLimit) : null,
+        closingDay: type === 'CARD' && closingDay !== '' ? Number(closingDay) : null,
+        // Sin día de cierre no hay vencimiento posible (regla de la API).
+        paymentDay: type === 'CARD' && paymentDay !== '' && closingDay !== '' ? Number(paymentDay) : null,
       };
       if (editingId) await api.updateAccount(editingId, payload);
       else await api.createAccount(payload);
@@ -275,6 +341,35 @@ export function AccountsPage() {
     setTransferAmountTo('');
     setTransferDate(new Date().toISOString().slice(0, 10));
     setTransferNote('');
+    setError(null);
+    setTransferOpen(true);
+  }
+
+  /**
+   * "Pagar resumen" (spec 20): precarga la transferencia banco → tarjeta con el total del
+   * último ciclo cerrado. Si la cuenta origen está en otra moneda, se precarga la punta de
+   * la tarjeta (amountTo) y el usuario completa cuánto sale de la origen (TC implícito).
+   */
+  function openPayStatement(card: Account) {
+    const total = card.card?.lastCycle.total ?? 0;
+    const candidates = activeAccounts.filter((x) => x.id !== card.id && x.type !== 'CARD');
+    const source = candidates.find((x) => x.isDefault) ?? candidates[0] ?? activeAccounts.find((x) => x.id !== card.id);
+    if (!source) {
+      setError('Necesitás otra cuenta activa desde la cual pagar el resumen.');
+      return;
+    }
+    setTransferEditId(null);
+    setFromId(source.id);
+    setToId(card.id);
+    if (source.currency === card.currency) {
+      setTransferAmount(String(total));
+      setTransferAmountTo(String(total));
+    } else {
+      setTransferAmount('');
+      setTransferAmountTo(String(total));
+    }
+    setTransferDate(new Date().toISOString().slice(0, 10));
+    setTransferNote(`Pago resumen ${card.name}`);
     setError(null);
     setTransferOpen(true);
   }
@@ -414,6 +509,7 @@ export function AccountsPage() {
               onSetDefault={onSetDefault}
               onToggleArchive={onToggleArchive}
               onReconcile={openReconcile}
+              onPayStatement={openPayStatement}
             />
           ))}
 
@@ -447,6 +543,7 @@ export function AccountsPage() {
                   onSetDefault={onSetDefault}
                   onToggleArchive={onToggleArchive}
                   onReconcile={openReconcile}
+                  onPayStatement={openPayStatement}
                 />
               ))}
             </div>
@@ -537,6 +634,50 @@ export function AccountsPage() {
               </span>
             )}
           </label>
+          {type === 'CARD' && (
+            <>
+              <label className="field">
+                Límite de crédito (opcional)
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={creditLimit}
+                  onChange={(e) => setCreditLimit(e.target.value)}
+                  placeholder="Ej: 500000"
+                />
+              </label>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <label className="field" style={{ flex: 1 }}>
+                  Día de cierre (opcional)
+                  <input
+                    type="number"
+                    min="1"
+                    max="31"
+                    value={closingDay}
+                    onChange={(e) => setClosingDay(e.target.value)}
+                    placeholder="1-31"
+                  />
+                </label>
+                <label className="field" style={{ flex: 1 }}>
+                  Día de vencimiento
+                  <input
+                    type="number"
+                    min="1"
+                    max="31"
+                    value={paymentDay}
+                    onChange={(e) => setPaymentDay(e.target.value)}
+                    placeholder="1-31"
+                    disabled={closingDay === ''}
+                  />
+                </label>
+              </div>
+              <span className="muted" style={{ fontSize: 12, marginTop: -8 }}>
+                Con el día de cierre la app calcula el ciclo del resumen (se ajusta a fin de mes en meses
+                cortos). Si el vencimiento es un día anterior o igual al cierre, cae al mes siguiente.
+              </span>
+            </>
+          )}
           <label className="field">
             Emoji (opcional)
             <input value={icon} onChange={(e) => setIcon(e.target.value)} maxLength={4} placeholder={TYPE_ICON[type]} />

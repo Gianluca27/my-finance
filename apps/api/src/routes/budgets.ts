@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { budgetCarryOver, budgetPercentUsed, effectiveStartMonth } from '../lib/budgets';
+import { consolidateToBase, sumInBase, type ConsolidatedTotals } from '../lib/currency';
 import { currentMonth, isValidMonth, monthKeyOf, monthRange } from '../lib/dates';
 import { serialize } from '../lib/serialize';
 import { requireAuth } from '../middleware/auth';
@@ -21,21 +22,35 @@ const budgetSchema = z.object({
 });
 
 /**
- * Gasto real (excluye aportes a metas) por mes de una serie de transacciones.
- * `null` en categoryId agrupa el gasto global (todas las categorías).
+ * Gasto real (excluye aportes a metas) por mes y por moneda de cuenta de una serie
+ * de transacciones: mes "YYYY-MM" -> (moneda -> suma nominal). La conversión a
+ * moneda base se hace después, por mes (spec 19, fase C).
  */
-function bucketSpentByMonth(
-  txs: Array<{ date: Date; amount: { toNumber(): number } }>,
-): Map<string, number> {
-  const byMonth = new Map<string, number>();
+function bucketSpentByMonthCurrency(
+  txs: Array<{ date: Date; amount: { toNumber(): number }; accountId: string }>,
+  currencyOf: (accountId: string) => string,
+): Map<string, Map<string, number>> {
+  const byMonth = new Map<string, Map<string, number>>();
   for (const t of txs) {
     const k = monthKeyOf(t.date);
-    byMonth.set(k, (byMonth.get(k) ?? 0) + t.amount.toNumber());
+    const byCurrency = byMonth.get(k) ?? new Map<string, number>();
+    const currency = currencyOf(t.accountId);
+    byCurrency.set(currency, (byCurrency.get(currency) ?? 0) + t.amount.toNumber());
+    byMonth.set(k, byCurrency);
   }
   return byMonth;
 }
 
-/** Lista presupuestos con el gasto acumulado del mes indicado (?month=YYYY-MM, default actual). */
+/**
+ * Lista presupuestos con el gasto acumulado del mes indicado (?month=YYYY-MM, default actual).
+ *
+ * Multi-moneda (spec 19, fase C): los presupuestos están SIEMPRE en la moneda base del
+ * usuario. El `spent` agrupa los gastos por moneda de cuenta y los convierte a base con la
+ * cotización VIGENTE — aproximación documentada en la spec: no hay historial de rates, así
+ * que un gasto USD de hace semanas se valúa al TC de hoy (igual criterio en el arrastre del
+ * rollover). Las monedas sin cotización quedan fuera de `spent` y se reportan por presupuesto
+ * en `missingRates` para que la UI avise.
+ */
 router.get(
   '/',
   asyncHandler(async (req, res) => {
@@ -44,23 +59,35 @@ router.get(
         ? req.query.month
         : currentMonth();
     const { start, end } = monthRange(month);
+    const userId = req.auth!.userId;
 
-    const budgets = await prisma.budget.findMany({
-      where: { userId: req.auth!.userId },
-      include: { category: true },
-      orderBy: { createdAt: 'asc' },
-    });
+    const [budgets, accountRows, rateRows, userRow] = await Promise.all([
+      prisma.budget.findMany({
+        where: { userId },
+        include: { category: true },
+        orderBy: { createdAt: 'asc' },
+      }),
+      prisma.account.findMany({ where: { userId }, select: { id: true, currency: true } }),
+      prisma.exchangeRate.findMany({ where: { userId } }),
+      prisma.user.findUnique({ where: { id: userId }, select: { baseCurrency: true } }),
+    ]);
+
+    const baseCurrency = userRow?.baseCurrency ?? 'ARS';
+    const rateMap = new Map(rateRows.map((r) => [r.currency, r.rate.toNumber()]));
+    const currencyByAccount = new Map(accountRows.map((a) => [a.id, a.currency]));
+    const currencyOf = (accountId: string) => currencyByAccount.get(accountId) ?? 'ARS';
 
     const categoryBudgets = budgets.filter(
       (b): b is (typeof b) & { categoryId: string } => b.categoryId !== null,
     );
     const globalBudget = budgets.find((b) => b.categoryId === null) ?? null;
 
-    // Gasto del mes por categoría presupuestada. Los aportes a metas no son gasto real.
+    // Gasto del mes por categoría presupuestada y cuenta (la cuenta aporta la moneda).
+    // Los aportes a metas no son gasto real.
     const spentByCategory = await prisma.transaction.groupBy({
-      by: ['categoryId'],
+      by: ['categoryId', 'accountId'],
       where: {
-        userId: req.auth!.userId,
+        userId,
         type: 'EXPENSE',
         date: { gte: start, lt: end },
         categoryId: { in: categoryBudgets.map((b) => b.categoryId) },
@@ -68,86 +95,120 @@ router.get(
       },
       _sum: { amount: true },
     });
-    const spentMap = new Map(
-      spentByCategory.map((row) => [row.categoryId, row._sum.amount?.toNumber() ?? 0]),
-    );
+    const spentRowsByCategory = new Map<string, Array<{ currency: string; amount: number }>>();
+    for (const row of spentByCategory) {
+      if (!row.categoryId) continue;
+      const list = spentRowsByCategory.get(row.categoryId) ?? [];
+      list.push({ currency: currencyOf(row.accountId), amount: row._sum.amount?.toNumber() ?? 0 });
+      spentRowsByCategory.set(row.categoryId, list);
+    }
+    const spentMap = new Map<string, ConsolidatedTotals>();
+    for (const [catId, rows] of spentRowsByCategory) {
+      spentMap.set(catId, sumInBase(rows, baseCurrency, rateMap));
+    }
 
     // Gasto total del mes (todas las categorías) para el presupuesto global.
-    let globalSpent = 0;
+    let globalSpentC: ConsolidatedTotals = { total: 0, converted: false, missingRates: [] };
     if (globalBudget) {
-      const agg = await prisma.transaction.aggregate({
+      const rows = await prisma.transaction.groupBy({
+        by: ['accountId'],
         where: {
-          userId: req.auth!.userId,
+          userId,
           type: 'EXPENSE',
           date: { gte: start, lt: end },
           goalId: null,
         },
         _sum: { amount: true },
       });
-      globalSpent = agg._sum.amount?.toNumber() ?? 0;
+      globalSpentC = sumInBase(
+        rows.map((r) => ({ currency: currencyOf(r.accountId), amount: r._sum.amount?.toNumber() ?? 0 })),
+        baseCurrency,
+        rateMap,
+      );
     }
 
     // Para los presupuestos con rollover hace falta el gasto de los meses previos
-    // (hasta 12 atrás). Se trae una sola vez y se agrupa en memoria por (categoría, mes).
+    // (hasta 12 atrás). Se trae una sola vez y se agrupa en memoria por (categoría, mes, moneda).
     const rolloverCategoryIds = categoryBudgets.filter((b) => b.rollover).map((b) => b.categoryId);
     const globalRollover = !!globalBudget?.rollover;
     const carryWindowStart = monthRange(effectiveStartMonth(month, null)).start; // 12 meses atrás
-    const spentByCategoryMonth = new Map<string, Map<string, number>>();
-    let globalSpentByMonth = new Map<string, number>();
+    const spentByCategoryMonth = new Map<string, Map<string, Map<string, number>>>();
+    let globalSpentByMonth = new Map<string, Map<string, number>>();
 
     if (globalRollover || rolloverCategoryIds.length > 0) {
       const priorTxs = await prisma.transaction.findMany({
         where: {
-          userId: req.auth!.userId,
+          userId,
           type: 'EXPENSE',
           goalId: null,
           date: { gte: carryWindowStart, lt: start },
           // Si el global acumula, hace falta todo el gasto; si no, solo las categorías con rollover.
           ...(globalRollover ? {} : { categoryId: { in: rolloverCategoryIds } }),
         },
-        select: { date: true, amount: true, categoryId: true },
+        select: { date: true, amount: true, categoryId: true, accountId: true },
       });
-      if (globalRollover) globalSpentByMonth = bucketSpentByMonth(priorTxs);
+      if (globalRollover) globalSpentByMonth = bucketSpentByMonthCurrency(priorTxs, currencyOf);
       for (const catId of rolloverCategoryIds) {
         spentByCategoryMonth.set(
           catId,
-          bucketSpentByMonth(priorTxs.filter((t) => t.categoryId === catId)),
+          bucketSpentByMonthCurrency(priorTxs.filter((t) => t.categoryId === catId), currencyOf),
         );
       }
     }
 
     function statusFor(
       budget: (typeof budgets)[number],
-      spent: number,
-      spentByMonth: (m: string) => number,
+      spentC: ConsolidatedTotals,
+      monthBucket: (m: string) => ReadonlyMap<string, number> | undefined,
     ) {
       const amount = budget.amount.toNumber();
+      // Unión de monedas sin cotización (mes visible + meses del arrastre) por presupuesto.
+      const missing = new Set(spentC.missingRates);
+      let converted = spentC.converted;
       let carryOver = 0;
       if (budget.rollover) {
         const startMonth = effectiveStartMonth(
           month,
           budget.rolloverStartMonth ? monthKeyOf(budget.rolloverStartMonth) : null,
         );
-        carryOver = budgetCarryOver({ amount, targetMonth: month, startMonth, spentByMonth });
+        carryOver = budgetCarryOver({
+          amount,
+          targetMonth: month,
+          startMonth,
+          // El gasto de cada mes previo también se consolida a base al TC vigente
+          // (misma aproximación que el mes visible).
+          spentByMonth: (m) => {
+            const bucket = monthBucket(m);
+            if (!bucket) return 0;
+            const totals = consolidateToBase(bucket, baseCurrency, rateMap);
+            for (const c of totals.missingRates) missing.add(c);
+            converted = converted || totals.converted;
+            return totals.total;
+          },
+        });
       }
       const effectiveLimit = amount + carryOver;
       return {
         ...(serialize(budget) as Record<string, unknown>),
-        spent,
+        spent: spentC.total,
         carryOver,
         effectiveLimit,
-        percentUsed: budgetPercentUsed(spent, effectiveLimit),
+        percentUsed: budgetPercentUsed(spentC.total, effectiveLimit),
         month,
+        baseCurrency,
+        converted,
+        missingRates: Array.from(missing).sort(),
       };
     }
 
+    const emptySpent: ConsolidatedTotals = { total: 0, converted: false, missingRates: [] };
     const result = [
       ...(globalBudget
-        ? [statusFor(globalBudget, globalSpent, (m) => globalSpentByMonth.get(m) ?? 0)]
+        ? [statusFor(globalBudget, globalSpentC, (m) => globalSpentByMonth.get(m))]
         : []),
       ...categoryBudgets.map((budget) =>
-        statusFor(budget, spentMap.get(budget.categoryId) ?? 0, (m) =>
-          spentByCategoryMonth.get(budget.categoryId)?.get(m) ?? 0,
+        statusFor(budget, spentMap.get(budget.categoryId) ?? emptySpent, (m) =>
+          spentByCategoryMonth.get(budget.categoryId)?.get(m),
         ),
       ),
     ];

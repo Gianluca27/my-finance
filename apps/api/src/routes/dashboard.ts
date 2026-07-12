@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { consolidateToBase, sumEntityAmounts } from '../lib/currency';
+import { consolidateToBase, convertToBase, sumEntityAmounts } from '../lib/currency';
 import { currentMonth, isValidMonth, monthLength, monthRange, shiftMonth, startOfTodayUTC } from '../lib/dates';
 import { buildInvestmentsSummary, investmentMetrics, type PositionOp } from '../lib/investments';
 import { serialize } from '../lib/serialize';
@@ -108,18 +108,19 @@ router.get(
       // Conteo de TODOS los movimientos del mes (sí incluye aportes/retiros de metas): alimenta
       // el footnote de Reportes sin que el cliente tenga que pedir un listado aparte (pageSize:1).
       prisma.transaction.count({ where: { userId, date: { gte: start, lt: end } } }),
-      // Gastos por categoría del mes
+      // Gastos por categoría del mes, por cuenta para consolidar cada moneda a base (fase C)
       prisma.transaction.groupBy({
-        by: ['categoryId'],
+        by: ['categoryId', 'accountId'],
         where: { userId, type: 'EXPENSE', date: { gte: start, lt: end }, goalId: null },
         _sum: { amount: true },
       }),
-      // Comparativa de los últimos 6 meses, agregada en la base
-      prisma.$queryRaw<Array<{ month: string; type: string; total: number }>>`
-        SELECT to_char("date", 'YYYY-MM') AS month, "type"::text AS type, SUM("amount")::float8 AS total
-        FROM "Transaction"
-        WHERE "userId" = ${userId} AND "date" >= ${rangeStart} AND "date" < ${rangeEnd} AND "goalId" IS NULL
-        GROUP BY 1, 2
+      // Comparativa de los últimos 6 meses, agregada en la base por mes/tipo/moneda de cuenta
+      prisma.$queryRaw<Array<{ month: string; type: string; currency: string; total: number }>>`
+        SELECT to_char(t."date", 'YYYY-MM') AS month, t."type"::text AS type, a."currency" AS currency,
+               SUM(t."amount")::float8 AS total
+        FROM "Transaction" t JOIN "Account" a ON a."id" = t."accountId"
+        WHERE t."userId" = ${userId} AND t."date" >= ${rangeStart} AND t."date" < ${rangeEnd} AND t."goalId" IS NULL
+        GROUP BY 1, 2, 3
       `,
       // Próximos pagos (14 días)
       prisma.recurringExpense.findMany({
@@ -129,15 +130,15 @@ router.get(
       }),
       // Fecha de la transacción más antigua del usuario (elegibilidad de la proyección)
       prisma.transaction.aggregate({ where: { userId }, _min: { date: true } }),
-      // Gasto por categoría en la ventana alineada del mes seleccionado
+      // Gasto por categoría en la ventana alineada del mes seleccionado (por cuenta: moneda)
       prisma.transaction.groupBy({
-        by: ['categoryId'],
+        by: ['categoryId', 'accountId'],
         where: { userId, type: 'EXPENSE', date: { gte: start, lt: currentWindowEnd }, goalId: null },
         _sum: { amount: true },
       }),
-      // Gasto por categoría en la misma ventana del mes anterior
+      // Gasto por categoría en la misma ventana del mes anterior (por cuenta: moneda)
       prisma.transaction.groupBy({
-        by: ['categoryId'],
+        by: ['categoryId', 'accountId'],
         where: { userId, type: 'EXPENSE', date: { gte: prevRange.start, lt: prevWindowEnd }, goalId: null },
         _sum: { amount: true },
       }),
@@ -148,13 +149,15 @@ router.get(
         where: { userId, type: 'EXPENSE', categoryId: { not: null }, goalId: null },
         _min: { date: true },
       }),
-      // Gasto por categoría y mes en los últimos N meses completos (promedio de anomalías)
-      prisma.$queryRaw<Array<{ categoryId: string | null; month: string; total: number }>>`
-        SELECT "categoryId", to_char("date", 'YYYY-MM') AS month, SUM("amount")::float8 AS total
-        FROM "Transaction"
-        WHERE "userId" = ${userId} AND "type" = 'EXPENSE' AND "categoryId" IS NOT NULL
-          AND "date" >= ${anomalyRangeStart} AND "date" < ${start} AND "goalId" IS NULL
-        GROUP BY 1, 2
+      // Gasto por categoría, mes y moneda de cuenta en los últimos N meses completos
+      // (promedio de anomalías, consolidado a base en memoria)
+      prisma.$queryRaw<Array<{ categoryId: string | null; month: string; currency: string; total: number }>>`
+        SELECT t."categoryId", to_char(t."date", 'YYYY-MM') AS month, a."currency" AS currency,
+               SUM(t."amount")::float8 AS total
+        FROM "Transaction" t JOIN "Account" a ON a."id" = t."accountId"
+        WHERE t."userId" = ${userId} AND t."type" = 'EXPENSE' AND t."categoryId" IS NOT NULL
+          AND t."date" >= ${anomalyRangeStart} AND t."date" < ${start} AND t."goalId" IS NULL
+        GROUP BY 1, 2, 3
       `,
       // Aportes y retiros de metas del mes, por cuenta para agrupar por moneda
       // ("Ahorro en metas" se consolida a moneda base como flujo de caja del mes)
@@ -246,13 +249,13 @@ router.get(
       prisma.transfer.groupBy({ by: ['toAccountId'], where: { userId }, _sum: { amountTo: true } }),
     ]);
 
-    // --- Consolidación multi-moneda (spec 19, fases A y B) ---
-    // Balance, ingresos/gastos del mes, netWorthTrend, safe-to-spend, ahorro en metas y
-    // resumen de deudas se agrupan por moneda y se convierten a la moneda base del usuario.
-    // Las monedas sin cotización quedan fuera de los totales y se reportan en
-    // `currency.missingRates` (deudas reportan las suyas en `debtsSummary.missingRates`).
-    // El resto de los agregados (categorías, comparativas, anomalías) sigue sumando
-    // nominales sin convertir: se consolidan en fase C.
+    // --- Consolidación multi-moneda (spec 19, fases A/B/C) ---
+    // Todos los agregados del dashboard (balance, ingresos/gastos del mes, dona de
+    // categorías, comparativa de 6 meses, insights, netWorthTrend, safe-to-spend, ahorro
+    // en metas y resumen de deudas) se agrupan por moneda de cuenta y se convierten a la
+    // moneda base del usuario al TC VIGENTE (no hay historial de rates — aproximación
+    // documentada en la spec). Las monedas sin cotización quedan fuera de los totales y se
+    // reportan en `currency.missingRates` (deudas en `debtsSummary.missingRates`).
     const baseCurrency = userRow?.baseCurrency ?? 'ARS';
     const rateMap = new Map(exchangeRates.map((r) => [r.currency, r.rate.toNumber()]));
     const currencyByAccount = new Map(accountRows.map((a) => [a.id, a.currency]));
@@ -260,6 +263,21 @@ router.get(
       map.set(currency, (map.get(currency) ?? 0) + value);
     const toCurrencyAmounts = (map: Map<string, number>) =>
       Array.from(map, ([currency, amount]) => ({ currency, amount: round2(amount) }));
+
+    // Conversión unitaria con tracking: los agregados por categoría/mes (dona, comparativa,
+    // insights, anomalías) convierten fila por fila; los faltantes/conversiones alimentan la
+    // misma unión `currency.missingRates`/`converted` que los totales consolidados (fase C).
+    const aggMissing = new Set<string>();
+    let aggConverted = false;
+    const toBaseTracked = (amount: number, currency: string): number => {
+      const inBase = convertToBase(amount, currency, baseCurrency, rateMap);
+      if (inBase === null) {
+        aggMissing.add(currency);
+        return 0;
+      }
+      if (currency !== baseCurrency && amount !== 0) aggConverted = true;
+      return inBase;
+    };
 
     // Balance histórico por moneda: inicial + ingresos - gastos + transferencias
     // recibidas - enviadas (cada pata en la moneda de su cuenta).
@@ -302,23 +320,35 @@ router.get(
     const goalContributions = goalContributionsC.total;
 
     const categoryMap = new Map(categories.map((c) => [c.id, c]));
-    const expensesByCategory = byCategory
-      .map((row) => {
-        const category = row.categoryId ? categoryMap.get(row.categoryId) : undefined;
-        return {
-          categoryId: row.categoryId,
-          categoryName: category?.name ?? 'Sin categoría',
-          color: category?.color ?? '#9ca3af',
-          total: row._sum.amount?.toNumber() ?? 0,
-        };
-      })
-      .sort((a, b) => b.total - a.total);
+    // Dona de categorías consolidada a base (fase C): cada fila (categoría, cuenta) se
+    // convierte por la moneda de su cuenta y se suma; así la dona cuadra con monthExpense.
+    const expenseTotalsByCategory = new Map<string | null, number>();
+    for (const row of byCategory) {
+      const currency = currencyByAccount.get(row.accountId) ?? 'ARS';
+      const inBase = toBaseTracked(row._sum.amount?.toNumber() ?? 0, currency);
+      expenseTotalsByCategory.set(
+        row.categoryId,
+        (expenseTotalsByCategory.get(row.categoryId) ?? 0) + inBase,
+      );
+    }
+    const expensesByCategory = Array.from(expenseTotalsByCategory, ([categoryId, total]) => {
+      const category = categoryId ? categoryMap.get(categoryId) : undefined;
+      return {
+        categoryId,
+        categoryName: category?.name ?? 'Sin categoría',
+        color: category?.color ?? '#9ca3af',
+        total: round2(total),
+      };
+    }).sort((a, b) => b.total - a.total);
 
+    // Comparativa de 6 meses consolidada a base (fase C): las filas vienen por
+    // mes/tipo/moneda y se acumulan convertidas.
     const totalsByMonth = new Map<string, { income: number; expense: number }>();
     for (const row of monthlyRows) {
       const entry = totalsByMonth.get(row.month) ?? { income: 0, expense: 0 };
-      if (row.type === 'INCOME') entry.income = row.total;
-      else entry.expense = row.total;
+      const inBase = toBaseTracked(row.total, row.currency);
+      if (row.type === 'INCOME') entry.income += inBase;
+      else entry.expense += inBase;
       totalsByMonth.set(row.month, entry);
     }
     const monthlyComparison = months.map((m) => {
@@ -339,12 +369,20 @@ router.get(
         : null;
 
     // --- Comparación vs mes anterior (alineada por día) ---
-    const currentWindowByCategoryMap = new Map(
-      currentWindowByCategory.map((row) => [row.categoryId, row._sum.amount?.toNumber() ?? 0]),
-    );
-    const prevWindowByCategoryMap = new Map(
-      prevWindowByCategory.map((row) => [row.categoryId, row._sum.amount?.toNumber() ?? 0]),
-    );
+    // Ambas ventanas se consolidan a base por fila (categoría, cuenta) — fase C.
+    const windowMapInBase = (
+      rows: Array<{ categoryId: string | null; accountId: string; _sum: { amount: { toNumber(): number } | null } }>,
+    ): Map<string | null, number> => {
+      const map = new Map<string | null, number>();
+      for (const row of rows) {
+        const currency = currencyByAccount.get(row.accountId) ?? 'ARS';
+        const inBase = toBaseTracked(row._sum.amount?.toNumber() ?? 0, currency);
+        map.set(row.categoryId, (map.get(row.categoryId) ?? 0) + inBase);
+      }
+      return map;
+    };
+    const currentWindowByCategoryMap = windowMapInBase(currentWindowByCategory);
+    const prevWindowByCategoryMap = windowMapInBase(prevWindowByCategory);
     const currentWindowTotal = round2(
       [...currentWindowByCategoryMap.values()].reduce((sum, v) => sum + v, 0),
     );
@@ -392,10 +430,13 @@ router.get(
         )
         .map((row) => row.categoryId),
     );
+    // Promedio de anomalías en base: cada fila (categoría, mes, moneda) se convierte antes
+    // de sumar, coherente con el gasto del mes actual ya consolidado (fase C).
     const anomalyMonthlyTotals = new Map<string, number>();
     for (const row of anomalyWindowRows) {
       if (!row.categoryId) continue;
-      anomalyMonthlyTotals.set(row.categoryId, (anomalyMonthlyTotals.get(row.categoryId) ?? 0) + row.total);
+      const inBase = toBaseTracked(row.total, row.currency);
+      anomalyMonthlyTotals.set(row.categoryId, (anomalyMonthlyTotals.get(row.categoryId) ?? 0) + inBase);
     }
     const anomalies = expensesByCategory
       .filter((c): c is typeof c & { categoryId: string } => c.categoryId !== null && eligibleAnomalyCategoryIds.has(c.categoryId))
@@ -439,7 +480,8 @@ router.get(
     // --- Disponible para gastar (Safe-to-spend) ---
     // Balance consolidado a moneda base menos gastos fijos activos que todavía vencen antes
     // de fin del mes seleccionado. Los recurrentes no tienen moneda propia: sus montos se
-    // asumen en moneda base (deuda de fase A, ver spec 19).
+    // INTERPRETAN en moneda base, la misma regla que los presupuestos — si el usuario cambia
+    // la base, los nominales no se convierten (decisión de spec 19, fase C).
     const committedExpenses = round2(committedAgg._sum.amount?.toNumber() ?? 0);
     const safeToSpend = {
       balance,
@@ -486,20 +528,23 @@ router.get(
       return { month: m, netWorth: point.total };
     });
 
-    // Unión de faltantes/conversiones de todos los totales consolidados.
+    // Unión de faltantes/conversiones de todos los agregados consolidados (incluye la dona,
+    // la comparativa y los insights vía toBaseTracked — fase C).
     const missingRates = new Set([
       ...balanceC.missingRates,
       ...monthIncomeC.missingRates,
       ...monthExpenseC.missingRates,
       ...goalContributionsC.missingRates,
       ...nwMissing,
+      ...aggMissing,
     ]);
     const converted =
       balanceC.converted ||
       monthIncomeC.converted ||
       monthExpenseC.converted ||
       goalContributionsC.converted ||
-      nwConverted;
+      nwConverted ||
+      aggConverted;
 
     res.json({
       balance,

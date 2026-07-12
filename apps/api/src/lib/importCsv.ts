@@ -88,8 +88,10 @@ function parseCsvLine(line: string): string[] {
  * Parsea y valida el CSV de importación de movimientos, sin tocar la base. Pura: la usan tanto
  * el `dryRun` (preview, solo lee el resultado) como el import real (que además crea las
  * `categoriesToCreate` y persiste `rows`). Mismo formato que exporta la app —
- * `fecha,tipo,monto,categoria,nota,meta`; la columna `meta` se ignora y las columnas se leen por
- * posición, así que un CSV viejo de 5 columnas (sin `meta`) también es válido.
+ * `fecha,tipo,monto,categoria,nota,meta,cuenta,moneda`; las columnas se leen por posición y solo
+ * las primeras 5 cuentan (`meta`/`cuenta`/`moneda` se ignoran), así que un CSV viejo de 5 o 6
+ * columnas también es válido. El `monto` es un nominal en la moneda de la cuenta destino que se
+ * elige al importar — no hay conversión en el import (spec 19, fase C).
  *
  * Prioridad de resolución de categoría (ver `ImportCategoryResolution`): un nombre explícito en
  * el CSV siempre gana, aunque la nota también matchee una regla — las reglas solo entran en

@@ -368,6 +368,11 @@ function resolveRowCategoryId(
  * `?dryRun=true` corre exactamente el mismo parseo/validación pero no escribe nada — ni
  * transacciones ni categorías nuevas — y devuelve un preview con las primeras 10 filas
  * interpretadas para mostrar antes de confirmar.
+ *
+ * Moneda (spec 19, fase C): los movimientos importados quedan en la cuenta elegida y por lo
+ * tanto en SU moneda — el `monto` del CSV se toma como nominal de esa moneda, sin conversión.
+ * La columna `moneda` de la exportación se ignora, igual que `meta` y `cuenta` (las columnas
+ * se leen por posición, solo las primeras 5).
  */
 router.post(
   '/import',

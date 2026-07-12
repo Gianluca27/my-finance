@@ -94,6 +94,9 @@ export interface RecurringExpense {
 
 export interface Budget {
   id: string;
+  /** Límite mensual, SIEMPRE en la moneda base del usuario (spec 19, fase C). Es un nominal
+   * ingresado por el usuario: si cambia la moneda base NO se convierte, se reinterpreta en
+   * la base nueva. */
   amount: number;
   /** Porcentaje (0-100) de uso que dispara la alerta */
   alertThreshold: number;
@@ -107,14 +110,24 @@ export interface Budget {
 }
 
 export interface BudgetStatus extends Budget {
+  /** Gasto del mes consolidado a moneda base: los gastos de cuentas en otra moneda se
+   * convierten al TC vigente (aproximación: no hay historial de rates — spec 19, fase C).
+   * Excluye los gastos en monedas listadas en `missingRates`. */
   spent: number;
-  /** Arrastre entrante del mes (0 sin rollover; negativo si el mes anterior se pasó). */
+  /** Arrastre entrante del mes (0 sin rollover; negativo si el mes anterior se pasó).
+   * En moneda base, con el gasto de cada mes previo consolidado al TC vigente. */
   carryOver: number;
   /** Límite efectivo del mes: amount + carryOver (== amount sin rollover). */
   effectiveLimit: number;
   /** Uso calculado sobre effectiveLimit. */
   percentUsed: number;
   month: string;
+  /** Moneda base del usuario: amount/spent/carryOver/effectiveLimit están en ella. */
+  baseCurrency: string;
+  /** true si algún gasto entró convertido desde otra moneda (la UI muestra "≈"). */
+  converted: boolean;
+  /** Monedas sin cotización cargada: sus gastos quedan fuera de `spent` (la UI avisa). */
+  missingRates: string[];
 }
 
 export interface Debt {
@@ -405,21 +418,25 @@ export interface CategorySummary {
   categoryId: string | null;
   categoryName: string;
   color: string;
+  /** Gasto del mes en la categoría, consolidado a moneda base al TC vigente (spec 19, fase C). */
   total: number;
 }
 
+/** Totales del mes consolidados a moneda base (spec 19, fase C). */
 export interface MonthlySummary {
   month: string; // YYYY-MM
   income: number;
   expense: number;
 }
 
+/** Montos en moneda base (spec 19, fase C). */
 export interface PreviousMonthDelta {
   current: number;
   previous: number;
   deltaPercent: number;
 }
 
+/** Montos en moneda base (spec 19, fase C). */
 export interface CategoryAnomaly {
   categoryId: string;
   name: string;
@@ -444,7 +461,8 @@ export interface SafeToSpend {
   /** Balance total actual (base del cálculo), en moneda base. */
   balance: number;
   /** Gastos fijos activos aún por vencer antes de fin del mes seleccionado.
-   * Los recurrentes no tienen moneda propia: se asumen en moneda base. */
+   * Los recurrentes no tienen moneda propia: sus montos se interpretan en moneda base,
+   * misma regla que los presupuestos (no se convierten al cambiar la base — spec 19, fase C). */
   committedExpenses: number;
   /** balance - committedExpenses. Puede ser negativo si los compromisos superan el balance. */
   available: number;
@@ -452,8 +470,9 @@ export interface SafeToSpend {
 
 /** Consolidación multi-moneda de los totales del dashboard (spec 19, fase A). */
 export interface DashboardCurrency {
-  /** Moneda base del usuario: balance, ingresos/gastos del mes, netWorthTrend y
-   * safe-to-spend vienen consolidados en esta moneda. */
+  /** Moneda base del usuario: todos los agregados del dashboard (balance, ingresos/gastos,
+   * dona de categorías, comparativa de 6 meses, insights, netWorthTrend y safe-to-spend)
+   * vienen consolidados en esta moneda (spec 19, fases A-C). */
   baseCurrency: string;
   /** true si algún total incluyó conversión desde otra moneda (la UI muestra "≈"). */
   converted: boolean;

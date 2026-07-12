@@ -113,6 +113,36 @@ export interface ConsolidatedTotals {
 }
 
 /**
+ * Consolida una lista de montos con moneda (ej: filas de un groupBy por cuenta ya
+ * mapeadas a la moneda de su cuenta) a la moneda base. Azúcar sobre
+ * `consolidateToBase` para los agregados que llegan como filas en vez de mapa;
+ * las repeticiones de moneda se suman antes de convertir (spec 19, fase C).
+ */
+export function sumInBase(
+  amounts: ReadonlyArray<{ currency: string; amount: number }>,
+  baseCurrency: string,
+  rates: Map<string, number>,
+): ConsolidatedTotals {
+  const byCurrency = new Map<string, number>();
+  for (const { currency, amount } of amounts) {
+    byCurrency.set(currency, (byCurrency.get(currency) ?? 0) + amount);
+  }
+  return consolidateToBase(byCurrency, baseCurrency, rates);
+}
+
+/**
+ * Monto formateado para texto plano (PDF, emails, push), con el símbolo de su
+ * moneda: ARS conserva el "$" histórico, USD usa "US$" y cualquier otra moneda
+ * prefija su código. Reemplaza los "$" hardcodeados (spec 19, fase C).
+ */
+export function moneyLabel(amount: number, currency: string): string {
+  const value = amount.toFixed(2);
+  if (currency === 'ARS') return `$${value}`;
+  if (currency === 'USD') return `US$${value}`;
+  return `${currency} ${value}`;
+}
+
+/**
  * Consolida un mapa de montos por moneda a la moneda base. Las monedas sin
  * cotización quedan fuera del total y se reportan en `missingRates`.
  */

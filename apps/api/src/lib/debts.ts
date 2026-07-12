@@ -1,6 +1,6 @@
 import type { DebtDirection } from '@prisma/client';
 import { prisma } from '../prisma';
-import { sumEntityAmounts } from './currency';
+import { moneyLabel, sumEntityAmounts } from './currency';
 
 /** Redondeo a 2 decimales (evita arrastre de errores de punto flotante en sumas de pagos). */
 export function round2(n: number): number {
@@ -58,24 +58,26 @@ export function debtReminderContent(debt: {
   counterparty: string;
   dueDate: Date;
   remainingBalance: number;
+  /** Moneda de la deuda: los montos del copy salen con su símbolo (spec 19, fase C). */
+  currency: string;
   /** Presente solo en deudas en cuotas: la próxima cuota impaga. */
   installment?: { n: number; count: number; amount: number };
 }): { title: string; body: string } {
   const dueStr = debt.dueDate.toISOString().slice(0, 10);
-  const amount = debt.remainingBalance.toFixed(2);
+  const amount = moneyLabel(debt.remainingBalance, debt.currency);
   const vence = debt.installment
-    ? `vence la cuota ${debt.installment.n}/${debt.installment.count} ($${debt.installment.amount.toFixed(2)}) el ${dueStr}`
+    ? `vence la cuota ${debt.installment.n}/${debt.installment.count} (${moneyLabel(debt.installment.amount, debt.currency)}) el ${dueStr}`
     : `vence el ${dueStr}`;
   if (debt.direction === 'I_OWE') {
     return {
       title: `Deuda por vencer: ${debt.counterparty}`,
       body: debt.installment
-        ? `Tu deuda con ${debt.counterparty}: ${vence}, restan $${amount}.`
-        : `Tu deuda con ${debt.counterparty} ${vence}, restan $${amount}.`,
+        ? `Tu deuda con ${debt.counterparty}: ${vence}, restan ${amount}.`
+        : `Tu deuda con ${debt.counterparty} ${vence}, restan ${amount}.`,
     };
   }
   return {
     title: `Cobro por vencer: ${debt.counterparty}`,
-    body: `${debt.counterparty} te debe y ${vence}, restan $${amount} por cobrar.`,
+    body: `${debt.counterparty} te debe y ${vence}, restan ${amount} por cobrar.`,
   };
 }

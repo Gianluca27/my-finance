@@ -4,9 +4,11 @@ import {
   convertPaymentAmount,
   convertToBase,
   effectiveEntityAmount,
+  moneyLabel,
   PERSONAL_USD_RATE,
   scaleEntityAmount,
   sumEntityAmounts,
+  sumInBase,
 } from './currency';
 
 function rates(map: Record<string, number>): Map<string, number> {
@@ -99,6 +101,58 @@ describe('consolidateToBase', () => {
       rates({}),
     );
     expect(result.missingRates).toEqual(['BRL', 'EUR']);
+  });
+});
+
+describe('sumInBase', () => {
+  it('suma filas repetidas de la misma moneda antes de convertir', () => {
+    const result = sumInBase(
+      [
+        { currency: 'ARS', amount: 1000 },
+        { currency: 'ARS', amount: 500 },
+        { currency: 'USD', amount: 10 },
+      ],
+      'ARS',
+      rates({ USDMEP: 1200 }),
+    );
+    expect(result.total).toBe(13_500);
+    expect(result.converted).toBe(true);
+    expect(result.missingRates).toEqual([]);
+  });
+
+  it('excluye y reporta las monedas sin cotización', () => {
+    const result = sumInBase(
+      [
+        { currency: 'ARS', amount: 100 },
+        { currency: 'EUR', amount: 50 },
+      ],
+      'ARS',
+      rates({}),
+    );
+    expect(result.total).toBe(100);
+    expect(result.missingRates).toEqual(['EUR']);
+  });
+
+  it('lista vacía consolida a 0 sin conversión ni faltantes', () => {
+    expect(sumInBase([], 'ARS', rates({}))).toEqual({ total: 0, converted: false, missingRates: [] });
+  });
+});
+
+describe('moneyLabel', () => {
+  it('ARS conserva el "$" histórico', () => {
+    expect(moneyLabel(1500, 'ARS')).toBe('$1500.00');
+  });
+
+  it('USD usa "US$"', () => {
+    expect(moneyLabel(99.5, 'USD')).toBe('US$99.50');
+  });
+
+  it('otras monedas prefijan su código', () => {
+    expect(moneyLabel(20, 'EUR')).toBe('EUR 20.00');
+  });
+
+  it('conserva el signo de montos negativos', () => {
+    expect(moneyLabel(-12.345, 'ARS')).toBe('$-12.35');
   });
 });
 

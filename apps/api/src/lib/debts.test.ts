@@ -64,10 +64,11 @@ describe('debtReminderContent', () => {
       counterparty: 'Juan',
       dueDate,
       remainingBalance: 1500,
+      currency: 'ARS',
     });
     expect(title).toContain('Deuda por vencer');
     expect(body).toContain('Tu deuda con Juan vence el 2026-07-14');
-    expect(body).toContain('1500.00');
+    expect(body).toContain('$1500.00');
   });
 
   it('para OWED_TO_ME avisa que hay que cobrar', () => {
@@ -76,10 +77,23 @@ describe('debtReminderContent', () => {
       counterparty: 'María',
       dueDate,
       remainingBalance: 800,
+      currency: 'ARS',
     });
     expect(title).toContain('Cobro por vencer');
     expect(body).toContain('María te debe');
     expect(body).toContain('por cobrar');
-    expect(body).toContain('800.00');
+    expect(body).toContain('$800.00');
+  });
+
+  it('una deuda USD muestra el símbolo de su moneda, no "$" a secas (spec 19)', () => {
+    const { body } = debtReminderContent({
+      direction: 'I_OWE',
+      counterparty: 'Juan',
+      dueDate,
+      remainingBalance: 500,
+      currency: 'USD',
+    });
+    expect(body).toContain('US$500.00');
+    expect(body).not.toContain(' $500.00');
   });
 });

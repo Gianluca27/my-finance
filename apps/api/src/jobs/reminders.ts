@@ -92,6 +92,7 @@ export async function runRemindersJob(): Promise<{ rolled: number; reminded: num
         counterparty: debt.counterparty,
         dueDate: effectiveDueDate,
         remainingBalance: balance,
+        currency: debt.currency,
         installment,
       });
 

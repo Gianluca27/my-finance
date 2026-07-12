@@ -100,6 +100,16 @@ describe('paymentDateFor', () => {
   it('el wrap al mes siguiente cruza el fin de año', () => {
     expect(paymentDateFor(utc('2026-12-28'), 28, 5)).toEqual(utc('2027-01-05'));
   });
+
+  it('si el clamp iguala vencimiento y cierre, el pago pasa al día siguiente del cierre', () => {
+    // Cierre 30 / vencimiento 31: en abril ambos clampearían al 30 — el pago nunca puede
+    // caer en el propio día de cierre (el recordatorio del resumen no dispararía jamás).
+    expect(paymentDateFor(utc('2026-04-30'), 30, 31)).toEqual(utc('2026-05-01'));
+    // Febrero: cierre día 30 (clampeado al 28) y vencimiento 31 → 1 de marzo.
+    expect(paymentDateFor(utc('2026-02-28'), 30, 31)).toEqual(utc('2026-03-01'));
+    // En meses largos no cambia nada: vence el día configurado.
+    expect(paymentDateFor(utc('2026-07-30'), 30, 31)).toEqual(utc('2026-07-31'));
+  });
 });
 
 describe('nextPaymentDate', () => {
@@ -123,5 +133,10 @@ describe('nextPaymentDate', () => {
     expect(nextPaymentDate(28, 5, utc('2026-07-12'))).toEqual(utc('2026-08-05'));
     // El 03/07 aún no venció el del cierre de junio.
     expect(nextPaymentDate(28, 5, utc('2026-07-03'))).toEqual(utc('2026-07-05'));
+  });
+
+  it('con cierre y vencimiento clampeados al mismo día, el próximo pago queda después del cierre', () => {
+    // Cierre 30 / vencimiento 31 el mismo 30/4: el pago del ciclo que cierra ese día es el 1/5.
+    expect(nextPaymentDate(30, 31, utc('2026-04-30'))).toEqual(utc('2026-05-01'));
   });
 });

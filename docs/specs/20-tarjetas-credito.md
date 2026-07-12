@@ -69,7 +69,9 @@ Decisiones de modelado:
   cierre entra al ciclo que cierra; el clamp de fin de mes replica `advanceDueDate` (día 31 →
   30/28, sin huecos ni superposiciones alrededor de febrero). El vencimiento cae en el mes del
   cierre si `paymentDay > closingDay`, si no en el mes siguiente (comparando contra el
-  `closingDay` configurado, no el día clampeado).
+  `closingDay` configurado, no el día clampeado); si el clamp de un mes corto hiciera coincidir
+  vencimiento y cierre (ej: cierre 30 / vencimiento 31 en abril), el pago se corre al día
+  siguiente del cierre — el pago es siempre posterior al cierre.
 - **La deuda es el saldo negativo de la cuenta** — no hay campo "deuda". Los consumos siguen
   siendo `Transaction` EXPENSE comunes (presupuestos/categorías intactos), así que el balance
   calculado se vuelve negativo solo. El dashboard y el patrimonio neto ya restaban ese saldo
@@ -92,7 +94,9 @@ Decisiones de modelado:
   (`cardLastAlertCycle` = cierre YYYY-MM-DD, análogo a `lastAlertMonth`). Sin conversión de
   moneda: consumo y límite están ambos en la moneda de la cuenta.
 - **Drill-down del ciclo** reusa los filtros por URL del listado (spec 05/11):
-  `/transacciones?accountId=…&from=…&to=…` con los límites del ciclo.
+  `/transacciones?accountId=…&from=…&to=…` con los límites del ciclo. El filtro `to` es
+  inclusivo a nivel día (cubre las horas intra-día que generan los movimientos creados por el
+  server), así el listado muestra exactamente las filas que suma el total del resumen.
 
 ### Deuda registrada al implementar (fase 1)
 

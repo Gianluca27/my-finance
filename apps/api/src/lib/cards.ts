@@ -77,7 +77,13 @@ export function previousCycle(closingDay: number, ref: Date): CardCycle {
  */
 export function paymentDateFor(closing: Date, closingDay: number, paymentDay: number): Date {
   const monthOffset = paymentDay > closingDay ? 0 : 1;
-  return utcDateClamped(closing.getUTCFullYear(), closing.getUTCMonth() + monthOffset, paymentDay);
+  const payment = utcDateClamped(closing.getUTCFullYear(), closing.getUTCMonth() + monthOffset, paymentDay);
+  // En meses cortos el clamp puede hacer coincidir vencimiento y cierre (ej: cierre 30 /
+  // vencimiento 31 → ambos el 30/4). El pago debe quedar SIEMPRE después del cierre; si no,
+  // el recordatorio de ese resumen no dispara nunca: cuando `previousCycle` ya devuelve ese
+  // ciclo (el día siguiente al cierre), su vencimiento quedó en el pasado y el job lo saltea.
+  if (payment <= closing) return addDays(closing, 1);
+  return payment;
 }
 
 /**

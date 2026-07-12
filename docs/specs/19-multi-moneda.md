@@ -45,3 +45,24 @@ Principio de diseño: **la moneda vive en la cuenta**. Una transacción está en
 - Historial de tipos de cambio para conversión a fecha exacta (mejora natural: snapshot diario de rates — ver nota en spec 14).
 - Monedas más allá de ARS/USD como first-class en UI (el modelo las soporta por string; UI ofrece ARS/USD primero).
 - Ganancia/pérdida por diferencia de cambio como concepto contable.
+
+### Deuda registrada al implementar la fase A
+
+- **Mobile sin paridad multi-moneda (spec 18):** solo se adaptó al nuevo shape de
+  `GET /api/accounts` (`{ items, netWorth }` en vez de array) para que compile y no
+  rompa. Sigue formateando todo como ARS, suma el patrimonio nominal entre monedas,
+  no ofrece selector de moneda en cuentas/preferencias y su formulario de
+  transferencia no pide `amountTo` (la API rechaza con 400 y mensaje claro las
+  transferencias entre cuentas de distinta moneda creadas desde mobile).
+- **Agregados del dashboard que siguen en nominales (fases B/C):** gastos por
+  categoría (dona), comparativa de 6 meses, insights (comparación vs mes anterior,
+  anomalías), "Ahorro en metas", deudas y presupuestos. Solo balance,
+  ingresos/gastos del mes, netWorthTrend y safe-to-spend consolidan a moneda base.
+  Para usuarios multi-moneda la dona puede no cuadrar exactamente con el total de
+  gastos consolidado.
+- **Gastos recurrentes sin moneda propia:** el "safe-to-spend" asume los fijos
+  comprometidos en moneda base.
+- **Inversiones no cambia:** sus totales siguen convirtiendo con la fila `USD`
+  (oficial) hacia el pivote ARS, independiente de `User.baseCurrency`. El flujo
+  personal (cuentas/dashboard) usa `USDMEP` con fallback al oficial
+  (`PERSONAL_USD_RATE` en `apps/api/src/lib/currency.ts`).

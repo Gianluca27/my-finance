@@ -41,13 +41,22 @@ export const api = new ApiClient({
   },
 });
 
-export function formatMoney(value: number): string {
-  return value.toLocaleString('es-AR', {
-    style: 'currency',
-    currency: 'ARS',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  });
+/**
+ * Formatea un monto en la moneda indicada (default ARS, la moneda base
+ * histórica). Con ARS rinde "$ 1.234" y con USD "US$ 1.234" (locale es-AR).
+ * El modelo de monedas es free-string: un código no ISO cae a "1.234 XXX".
+ */
+export function formatMoney(value: number, currency: string = 'ARS'): string {
+  try {
+    return value.toLocaleString('es-AR', {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    });
+  } catch {
+    return `${value.toLocaleString('es-AR', { maximumFractionDigits: 0 })} ${currency}`;
+  }
 }
 
 export function formatDate(iso: string): string {

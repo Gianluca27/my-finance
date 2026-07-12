@@ -95,7 +95,8 @@ export function TransactionsScreen() {
 
   useEffect(() => {
     api.listCategories().then(setCategories).catch(() => {});
-    api.listAccounts().then(setAccounts).catch(() => {});
+    // Spec 19: se usa solo items del nuevo shape (paridad multi-moneda pendiente, spec 18).
+    api.listAccounts().then((r) => setAccounts(r.items)).catch(() => {});
   }, []);
 
   // Debounce de búsqueda.

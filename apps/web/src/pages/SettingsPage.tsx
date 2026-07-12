@@ -10,6 +10,7 @@ export function SettingsPage() {
   const [digestFrequency, setDigestFrequency] = useState<DigestFrequency>(
     user?.digestFrequency ?? 'MONTHLY',
   );
+  const [baseCurrency, setBaseCurrency] = useState(user?.baseCurrency ?? 'ARS');
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState(user?.name ?? '');
   const [nameBusy, setNameBusy] = useState(false);
@@ -24,6 +25,19 @@ export function SettingsPage() {
       setCachedUser(updated);
     } catch (err) {
       setDigestFrequency(prev);
+      setError(err instanceof Error ? err.message : 'Error inesperado');
+    }
+  }
+
+  async function changeBaseCurrency(next: string) {
+    const prev = baseCurrency;
+    setError(null);
+    setBaseCurrency(next);
+    try {
+      const updated = await api.updateAlertPreferences({ baseCurrency: next });
+      setCachedUser(updated);
+    } catch (err) {
+      setBaseCurrency(prev);
       setError(err instanceof Error ? err.message : 'Error inesperado');
     }
   }
@@ -119,6 +133,32 @@ export function SettingsPage() {
             <option value="WEEKLY">Semanal</option>
             <option value="MONTHLY">Mensual</option>
             <option value="BOTH">Semanal y mensual</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="mf-label" style={{ marginBottom: 4 }}>
+          Preferencias
+        </div>
+        <div className="settings-row">
+          <div>
+            <div className="settings-row-title">Moneda base</div>
+            <div className="muted">
+              Los totales consolidados (dashboard, patrimonio neto) se muestran en esta moneda; las
+              cuentas en otra moneda se convierten con la cotización vigente.
+            </div>
+          </div>
+          <select
+            value={baseCurrency}
+            onChange={(e) => changeBaseCurrency(e.target.value)}
+            aria-label="Moneda base"
+          >
+            {!['ARS', 'USD'].includes(baseCurrency) && (
+              <option value={baseCurrency}>{baseCurrency}</option>
+            )}
+            <option value="ARS">ARS · Peso argentino</option>
+            <option value="USD">USD · Dólar</option>
           </select>
         </div>
       </div>

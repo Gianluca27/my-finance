@@ -74,7 +74,9 @@ export function AccountsScreen() {
 
   const load = useCallback(() => {
     return Promise.all([
-      api.listAccounts().then(setAccounts),
+      // Spec 19: /api/accounts ahora devuelve { items, netWorth }. Mobile usa solo items
+      // (paridad multi-moneda pendiente, spec 18): sigue mostrando todo como ARS.
+      api.listAccounts().then((r) => setAccounts(r.items)),
       api.listTransfers().then(setTransfers),
     ]).catch((err) => setError(err instanceof Error ? err.message : 'Error inesperado'));
   }, []);

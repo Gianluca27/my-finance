@@ -1,4 +1,4 @@
-import type { Account, Category, Frequency, RecurringExpense, Transaction, TransactionType } from '@myfinance/shared';
+import type { Account, AccountsOverview, Category, Frequency, RecurringExpense, Transaction, TransactionType } from '@myfinance/shared';
 import { useState, type FormEvent } from 'react';
 import { api, formatDate, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
@@ -97,9 +97,9 @@ export function RecurringPage() {
     api.listRecurring(),
   );
   const { data: categoriesData } = useCached<Category[]>('categories', () => api.listCategories());
-  const { data: accountsData } = useCached<Account[]>('accounts', () => api.listAccounts());
+  const { data: accountsData } = useCached<AccountsOverview>('accounts', () => api.listAccounts());
   // Las archivadas no se ofrecen para registrar nuevos pagos.
-  const accounts = (accountsData ?? []).filter((a) => !a.archivedAt);
+  const accounts = (accountsData?.items ?? []).filter((a) => !a.archivedAt);
   // Las categorías del formulario siguen el tipo elegido (gasto fijo vs ingreso fijo).
   const categories = (categoriesData ?? []).filter((c) => c.type === type);
 

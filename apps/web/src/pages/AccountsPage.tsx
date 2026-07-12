@@ -1,4 +1,4 @@
-import type { Account, AccountType, Transfer } from '@myfinance/shared';
+import type { Account, AccountsOverview, AccountType, Transfer } from '@myfinance/shared';
 import { useState, type FormEvent } from 'react';
 import { api, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
@@ -13,6 +13,8 @@ const TYPE_LABEL: Record<AccountType, string> = {
 };
 const TYPE_ICON: Record<AccountType, string> = { CASH: '💵', BANK: '🏦', CARD: '💳', OTHER: '👛' };
 const COLOR_PALETTE = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#3b82f6', '#ec4899', '#14b8a6'];
+/** Monedas first-class en la UI. El modelo acepta cualquier código (free-string). */
+const CURRENCY_OPTIONS = ['ARS', 'USD'];
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('es-AR', { timeZone: 'UTC' });
@@ -59,7 +61,7 @@ function AccountCard({
             {a.isDefault && <span className="mf-account-default"> · predet.</span>}
           </div>
           <div className="mf-caption">
-            {TYPE_LABEL[a.type]}
+            {TYPE_LABEL[a.type]} · {a.currency}
             {a.archivedAt && ' · archivada'}
           </div>
         </div>
@@ -71,11 +73,11 @@ function AccountCard({
         </button>
       </div>
       <div className="mf-figure" style={{ color: a.balance < 0 ? 'var(--neg)' : undefined }}>
-        {formatMoney(a.balance)}
+        {formatMoney(a.balance, a.currency)}
       </div>
       <div className="mf-account-foot">
         <span className="muted">
-          Saldo inicial <span className="mono">{formatMoney(a.initialBalance)}</span>
+          Saldo inicial <span className="mono">{formatMoney(a.initialBalance, a.currency)}</span>
         </span>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <button type="button" className="mf-link-btn" onClick={() => onReconcile(a)}>
@@ -106,10 +108,15 @@ function AccountCard({
 export function AccountsPage() {
   const [error, setError] = useState<string | null>(null);
 
-  const { data: accounts, error: loadError, refresh } = useCached<Account[]>('accounts', () => api.listAccounts());
+  const { data: accountsData, error: loadError, refresh } = useCached<AccountsOverview>('accounts', () =>
+    api.listAccounts(),
+  );
   const { data: transfers, refresh: refreshTransfers } = useCached<Transfer[]>('transfers', () =>
     api.listTransfers(),
   );
+  // Un cache de sesión viejo puede traer la forma anterior (array plano): se descarta.
+  const overview = accountsData && !Array.isArray(accountsData) ? accountsData : null;
+  const accounts = overview?.items;
 
   // Alta/edición de cuenta
   const [formOpen, setFormOpen] = useState(false);
@@ -117,6 +124,7 @@ export function AccountsPage() {
   const [name, setName] = useState('');
   const [type, setType] = useState<AccountType>('BANK');
   const [initialBalance, setInitialBalance] = useState('0');
+  const [currency, setCurrency] = useState('ARS');
   const [color, setColor] = useState(COLOR_PALETTE[0]);
   const [icon, setIcon] = useState('');
   const [isDefault, setIsDefault] = useState(false);
@@ -128,6 +136,8 @@ export function AccountsPage() {
   const [fromId, setFromId] = useState('');
   const [toId, setToId] = useState('');
   const [transferAmount, setTransferAmount] = useState('');
+  // Monto que entra en destino, solo cuando las monedas difieren (TC implícito).
+  const [transferAmountTo, setTransferAmountTo] = useState('');
   const [transferDate, setTransferDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [transferNote, setTransferNote] = useState('');
   const [transferBusy, setTransferBusy] = useState(false);
@@ -146,8 +156,17 @@ export function AccountsPage() {
   // listado principal y de los selects de alta.
   const activeAccounts = list.filter((a) => !a.archivedAt);
   const archivedAccounts = list.filter((a) => a.archivedAt);
-  const netWorth = list.reduce((sum, a) => sum + a.balance, 0);
+  // Patrimonio neto consolidado a moneda base por la API (con missingRates si falta cotización).
+  const netWorth = overview?.netWorth ?? null;
   const transfersThisMonth = (transfers ?? []).filter((t) => isThisMonth(t.date)).length;
+  // Moneda del formulario de cuenta: inmutable una vez que hay movimientos (regla de la API).
+  const editingAccount = editingId ? list.find((a) => a.id === editingId) ?? null : null;
+  const currencyLocked = editingAccount?.hasMovements ?? false;
+  // Cuentas origen/destino elegidas en el formulario de transferencia.
+  const transferFrom = list.find((a) => a.id === fromId) ?? null;
+  const transferTo = list.find((a) => a.id === toId) ?? null;
+  const crossCurrency =
+    transferFrom !== null && transferTo !== null && transferFrom.currency !== transferTo.currency;
   // Al editar una transferencia vieja, la cuenta puede estar archivada: se incluye igual para que
   // no desaparezca del select ni cambie el valor por debajo.
   const transferAccountOptions = list.filter((a) => !a.archivedAt || a.id === fromId || a.id === toId);
@@ -166,6 +185,7 @@ export function AccountsPage() {
     setName('');
     setType('BANK');
     setInitialBalance('0');
+    setCurrency('ARS');
     setColor(COLOR_PALETTE[0]);
     setIcon('');
     setIsDefault(false);
@@ -178,6 +198,7 @@ export function AccountsPage() {
     setName(a.name);
     setType(a.type);
     setInitialBalance(String(a.initialBalance));
+    setCurrency(a.currency);
     setColor(a.color);
     setIcon(a.icon ?? '');
     setIsDefault(a.isDefault);
@@ -194,6 +215,7 @@ export function AccountsPage() {
         name,
         type,
         initialBalance: Number(initialBalance) || 0,
+        currency,
         color,
         icon: icon || null,
         isDefault,
@@ -250,6 +272,7 @@ export function AccountsPage() {
     setFromId(def.id);
     setToId(activeAccounts.find((a) => a.id !== def.id)!.id);
     setTransferAmount('');
+    setTransferAmountTo('');
     setTransferDate(new Date().toISOString().slice(0, 10));
     setTransferNote('');
     setError(null);
@@ -261,6 +284,7 @@ export function AccountsPage() {
     setFromId(t.fromAccountId);
     setToId(t.toAccountId);
     setTransferAmount(String(t.amount));
+    setTransferAmountTo(String(t.amountTo ?? t.amount));
     setTransferDate(t.date.slice(0, 10));
     setTransferNote(t.note ?? '');
     setError(null);
@@ -280,6 +304,8 @@ export function AccountsPage() {
         fromAccountId: fromId,
         toAccountId: toId,
         amount: Number(transferAmount),
+        // Entre monedas distintas viajan ambas puntas; con la misma moneda la API iguala.
+        amountTo: crossCurrency ? Number(transferAmountTo) : undefined,
         date: transferDate,
         note: transferNote || null,
       };
@@ -343,12 +369,25 @@ export function AccountsPage() {
         <div className="mf-hero-glow" />
         <div className="mf-hero-body">
           <div className="mf-label">Patrimonio neto</div>
-          <div className="mf-hero-balance" style={{ color: netWorth < 0 ? 'var(--neg)' : undefined }}>
-            {formatMoney(netWorth)}
+          <div
+            className="mf-hero-balance"
+            style={{ color: (netWorth?.total ?? 0) < 0 ? 'var(--neg)' : undefined }}
+          >
+            {netWorth?.converted && '≈ '}
+            {formatMoney(netWorth?.total ?? 0, netWorth?.baseCurrency)}
           </div>
           <div className="muted" style={{ fontSize: 13 }}>
             Suma del saldo de todas tus cuentas
+            {netWorth && netWorth.byCurrency.length > 1 && (
+              <> · {netWorth.byCurrency.map((c) => formatMoney(c.amount, c.currency)).join(' + ')}</>
+            )}
           </div>
+          {netWorth && netWorth.missingRates.length > 0 && (
+            <div style={{ fontSize: 12, color: 'var(--warn)', marginTop: 4 }}>
+              Falta cotización: {netWorth.missingRates.join(', ')} — esos saldos no entran al total
+              (se carga en Inversiones).
+            </div>
+          )}
         </div>
         <div className="mf-accounts-hero-stats">
           <div>
@@ -433,7 +472,9 @@ export function AccountsPage() {
                   <span className="muted"> · {formatDate(t.date)}</span>
                 </div>
                 <span className="mono" style={{ fontWeight: 600 }}>
-                  {formatMoney(t.amount)}
+                  {t.fromAccount.currency !== t.toAccount.currency
+                    ? `${formatMoney(t.amount, t.fromAccount.currency)} → ${formatMoney(t.amountTo ?? t.amount, t.toAccount.currency)}`
+                    : formatMoney(t.amount, t.fromAccount.currency)}
                 </span>
                 <button
                   type="button"
@@ -483,6 +524,20 @@ export function AccountsPage() {
             />
           </label>
           <label className="field">
+            Moneda
+            <select value={currency} onChange={(e) => setCurrency(e.target.value)} disabled={currencyLocked}>
+              {/* Si la cuenta ya está en otra moneda (modelo free-string), se muestra igual. */}
+              {!CURRENCY_OPTIONS.includes(currency) && <option value={currency}>{currency}</option>}
+              <option value="ARS">ARS · Peso argentino</option>
+              <option value="USD">USD · Dólar</option>
+            </select>
+            {currencyLocked && (
+              <span className="muted" style={{ fontSize: 12 }}>
+                La moneda no se puede cambiar: la cuenta ya tiene movimientos registrados en {currency}.
+              </span>
+            )}
+          </label>
+          <label className="field">
             Emoji (opcional)
             <input value={icon} onChange={(e) => setIcon(e.target.value)} maxLength={4} placeholder={TYPE_ICON[type]} />
           </label>
@@ -527,7 +582,7 @@ export function AccountsPage() {
             <select value={fromId} onChange={(e) => setFromId(e.target.value)}>
               {transferAccountOptions.map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.name} ({formatMoney(a.balance)})
+                  {a.name} ({formatMoney(a.balance, a.currency)})
                 </option>
               ))}
             </select>
@@ -537,13 +592,13 @@ export function AccountsPage() {
             <select value={toId} onChange={(e) => setToId(e.target.value)}>
               {transferAccountOptions.map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.name} ({formatMoney(a.balance)})
+                  {a.name} ({formatMoney(a.balance, a.currency)})
                 </option>
               ))}
             </select>
           </label>
           <label className="field">
-            Monto
+            {crossCurrency ? `Monto que sale (${transferFrom!.currency})` : 'Monto'}
             <input
               type="number"
               min="0.01"
@@ -554,6 +609,27 @@ export function AccountsPage() {
               autoFocus
             />
           </label>
+          {/* Entre monedas distintas se piden ambas puntas: el TC implícito queda registrado. */}
+          {crossCurrency && (
+            <label className="field">
+              Monto que entra ({transferTo!.currency})
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={transferAmountTo}
+                onChange={(e) => setTransferAmountTo(e.target.value)}
+                required
+              />
+              {Number(transferAmount) > 0 && Number(transferAmountTo) > 0 && (
+                <span className="muted" style={{ fontSize: 12 }}>
+                  {Number(transferAmount) >= Number(transferAmountTo)
+                    ? `TC implícito: 1 ${transferTo!.currency} ≈ ${formatMoney(Number(transferAmount) / Number(transferAmountTo), transferFrom!.currency)}`
+                    : `TC implícito: 1 ${transferFrom!.currency} ≈ ${formatMoney(Number(transferAmountTo) / Number(transferAmount), transferTo!.currency)}`}
+                </span>
+              )}
+            </label>
+          )}
           <label className="field">
             Fecha
             <input type="date" value={transferDate} onChange={(e) => setTransferDate(e.target.value)} required />
@@ -578,7 +654,7 @@ export function AccountsPage() {
             {error && <div className="error-banner">{error}</div>}
             <p className="muted" style={{ margin: 0 }}>
               ¿Cuál es el saldo real de esta cuenta? El calculado hoy es{' '}
-              <span className="mono">{formatMoney(reconcileAccount.balance)}</span>.
+              <span className="mono">{formatMoney(reconcileAccount.balance, reconcileAccount.currency)}</span>.
             </p>
             <label className="field">
               Saldo real
@@ -605,7 +681,7 @@ export function AccountsPage() {
                   Se registrará un movimiento de{' '}
                   <strong style={{ color: diff > 0 ? 'var(--pos)' : 'var(--neg)' }}>
                     {diff > 0 ? '+' : ''}
-                    {formatMoney(diff)}
+                    {formatMoney(diff, reconcileAccount.currency)}
                   </strong>{' '}
                   ({diff > 0 ? 'ingreso' : 'gasto'}) con la nota "Ajuste de saldo".
                 </p>

@@ -1,5 +1,5 @@
 import type {
-  Account,
+  Account, AccountsOverview,
   Investment,
   InvestmentDetail,
   InvestmentOperation,
@@ -247,8 +247,8 @@ export function InvestmentsPage() {
   );
   const providers = data?.providers ?? NO_PROVIDERS;
   // Cuentas para el checkbox "acreditar en cuenta" de la renta.
-  const { data: accountsData } = useCached<Account[]>('accounts', () => api.listAccounts());
-  const accounts = useMemo(() => (accountsData ?? []).filter((a) => a.archivedAt === null), [accountsData]);
+  const { data: accountsData } = useCached<AccountsOverview>('accounts', () => api.listAccounts());
+  const accounts = useMemo(() => (accountsData?.items ?? []).filter((a) => a.archivedAt === null), [accountsData]);
 
   // Curva del portafolio: se recarga al cambiar el rango y tras cada mutación/refresh.
   const loadHistory = useCallback(async () => {

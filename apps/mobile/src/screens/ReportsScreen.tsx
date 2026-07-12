@@ -36,7 +36,8 @@ export function ReportsScreen() {
   useEffect(() => {
     api
       .listAccounts()
-      .then((accs) => {
+      // Spec 19: se usa solo items del nuevo shape (paridad multi-moneda pendiente, spec 18).
+      .then(({ items: accs }) => {
         setAccounts(accs);
         const def = accs.find((a) => a.isDefault) ?? accs[0];
         if (def) setImportAccountId(def.id);

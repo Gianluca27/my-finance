@@ -1,4 +1,4 @@
-import type { Account, Category, Debt, DebtDetail, DebtDirection } from '@myfinance/shared';
+import type { Account, AccountsOverview, Category, Debt, DebtDetail, DebtDirection } from '@myfinance/shared';
 import { useState, type FormEvent } from 'react';
 import { api, formatDate, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
@@ -87,9 +87,9 @@ export function DebtsPage() {
   const { data: debts, error: loadError, refresh } = useCached<Debt[]>('debts', () => api.listDebts());
   const { data: categoriesData } = useCached<Category[]>('categories', () => api.listCategories());
   const categories = categoriesData ?? [];
-  const { data: accountsData } = useCached<Account[]>('accounts', () => api.listAccounts());
+  const { data: accountsData } = useCached<AccountsOverview>('accounts', () => api.listAccounts());
   // Las archivadas no se ofrecen para registrar nuevos pagos.
-  const accounts = (accountsData ?? []).filter((a) => !a.archivedAt);
+  const accounts = (accountsData?.items ?? []).filter((a) => !a.archivedAt);
 
   // El pago genera EXPENSE (I_OWE) o INCOME (OWED_TO_ME): la categoría elegible sigue esa dirección.
   const formCategories = categories.filter((c) => c.type === (direction === 'I_OWE' ? 'EXPENSE' : 'INCOME'));

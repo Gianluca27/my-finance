@@ -207,6 +207,14 @@ export function DashboardPage() {
   // drill-down hacia Movimientos (spec 11).
   const range = monthDateRange(data.month);
 
+  // Multi-moneda (spec 19, fase A): balance, ingresos/gastos del mes, patrimonio y
+  // disponible vienen consolidados a la moneda base; "≈" indica que hubo conversión.
+  // El resto de los agregados (categorías, comparativas, deudas) sigue en nominales.
+  // Los accesos son defensivos (?.) por si hay un dashboard viejo en el cache de sesión.
+  const baseCurrency = data.currency?.baseCurrency;
+  const approx = data.currency?.converted ? '≈ ' : '';
+  const missingRates = data.currency?.missingRates ?? [];
+
   const netWorthCurrent = data.netWorthTrend.length
     ? data.netWorthTrend[data.netWorthTrend.length - 1].netWorth
     : data.balance;
@@ -240,7 +248,16 @@ export function DashboardPage() {
           <div className="mf-hero-glow" />
           <div className="mf-hero-body">
             <div className="mf-label" data-n="01">Balance total</div>
-            <div className="mf-hero-balance">{formatMoney(data.balance)}</div>
+            <div className="mf-hero-balance">
+              {approx}
+              {formatMoney(data.balance, baseCurrency)}
+            </div>
+            {missingRates.length > 0 && (
+              <div style={{ fontSize: 12, color: 'var(--warn)', marginBottom: 6 }}>
+                Falta cotización: {missingRates.join(', ')} — esos montos no entran a los totales
+                (se carga en Inversiones).
+              </div>
+            )}
             <div className="mf-hero-stats">
               <div
                 className="mf-clickable-row"
@@ -252,7 +269,8 @@ export function DashboardPage() {
               >
                 <div className="mf-stat-label">Ingresos · {monthLabel(data.month)}</div>
                 <div className="mf-stat-value" style={{ color: 'var(--pos)' }}>
-                  {formatMoney(data.monthIncome)}
+                  {approx}
+                  {formatMoney(data.monthIncome, baseCurrency)}
                 </div>
               </div>
               <div
@@ -265,7 +283,8 @@ export function DashboardPage() {
               >
                 <div className="mf-stat-label">Gastos · {monthLabel(data.month)}</div>
                 <div className="mf-stat-value" style={{ color: 'var(--neg)' }}>
-                  {formatMoney(data.monthExpense)}
+                  {approx}
+                  {formatMoney(data.monthExpense, baseCurrency)}
                 </div>
                 {prevExpenseWindow && expenseDelta !== null && (
                   <div className="mf-hero-delta" style={{ marginTop: 5, fontSize: 11, flexWrap: 'wrap' }}>
@@ -311,7 +330,7 @@ export function DashboardPage() {
             ) : (
               <>
                 <div className="mf-projection-row">
-                  <div className="mf-figure">{formatMoney(projected)}</div>
+                  <div className="mf-figure">{formatMoney(projected, baseCurrency)}</div>
                   <div className="muted">gasto estimado</div>
                 </div>
                 <div className="mf-progress">
@@ -364,12 +383,13 @@ export function DashboardPage() {
                   color: data.safeToSpend.available < 0 ? 'var(--neg)' : 'var(--pos)',
                 }}
               >
-                {formatMoney(data.safeToSpend.available)}
+                {approx}
+                {formatMoney(data.safeToSpend.available, baseCurrency)}
               </div>
               <div className="mf-caption" title="Balance menos los gastos fijos que faltan pagar este mes">
                 {data.safeToSpend.committedExpenses === 0
-                  ? `Balance ${formatMoney(data.safeToSpend.balance)} · sin fijos pendientes`
-                  : `Balance ${formatMoney(data.safeToSpend.balance)} − Fijos por vencer ${formatMoney(data.safeToSpend.committedExpenses)}`}
+                  ? `Balance ${formatMoney(data.safeToSpend.balance, baseCurrency)} · sin fijos pendientes`
+                  : `Balance ${formatMoney(data.safeToSpend.balance, baseCurrency)} − Fijos por vencer ${formatMoney(data.safeToSpend.committedExpenses, baseCurrency)}`}
               </div>
             </div>
           )}
@@ -439,7 +459,10 @@ export function DashboardPage() {
             <span className="chip">Últimos 12 meses</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 10 }}>
-            <div className="mf-figure" style={{ fontSize: 26 }}>{formatMoney(netWorthCurrent)}</div>
+            <div className="mf-figure" style={{ fontSize: 26 }}>
+              {approx}
+              {formatMoney(netWorthCurrent, baseCurrency)}
+            </div>
             {netWorthDelta !== null && (
               <span
                 className="mf-delta-badge"
@@ -448,7 +471,7 @@ export function DashboardPage() {
                   color: netWorthUp ? 'var(--pos)' : 'var(--neg)',
                 }}
               >
-                {netWorthUp ? '▲' : '▼'} {formatMoney(Math.abs(netWorthDelta))}
+                {netWorthUp ? '▲' : '▼'} {formatMoney(Math.abs(netWorthDelta), baseCurrency)}
               </span>
             )}
           </div>

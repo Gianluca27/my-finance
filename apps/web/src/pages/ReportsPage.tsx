@@ -1,5 +1,5 @@
 import type {
-  Account,
+  Account, AccountsOverview,
   Category,
   DashboardData,
   ImportPreview,
@@ -46,9 +46,9 @@ export function ReportsPage() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const { data } = useCached<DashboardData>(`dashboard:${month}`, () => api.dashboard(month));
-  const { data: accountsData } = useCached<Account[]>('accounts', () => api.listAccounts());
+  const { data: accountsData } = useCached<AccountsOverview>('accounts', () => api.listAccounts());
   const { data: categoriesData } = useCached<Category[]>('categories', () => api.listCategories());
-  const accounts = accountsData ?? [];
+  const accounts = accountsData?.items ?? [];
   const categories = categoriesData ?? [];
   // El export de CSV mantiene las cuentas archivadas (su historial debe seguir siendo
   // exportable), pero el destino de import es un alta: se excluyen (spec 12).
@@ -160,22 +160,27 @@ export function ReportsPage() {
       {data && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="mf-label">Resumen de {monthLabel(month)}</div>
+          {/* Totales consolidados a moneda base por la API; "≈" indica conversión (spec 19). */}
           <div className="mf-hero-stats" style={{ marginTop: 16, paddingTop: 0, border: 'none' }}>
             <div>
               <div className="mf-stat-label">Ingresos</div>
               <div className="mf-stat-value" style={{ color: 'var(--pos)' }}>
-                {formatMoney(data.monthIncome)}
+                {data.currency?.converted && '≈ '}
+                {formatMoney(data.monthIncome, data.currency?.baseCurrency)}
               </div>
             </div>
             <div>
               <div className="mf-stat-label">Gastos</div>
               <div className="mf-stat-value" style={{ color: 'var(--neg)' }}>
-                {formatMoney(data.monthExpense)}
+                {data.currency?.converted && '≈ '}
+                {formatMoney(data.monthExpense, data.currency?.baseCurrency)}
               </div>
             </div>
             <div>
               <div className="mf-stat-label">Neto</div>
-              <div className="mf-stat-value">{formatMoney(data.monthIncome - data.monthExpense)}</div>
+              <div className="mf-stat-value">
+                {formatMoney(data.monthIncome - data.monthExpense, data.currency?.baseCurrency)}
+              </div>
             </div>
           </div>
         </div>

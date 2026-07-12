@@ -1,4 +1,4 @@
-import type { Account, Category, DashboardData, Paginated, Transaction, TransactionType } from '@myfinance/shared';
+import type { Account, AccountsOverview, Category, DashboardData, Paginated, Transaction, TransactionType } from '@myfinance/shared';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, formatMoney } from '../api';
@@ -220,9 +220,11 @@ export function TransactionsPage() {
 
   const { data: categoriesData } = useCached<Category[]>('categories', () => api.listCategories());
   const categories = categoriesData ?? [];
-  const { data: accountsData } = useCached<Account[]>('accounts', () => api.listAccounts());
-  const accounts = accountsData ?? [];
+  const { data: accountsData } = useCached<AccountsOverview>('accounts', () => api.listAccounts());
+  const accounts = accountsData?.items ?? [];
   const accountName = (id: string) => accounts.find((a) => a.id === id)?.name ?? '';
+  // Cada movimiento está en la moneda de su cuenta (spec 19).
+  const accountCurrency = (id: string) => accounts.find((a) => a.id === id)?.currency;
 
   // Selección múltiple (solo página visible)
   const pageIds = data?.items.map((tx) => tx.id) ?? [];
@@ -447,16 +449,19 @@ export function TransactionsPage() {
 
       {dash && (
         <div className="mf-grid-3" style={{ marginBottom: 14 }}>
+          {/* Totales consolidados a moneda base por la API; "≈" indica conversión (spec 19). */}
           <div className="card">
             <div className="mf-label">Ingresos del mes</div>
             <div className="mf-figure mf-figure--stat" style={{ color: 'var(--pos)' }}>
-              {formatMoney(dash.monthIncome)}
+              {dash.currency?.converted && '≈ '}
+              {formatMoney(dash.monthIncome, dash.currency?.baseCurrency)}
             </div>
           </div>
           <div className="card">
             <div className="mf-label">Gastos del mes</div>
             <div className="mf-figure mf-figure--stat" style={{ color: 'var(--neg)' }}>
-              {formatMoney(dash.monthExpense)}
+              {dash.currency?.converted && '≈ '}
+              {formatMoney(dash.monthExpense, dash.currency?.baseCurrency)}
             </div>
           </div>
           <div className="mf-hero-card">
@@ -466,7 +471,7 @@ export function TransactionsPage() {
               style={{ color: monthNet < 0 ? 'var(--neg)' : 'var(--text)' }}
             >
               {monthNet >= 0 ? '+ ' : '− '}
-              {formatMoney(Math.abs(monthNet))}
+              {formatMoney(Math.abs(monthNet), dash.currency?.baseCurrency)}
             </div>
           </div>
         </div>
@@ -601,7 +606,7 @@ export function TransactionsPage() {
                   <td>
                     <input
                       type="checkbox"
-                      aria-label={`Seleccionar ${tx.note || tx.category?.name || 'movimiento sin nota'} del ${formatRowDate(tx.date)} por ${formatMoney(tx.amount)}`}
+                      aria-label={`Seleccionar ${tx.note || tx.category?.name || 'movimiento sin nota'} del ${formatRowDate(tx.date)} por ${formatMoney(tx.amount, accountCurrency(tx.accountId))}`}
                       checked={selected.has(tx.id)}
                       onChange={() => toggleOne(tx.id)}
                     />
@@ -621,7 +626,7 @@ export function TransactionsPage() {
                   </td>
                   <td className={`num mf-tx-amount ${tx.type === 'INCOME' ? 'income' : 'expense'}`}>
                     {tx.type === 'INCOME' ? '+ ' : '− '}
-                    {formatMoney(tx.amount)}
+                    {formatMoney(tx.amount, accountCurrency(tx.accountId))}
                   </td>
                   <td className="num">
                     <div className="row-actions" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap' }}>

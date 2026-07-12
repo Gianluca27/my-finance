@@ -1,4 +1,4 @@
-import type { Account, Goal } from '@myfinance/shared';
+import type { Account, AccountsOverview, Goal } from '@myfinance/shared';
 import { useState, type FormEvent } from 'react';
 import { api, formatMoney } from '../api';
 import { invalidate, useCached } from '../cache';
@@ -40,9 +40,9 @@ export function GoalsPage() {
   const [withdrawBusy, setWithdrawBusy] = useState(false);
 
   const { data: goals, error: loadError, refresh } = useCached<Goal[]>('goals', () => api.listGoals());
-  const { data: accountsData } = useCached<Account[]>('accounts', () => api.listAccounts());
+  const { data: accountsData } = useCached<AccountsOverview>('accounts', () => api.listAccounts());
   // Las archivadas no se ofrecen para aportes ni retiros nuevos.
-  const accounts = (accountsData ?? []).filter((a) => !a.archivedAt);
+  const accounts = (accountsData?.items ?? []).filter((a) => !a.archivedAt);
 
   function invalidateAfterMutation() {
     invalidate('goals');

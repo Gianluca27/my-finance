@@ -1,4 +1,4 @@
-import type { Account, Category, CategorySuggestion, Transaction, TransactionType } from '@myfinance/shared';
+import type { Account, AccountsOverview, Category, CategorySuggestion, Transaction, TransactionType } from '@myfinance/shared';
 import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import { invalidate, useCached } from '../cache';
@@ -31,10 +31,10 @@ export function AddTransactionModal({
 
   const { data: categoriesData } = useCached<Category[]>('categories', () => api.listCategories());
   const categories = (categoriesData ?? []).filter((c) => c.type === type);
-  const { data: accountsData } = useCached<Account[]>('accounts', () => api.listAccounts());
+  const { data: accountsData } = useCached<AccountsOverview>('accounts', () => api.listAccounts());
   // Las archivadas se excluyen del select salvo que sea la cuenta ya elegida (edición de un
   // movimiento viejo): así no desaparecen del formulario ni cambian el valor por debajo.
-  const accounts = (accountsData ?? []).filter((a) => !a.archivedAt || a.id === accountId);
+  const accounts = (accountsData?.items ?? []).filter((a) => !a.archivedAt || a.id === accountId);
 
   // Al abrir, precargar los datos del movimiento a editar, o los de la fila a duplicar
   // (con fecha = hoy, ya que es un movimiento nuevo), o limpiar para uno nuevo en blanco.
@@ -209,6 +209,8 @@ export function AddTransactionModal({
                 <option key={a.id} value={a.id}>
                   {a.icon ? `${a.icon} ` : ''}
                   {a.name}
+                  {/* El monto se registra en la moneda de la cuenta (spec 19). */}
+                  {a.currency && a.currency !== 'ARS' ? ` · ${a.currency}` : ''}
                 </option>
               ))}
             </select>

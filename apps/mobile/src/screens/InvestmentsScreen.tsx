@@ -158,7 +158,7 @@ export function InvestmentsScreen() {
     const missingRate = inv.currency !== null && !rateMap.has(inv.currency);
     return (
       <Card key={inv.id} style={{ gap: 6 }}>
-        <Pressable onPress={() => onOpenDetail(inv)}>
+        <Pressable onPress={() => onOpenDetail(inv)} style={{ gap: 6 }}>
         <View style={styles.assetHead}>
           <View style={[styles.mark, { backgroundColor: `${inv.color}26`, borderColor: `${inv.color}4d` }]}>
             <Text style={{ fontSize: 16 }}>{inv.icon ?? inv.symbol?.slice(0, 3) ?? TYPE_FALLBACK_ICON[inv.type]}</Text>

@@ -1,11 +1,19 @@
-import type { Investment, InvestmentsOverview, InvestmentType } from '@myfinance/shared';
+import type {
+  Investment,
+  InvestmentDetail,
+  InvestmentPricePoint,
+  InvestmentsOverview,
+  InvestmentType,
+  PriceHistoryRange,
+} from '@myfinance/shared';
 import { useFocusEffect } from '@react-navigation/native';
-import React, { useCallback, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import Svg, { Defs, LinearGradient, Path, Stop } from 'react-native-svg';
 import { api } from '../api';
-import { formatMoney, spacing, type ThemeColors } from '../theme';
+import { formatDate, formatMoney, spacing, type ThemeColors } from '../theme';
 import { useTheme } from '../ThemeContext';
-import { Card, EmptyState, ErrorText, MutedText, SummaryTile } from '../components/ui';
+import { BottomSheet, Card, Chip, EmptyState, ErrorText, MutedText, SummaryTile } from '../components/ui';
 
 const TYPE_LABELS: Record<InvestmentType, string> = {
   ACCION: 'Acción',
@@ -59,6 +67,50 @@ function pnlColor(pnl: number, colors: ThemeColors): string {
   return colors.textPrimary;
 }
 
+const PRICE_RANGE_OPTIONS: { value: PriceHistoryRange; label: string }[] = [
+  { value: '1w', label: '1S' },
+  { value: '1m', label: '1M' },
+  { value: '3m', label: '3M' },
+  { value: '6m', label: '6M' },
+  { value: 'ytd', label: 'Año' },
+  { value: '1y', label: '1A' },
+];
+
+const PRICE_RANGE_DAYS: Record<Exclude<PriceHistoryRange, 'ytd'>, number> = {
+  '1w': 7,
+  '1m': 30,
+  '3m': 90,
+  '6m': 180,
+  '1y': 365,
+};
+
+/** Espeja priceHistoryCutoff (apps/api/src/lib/investments.ts), igual que la web. */
+function priceRangeStart(range: PriceHistoryRange, now: Date): Date {
+  if (range === 'ytd') return new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
+  return new Date(now.getTime() - PRICE_RANGE_DAYS[range] * 86_400_000);
+}
+
+/** Mensaje según la causa real de no tener curva: nunca hubo historial, o lo hay pero no en este rango. */
+function priceHistoryEmptyMessage(detail: InvestmentDetail): string {
+  if (detail.priceHistory.length >= 2) {
+    return 'No hay datos suficientes en este rango. Probá un rango más amplio.';
+  }
+  if (!detail.providerSymbol) {
+    return 'Cargá el precio manualmente al menos dos veces desde la web para ver la evolución.';
+  }
+  if (detail.providerMarket === 'notes' || detail.providerMarket === 'corp') {
+    return 'Este instrumento no tiene histórico en data912: el gráfico se va completando con la actualización diaria.';
+  }
+  return 'Todavía no pudimos obtener el histórico de precios. Se irá completando con la actualización diaria.';
+}
+
+/** Etiqueta contextual de la renta según el tipo de activo. */
+function rentaLabel(type: InvestmentType): string {
+  if (type === 'BONO') return 'Cupón';
+  if (type === 'ACCION' || type === 'CEDEAR' || type === 'ETF') return 'Dividendo';
+  return 'Renta';
+}
+
 export function InvestmentsScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -88,10 +140,25 @@ export function InvestmentsScreen() {
     [data],
   );
 
+  const [selected, setSelected] = useState<Investment | null>(null);
+  const [detail, setDetail] = useState<InvestmentDetail | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
+
+  function onOpenDetail(inv: Investment) {
+    setSelected(inv);
+    setDetail(null);
+    setDetailError(null);
+    api
+      .getInvestment(inv.id)
+      .then(setDetail)
+      .catch((err) => setDetailError(err instanceof Error ? err.message : 'Error inesperado'));
+  }
+
   function renderAssetCard(inv: Investment) {
     const missingRate = inv.currency !== null && !rateMap.has(inv.currency);
     return (
       <Card key={inv.id} style={{ gap: 6 }}>
+        <Pressable onPress={() => onOpenDetail(inv)}>
         <View style={styles.assetHead}>
           <View style={[styles.mark, { backgroundColor: `${inv.color}26`, borderColor: `${inv.color}4d` }]}>
             <Text style={{ fontSize: 16 }}>{inv.icon ?? inv.symbol?.slice(0, 3) ?? TYPE_FALLBACK_ICON[inv.type]}</Text>
@@ -129,6 +196,7 @@ export function InvestmentsScreen() {
             Sin cotización {inv.currency} — no suma a los totales.
           </Text>
         )}
+        </Pressable>
       </Card>
     );
   }
@@ -176,6 +244,16 @@ export function InvestmentsScreen() {
           </>
         )}
       </ScrollView>
+
+      <BottomSheet visible={selected !== null} onClose={() => setSelected(null)} title={selected?.name ?? ''}>
+        {detailError ? (
+          <ErrorText>{detailError}</ErrorText>
+        ) : detail === null ? (
+          <MutedText>Cargando…</MutedText>
+        ) : (
+          <DetailContent detail={detail} />
+        )}
+      </BottomSheet>
     </View>
   );
 }
@@ -207,3 +285,161 @@ function createStyles(colors: ThemeColors) {
     assetPnl: { fontSize: 12.5, fontWeight: '600', marginTop: 2 },
   });
 }
+
+function DetailContent({ detail }: { detail: InvestmentDetail }) {
+  const { colors } = useTheme();
+  const { width: winWidth } = useWindowDimensions();
+  const [range, setRange] = useState<PriceHistoryRange>('1m');
+  const [points, setPoints] = useState<InvestmentPricePoint[] | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPoints(null);
+    setHistoryError(null);
+    api
+      .getInvestmentPriceHistory(detail.id, range)
+      .then((data) => {
+        if (!cancelled) setPoints(data);
+      })
+      .catch((err) => {
+        if (!cancelled) setHistoryError(err instanceof Error ? err.message : 'Error inesperado');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [detail.id, range]);
+
+  const chartWidth = winWidth - spacing.lg * 2;
+  const chartHeight = 110;
+
+  const chart = useMemo(() => {
+    if (!points || points.length < 2) return null;
+    const now = new Date();
+    const domainStart = priceRangeStart(range, now).getTime();
+    const domainSpan = Math.max(now.getTime() - domainStart, 1);
+    const padY = 12;
+    const values = points.map((p) => p.price);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const valueRange = max - min || 1;
+    const pts = points.map((p) => ({
+      p,
+      x: ((new Date(p.date).getTime() - domainStart) / domainSpan) * chartWidth,
+      y: padY + (1 - (p.price - min) / valueRange) * (chartHeight - padY * 2),
+    }));
+    const line = pts.map((pt, i) => `${i === 0 ? 'M' : 'L'} ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`).join(' ');
+    const area = `${line} L ${pts[pts.length - 1].x.toFixed(1)} ${chartHeight} L ${pts[0].x.toFixed(1)} ${chartHeight} Z`;
+    return { pts, line, area, min, max };
+  }, [points, range, chartWidth]);
+
+  return (
+    <View style={{ gap: spacing.sm + 2 }}>
+      {detail.tir != null && (
+        <View style={detailStyles.row}>
+          <MutedText>TIR anualizada</MutedText>
+          <Text style={{ color: pnlColor(detail.tir, colors), fontWeight: '600' }}>{formatTir(detail.tir)}</Text>
+        </View>
+      )}
+      {(detail.incomeCollected ?? 0) > 0 && (
+        <View style={detailStyles.row}>
+          <MutedText>Renta cobrada</MutedText>
+          <Text style={{ color: colors.deltaGood, fontWeight: '600' }}>
+            +{formatAsset(detail.incomeCollected ?? 0, detail.currency)}
+          </Text>
+        </View>
+      )}
+
+      <View>
+        <Text style={[detailStyles.sectionLabel, { color: colors.textSecondary }]}>Precio</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: spacing.xs, marginBottom: spacing.sm }}
+        >
+          {PRICE_RANGE_OPTIONS.map((opt) => (
+            <Chip key={opt.value} label={opt.label} active={range === opt.value} onPress={() => setRange(opt.value)} />
+          ))}
+        </ScrollView>
+        {historyError ? (
+          <ErrorText>{historyError}</ErrorText>
+        ) : points === null ? (
+          <MutedText>Cargando…</MutedText>
+        ) : chart === null ? (
+          <MutedText>{priceHistoryEmptyMessage(detail)}</MutedText>
+        ) : (
+          <>
+            <Svg width={chartWidth} height={chartHeight}>
+              <Defs>
+                <LinearGradient id="invPriceFill" x1="0" y1="0" x2="0" y2="1">
+                  <Stop offset="0" stopColor={colors.accent} stopOpacity={0.25} />
+                  <Stop offset="1" stopColor={colors.accent} stopOpacity={0} />
+                </LinearGradient>
+              </Defs>
+              <Path d={chart.area} fill="url(#invPriceFill)" />
+              <Path
+                d={chart.line}
+                fill="none"
+                stroke={colors.accent}
+                strokeWidth={2}
+                strokeLinejoin="round"
+                strokeLinecap="round"
+              />
+            </Svg>
+            <View style={detailStyles.chartFooter}>
+              <MutedText>{formatDate(points[0].date)}</MutedText>
+              <MutedText>
+                mín {formatPrice(chart.min, detail.currency)} · máx {formatPrice(chart.max, detail.currency)}
+              </MutedText>
+              <MutedText>{formatDate(points[points.length - 1].date)}</MutedText>
+            </View>
+          </>
+        )}
+      </View>
+
+      <View>
+        <Text style={[detailStyles.sectionLabel, { color: colors.textSecondary }]}>Operaciones</Text>
+        {detail.operations.length === 0 ? (
+          <MutedText>Sin operaciones registradas.</MutedText>
+        ) : (
+          detail.operations.map((op) => {
+            const isRenta = op.type === 'RENTA';
+            const label = isRenta ? rentaLabel(detail.type) : op.type === 'COMPRA' ? 'Compra' : 'Venta';
+            return (
+              <View key={op.id} style={detailStyles.opRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: colors.textPrimary, fontSize: 13 }}>
+                    {label} ·{' '}
+                    {isRenta ? 'Renta cobrada' : `${formatQty(op.quantity)} × ${formatPrice(op.unitPrice, detail.currency)}`}
+                  </Text>
+                  <MutedText>
+                    {formatDate(op.date)}
+                    {op.note ? ` · ${op.note}` : ''}
+                  </MutedText>
+                </View>
+                <Text
+                  style={{
+                    color: isRenta ? colors.deltaGood : colors.textPrimary,
+                    fontWeight: '600',
+                    fontSize: 13,
+                  }}
+                >
+                  {isRenta
+                    ? `+${formatAsset(op.unitPrice, detail.currency)}`
+                    : formatAsset((op.quantity * op.unitPrice) / detail.priceFactor, detail.currency)}
+                </Text>
+              </View>
+            );
+          })
+        )}
+      </View>
+    </View>
+  );
+}
+
+const detailStyles = StyleSheet.create({
+  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  sectionLabel: { fontWeight: '600', fontSize: 13, marginBottom: 6 },
+  chartFooter: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },
+  opRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 6 },
+});

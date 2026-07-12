@@ -68,8 +68,9 @@ export function installmentDueDate(firstDueDate: Date, n: number): Date {
 
 /**
  * Cuotas completamente cubiertas por lo pagado: `floor(Σ pagos / monto por cuota)`.
- * Un pago parcial no avanza el contador hasta completar el monto de la cuota. Si lo pagado
- * cubre el total, todas cuentan como pagadas (la última puede ser menor que el resto).
+ * Un pago parcial no avanza el contador hasta completar el monto de la cuota. La última cuota
+ * ajusta contra el total (puede ser mayor o menor que `per`), así que solo cuenta como pagada
+ * cuando lo pagado cubre el total completo — nunca por el floor sobre `per`.
  */
 export function paidInstallmentsCount(plan: InstallmentPlan, paid: number): number {
   const paidRounded = round2(paid);
@@ -77,7 +78,7 @@ export function paidInstallmentsCount(plan: InstallmentPlan, paid: number): numb
   const per = perInstallmentAmount(plan);
   if (per <= 0) return 0;
   // Épsilon contra ruido de punto flotante en la suma de pagos (299.999…94 cuenta como 3 cuotas).
-  return Math.min(plan.installmentCount, Math.floor(paidRounded / per + 1e-9));
+  return Math.min(plan.installmentCount - 1, Math.floor(paidRounded / per + 1e-9));
 }
 
 /** Cronograma derivado completo dado lo ya pagado. */

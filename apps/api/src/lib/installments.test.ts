@@ -68,9 +68,18 @@ describe('paidInstallmentsCount', () => {
     expect(paidInstallmentsCount(plan, 1100)).toBe(11);
   });
 
-  it('nunca supera la cantidad de cuotas', () => {
+  it('la última cuota solo cuenta cuando el total está cubierto (su monto ajusta y puede superar al resto)', () => {
+    // 12 cuotas explícitas de $50 sobre $1200: la última ajusta a $650 (1200 − 11×50).
+    // floor(1000/50) = 20 pero solo hay 11 cuotas "de $50": la 12 sigue impaga hasta cubrir el total.
     const plan: InstallmentPlan = { ...PLAN_1200, installmentAmount: 50 };
-    expect(paidInstallmentsCount(plan, 1000)).toBe(12);
+    expect(paidInstallmentsCount(plan, 1000)).toBe(11);
+    expect(paidInstallmentsCount(plan, 1199.99)).toBe(11);
+    expect(paidInstallmentsCount(plan, 1200)).toBe(12);
+    // Con 11 pagas la próxima es la 12 (ajustada), no null: el recordatorio sigue vivo.
+    const schedule = buildSchedule(plan, 1000);
+    expect(schedule.filter((c) => c.paid)).toHaveLength(11);
+    expect(nextInstallment(schedule)?.n).toBe(12);
+    expect(nextInstallment(schedule)?.amount).toBe(650);
   });
 });
 

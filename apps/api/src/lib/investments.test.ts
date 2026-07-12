@@ -6,6 +6,7 @@ import {
   investmentMetrics,
   operationCashAmount,
   positionAsOf,
+  priceHistoryCutoff,
   xirr,
   type CashFlow,
   type DatedPositionOp,
@@ -315,5 +316,32 @@ describe('positionAsOf', () => {
     const pos = positionAsOf(unsorted, new Date('2024-07-01T00:00:00.000Z'));
     expect(pos?.quantity).toBe(12);
     expect(pos?.avgCost).toBe(125);
+  });
+});
+
+describe('priceHistoryCutoff', () => {
+  const now = new Date('2026-07-12T15:00:00.000Z');
+
+  it('resta días fijos para 1w/1m/3m/6m/1y', () => {
+    expect(priceHistoryCutoff('1w', now).toISOString()).toBe(
+      new Date(now.getTime() - 7 * 86_400_000).toISOString(),
+    );
+    expect(priceHistoryCutoff('1m', now).toISOString()).toBe(
+      new Date(now.getTime() - 30 * 86_400_000).toISOString(),
+    );
+    expect(priceHistoryCutoff('1y', now).toISOString()).toBe(
+      new Date(now.getTime() - 365 * 86_400_000).toISOString(),
+    );
+  });
+
+  it('ytd arranca el 1° de enero UTC del año de "now"', () => {
+    expect(priceHistoryCutoff('ytd', now).toISOString()).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('ytd el 1° de enero: el corte es el propio inicio del día, no se va al año anterior', () => {
+    const newYearsDay = new Date('2026-01-01T05:00:00.000Z');
+    const cutoff = priceHistoryCutoff('ytd', newYearsDay);
+    expect(cutoff.toISOString()).toBe('2026-01-01T00:00:00.000Z');
+    expect(cutoff.getTime()).toBeLessThanOrEqual(newYearsDay.getTime());
   });
 });

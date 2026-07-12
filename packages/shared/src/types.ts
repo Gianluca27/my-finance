@@ -256,7 +256,7 @@ export interface InvestmentOperation {
   createdAt: string;
 }
 
-/** Punto del histórico de precios (un snapshot por actualización manual). */
+/** Punto del histórico de precios (un snapshot por día: cron, backfill o carga manual). */
 export interface InvestmentPricePoint {
   id: string;
   price: number;
@@ -267,6 +267,9 @@ export interface InvestmentDetail extends Investment {
   operations: InvestmentOperation[];
   priceHistory: InvestmentPricePoint[];
 }
+
+/** Rango de tiempo para GET /investments/:id/price-history. */
+export type PriceHistoryRange = '1w' | '1m' | '3m' | '6m' | 'ytd' | '1y';
 
 /** Cotización manual de una moneda extranjera en moneda base (por 1 unidad). */
 export interface ExchangeRate {

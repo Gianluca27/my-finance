@@ -267,6 +267,30 @@ export function closestPriceMatch(points: PricePoint[], target: Date): PricePoin
   return best;
 }
 
+/**
+ * Rango de tiempo para el histórico de precios de un activo. Espeja
+ * `PriceHistoryRange` de `@myfinance/shared` (no se importa: la API tiene
+ * `rootDir: src`, ver `services/providers/types.ts`).
+ */
+export type PriceHistoryRange = '1w' | '1m' | '3m' | '6m' | 'ytd' | '1y';
+
+export const PRICE_HISTORY_RANGES: readonly PriceHistoryRange[] = ['1w', '1m', '3m', '6m', 'ytd', '1y'];
+
+/** Días atrás por rango, salvo 'ytd' (arranca el 1° de enero UTC del año de `now`). */
+const RANGE_DAYS: Record<Exclude<PriceHistoryRange, 'ytd'>, number> = {
+  '1w': 7,
+  '1m': 30,
+  '3m': 90,
+  '6m': 180,
+  '1y': 365,
+};
+
+/** Fecha de corte (UTC) de un rango: se incluyen los puntos con `date >= cutoff`. */
+export function priceHistoryCutoff(range: PriceHistoryRange, now: Date): Date {
+  if (range === 'ytd') return new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
+  return new Date(now.getTime() - RANGE_DAYS[range] * MS_PER_DAY);
+}
+
 export interface InvestmentsSummaryData {
   totalInvested: number;
   totalValue: number;

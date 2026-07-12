@@ -9,12 +9,15 @@ import {
   investmentMetrics,
   operationCashAmount,
   positionAsOf,
+  PRICE_HISTORY_RANGES,
+  priceHistoryCutoff,
   xirr,
   type CashFlow,
   type PositionOp,
+  type PriceHistoryRange,
 } from '../lib/investments';
 import { resolveAccountId } from '../lib/accounts';
-import { refreshPricesForUser } from '../jobs/prices';
+import { refreshPricesForUser, upsertDailySnapshot } from '../jobs/prices';
 import { serialize } from '../lib/serialize';
 import { requireAuth } from '../middleware/auth';
 import { asyncHandler, HttpError } from '../middleware/error';
@@ -596,6 +599,25 @@ router.get(
   }),
 );
 
+const priceHistoryQuerySchema = z.object({
+  range: z.enum(PRICE_HISTORY_RANGES as [PriceHistoryRange, ...PriceHistoryRange[]]),
+});
+
+/** Histórico de precios de un activo acotado a un rango (para el gráfico de detalle). */
+router.get(
+  '/:id/price-history',
+  asyncHandler(async (req, res) => {
+    const investment = await findOwned(req.auth!.userId, req.params.id);
+    const { range } = priceHistoryQuerySchema.parse(req.query);
+    const cutoff = priceHistoryCutoff(range, new Date());
+    const snapshots = await prisma.investmentPriceSnapshot.findMany({
+      where: { investmentId: investment.id, date: { gte: cutoff } },
+      orderBy: { date: 'asc' },
+    });
+    res.json(serialize(snapshots.map((s) => ({ id: s.id, price: s.price, date: s.date }))));
+  }),
+);
+
 router.post(
   '/',
   asyncHandler(async (req, res) => {
@@ -934,16 +956,12 @@ router.patch(
       );
     }
     const now = new Date();
-    const [investment] = await prisma.$transaction([
-      prisma.investment.update({
-        where: { id: existing.id },
-        data: { currentPrice: price, priceUpdatedAt: now },
-      }),
-      // Cada actualización deja un punto en el histórico para el gráfico.
-      prisma.investmentPriceSnapshot.create({
-        data: { investmentId: existing.id, price, date: now },
-      }),
-    ]);
+    const investment = await prisma.investment.update({
+      where: { id: existing.id },
+      data: { currentPrice: price, priceUpdatedAt: now },
+    });
+    // Un punto por día calendario en el histórico: varias cargas el mismo día pisan el punto de hoy.
+    await upsertDailySnapshot(investment.id, price, now);
     const ops = await fetchOps(investment.id);
     res.json(toInvestmentJson(investment, toDatedOps(ops)));
   }),

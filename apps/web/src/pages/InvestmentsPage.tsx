@@ -3,9 +3,11 @@ import type {
   Investment,
   InvestmentDetail,
   InvestmentOperation,
+  InvestmentPricePoint,
   InvestmentsOverview,
   InvestmentType,
   PortfolioHistory,
+  PriceHistoryRange,
   ProviderAvailability,
   ProviderMarket,
   ProviderSource,
@@ -164,6 +166,43 @@ function rentaLabel(type: InvestmentType): string {
 
 type HistoryRange = 3 | 6 | 12;
 const HISTORY_RANGES: HistoryRange[] = [3, 6, 12];
+
+const PRICE_RANGE_OPTIONS: { value: PriceHistoryRange; label: string }[] = [
+  { value: '1w', label: '1S' },
+  { value: '1m', label: '1M' },
+  { value: '3m', label: '3M' },
+  { value: '6m', label: '6M' },
+  { value: 'ytd', label: 'Año' },
+  { value: '1y', label: '1A' },
+];
+
+const PRICE_RANGE_DAYS: Record<Exclude<PriceHistoryRange, 'ytd'>, number> = {
+  '1w': 7,
+  '1m': 30,
+  '3m': 90,
+  '6m': 180,
+  '1y': 365,
+};
+
+/** Espeja priceHistoryCutoff (apps/api/src/lib/investments.ts) para anclar el eje temporal del gráfico. */
+function priceRangeStart(range: PriceHistoryRange, now: Date): Date {
+  if (range === 'ytd') return new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
+  return new Date(now.getTime() - PRICE_RANGE_DAYS[range] * 86_400_000);
+}
+
+/** Mensaje según la causa real de no tener curva: nunca hubo historial (por qué), o lo hay pero no en este rango. */
+function priceHistoryEmptyMessage(detail: InvestmentDetail): string {
+  if (detail.priceHistory.length >= 2) {
+    return 'No hay datos suficientes en este rango. Probá un rango más amplio.';
+  }
+  if (!detail.providerSymbol) {
+    return 'Cargá el precio manualmente al menos dos veces para ver la evolución.';
+  }
+  if (detail.providerMarket === 'notes' || detail.providerMarket === 'corp') {
+    return 'Este instrumento no tiene histórico en data912: el gráfico se va completando con la actualización diaria.';
+  }
+  return 'Todavía no pudimos obtener el histórico de precios. Se irá completando con la actualización diaria.';
+}
 
 interface AssetFormState {
   id: string | null;
@@ -1636,22 +1675,75 @@ function DetailBody({
   onDeleteOperation: (operationId: string) => void;
   busy: boolean;
 }) {
-  // Geometría del gráfico de precio (línea + área), mismo patrón SVG que el dashboard.
+  const [range, setRange] = useState<PriceHistoryRange>('1m');
+  const [points, setPoints] = useState<InvestmentPricePoint[] | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [hover, setHover] = useState<{ idx: number; left: number; top: number } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPoints(null);
+    setHistoryError(null);
+    setHover(null);
+    api
+      .getInvestmentPriceHistory(detail.id, range)
+      .then((data) => {
+        if (!cancelled) setPoints(data);
+      })
+      .catch((err) => {
+        if (!cancelled) setHistoryError(err instanceof Error ? err.message : 'Error inesperado');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [detail.id, range]);
+
+  // Geometría del gráfico de precio (línea + área), mismo patrón SVG que el dashboard, pero
+  // con eje temporal real (no por índice) anclado a la ventana del rango elegido: un activo
+  // con pocos días de datos dentro de un rango amplio se ve como un tramo corto, no estirado.
   const chart = useMemo(() => {
-    const pts = detail.priceHistory;
-    if (pts.length < 2) return null;
+    if (!points || points.length < 2) return null;
+    const now = new Date();
+    const domainStart = priceRangeStart(range, now).getTime();
+    const domainSpan = Math.max(now.getTime() - domainStart, 1);
     const W = 560;
     const H = 110;
     const padY = 12;
-    const values = pts.map((p) => p.price);
+    const values = points.map((p) => p.price);
     const min = Math.min(...values);
     const max = Math.max(...values);
-    const range = max - min || 1;
-    const x = (i: number) => (i / (pts.length - 1)) * W;
-    const y = (v: number) => padY + (1 - (v - min) / range) * (H - padY * 2);
-    const line = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(p.price).toFixed(1)}`).join(' ');
-    return { W, H, line, area: `${line} L ${W} ${H} L 0 ${H} Z`, min, max };
-  }, [detail]);
+    const valueRange = max - min || 1;
+    const pts = points.map((p) => ({
+      p,
+      x: ((new Date(p.date).getTime() - domainStart) / domainSpan) * W,
+      y: padY + (1 - (p.price - min) / valueRange) * (H - padY * 2),
+    }));
+    const line = pts.map((pt, i) => `${i === 0 ? 'M' : 'L'} ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`).join(' ');
+    const area = `${line} L ${pts[pts.length - 1].x.toFixed(1)} ${H} L ${pts[0].x.toFixed(1)} ${H} Z`;
+    return { W, H, pts, line, area, min, max };
+  }, [points, range]);
+
+  function updateHoverFromClientX(clientX: number, rect: DOMRect) {
+    if (!chart) return;
+    const fraction = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    const targetX = fraction * chart.W;
+    let nearestIdx = 0;
+    let bestDiff = Infinity;
+    chart.pts.forEach((pt, i) => {
+      const diff = Math.abs(pt.x - targetX);
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        nearestIdx = i;
+      }
+    });
+    const nearest = chart.pts[nearestIdx];
+    setHover({
+      idx: nearestIdx,
+      left: rect.left + (nearest.x / chart.W) * rect.width,
+      // Ancla verticalmente al punto (no al borde del SVG), para no taparse con los botones de rango de arriba.
+      top: rect.top + (nearest.y / chart.H) * rect.height,
+    });
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -1672,14 +1764,41 @@ function DetailBody({
         </div>
       )}
       <div>
-        <div className="mf-label" style={{ marginBottom: 8 }}>
-          Precio
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 8,
+            marginBottom: 8,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div className="mf-label" style={{ marginBottom: 0 }}>
+            Precio
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {PRICE_RANGE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                className={range === opt.value ? 'accent-soft' : 'ghost'}
+                onClick={() => setRange(opt.value)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
-        {chart === null ? (
+        {historyError ? (
+          <p style={{ fontSize: 12.5, color: 'var(--neg)' }}>{historyError}</p>
+        ) : points === null ? (
           <p className="muted" style={{ fontSize: 12.5 }}>
-            {detail.providerMarket === 'notes' || detail.providerMarket === 'corp'
-              ? 'Este instrumento no tiene histórico en data912: el gráfico se va completando con la actualización diaria.'
-              : 'Actualizá el precio al menos dos veces para ver la evolución.'}
+            Cargando…
+          </p>
+        ) : chart === null ? (
+          <p className="muted" style={{ fontSize: 12.5 }}>
+            {priceHistoryEmptyMessage(detail)}
           </p>
         ) : (
           <>
@@ -1688,7 +1807,14 @@ function DetailBody({
               width="100%"
               height={chart.H}
               preserveAspectRatio="none"
-              style={{ display: 'block' }}
+              style={{ display: 'block', cursor: 'crosshair' }}
+              onMouseMove={(e) => updateHoverFromClientX(e.clientX, e.currentTarget.getBoundingClientRect())}
+              onMouseLeave={() => setHover(null)}
+              onTouchMove={(e) => {
+                const touch = e.touches[0];
+                if (touch) updateHoverFromClientX(touch.clientX, e.currentTarget.getBoundingClientRect());
+              }}
+              onTouchEnd={() => setHover(null)}
             >
               <defs>
                 <linearGradient id="invPriceFill" x1="0" y1="0" x2="0" y2="1">
@@ -1706,14 +1832,46 @@ function DetailBody({
                 strokeLinecap="round"
                 vectorEffect="non-scaling-stroke"
               />
+              {hover && (
+                <circle
+                  cx={chart.pts[hover.idx].x}
+                  cy={chart.pts[hover.idx].y}
+                  r={4}
+                  fill="var(--accent)"
+                  stroke="var(--surface)"
+                  strokeWidth={1.5}
+                />
+              )}
             </svg>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5 }} className="muted">
-              <span>{formatDate(detail.priceHistory[0].date)}</span>
+              <span>{formatDate(points[0].date)}</span>
               <span className="mono">
                 mín {formatPrice(chart.min, detail.currency)} · máx {formatPrice(chart.max, detail.currency)}
+                {detail.priceFactor !== 1 ? ' · cada 100 VN' : ''}
               </span>
-              <span>{formatDate(detail.priceHistory[detail.priceHistory.length - 1].date)}</span>
+              <span>{formatDate(points[points.length - 1].date)}</span>
             </div>
+            {hover &&
+              (() => {
+                const pt = chart.pts[hover.idx];
+                const prevPt = hover.idx > 0 ? chart.pts[hover.idx - 1] : null;
+                const pct = prevPt ? ((pt.p.price - prevPt.p.price) / prevPt.p.price) * 100 : null;
+                return (
+                  <div className="mf-bar-tooltip" style={{ left: hover.left, top: hover.top }}>
+                    {formatDate(pt.p.date)}: {formatPrice(pt.p.price, detail.currency)}
+                    {detail.priceFactor !== 1 ? ' (cada 100 VN)' : ''}
+                    {pct !== null && (
+                      <>
+                        {' · '}
+                        <span style={{ color: pnlColor(pct) }}>
+                          {pct >= 0 ? '+' : ''}
+                          {pct.toFixed(2)}%
+                        </span>
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
           </>
         )}
       </div>

@@ -39,11 +39,13 @@ import type {
   InvestmentInput,
   InvestmentOperationInput,
   InvestmentPriceAtDate,
+  InvestmentPricePoint,
   InvestmentsOverview,
   InvestmentUpdateInput,
   MessageResponse,
   Paginated,
   PortfolioHistory,
+  PriceHistoryRange,
   RecurringExpense,
   RecurringExpenseInput,
   RecurringPayInput,
@@ -363,6 +365,10 @@ export class ApiClient {
   getPortfolioHistory(months?: number) {
     const qs = months ? `?months=${months}` : '';
     return this.request<PortfolioHistory>('GET', `/api/investments/portfolio-history${qs}`);
+  }
+  /** Histórico de precios de un activo acotado a un rango de tiempo. */
+  getInvestmentPriceHistory(id: string, range: PriceHistoryRange) {
+    return this.request<InvestmentPricePoint[]>('GET', `/api/investments/${id}/price-history?range=${range}`);
   }
   /** Refresca los precios de los activos vinculados del usuario. 429 si se llamó hace <5 min. */
   refreshInvestmentPrices() {

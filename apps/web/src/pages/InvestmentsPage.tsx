@@ -1152,133 +1152,136 @@ export function InvestmentsPage() {
             {providers.data912 && ' El MEP y el CCL también (USDMEP, USDCCL).'}
           </p>
 
-          {dolares.length > 0 && (
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-              {dolares.map((tile) => (
-                <div
-                  key={tile.key}
-                  style={{
-                    flex: 1,
-                    background: 'var(--surface-2)',
-                    borderRadius: 8,
-                    padding: '8px 10px',
-                  }}
-                >
-                  <div className="mf-caption" style={{ marginTop: 0 }}>
-                    {tile.label}
-                  </div>
-                  <div className="mono" style={{ fontWeight: 600, fontSize: 15 }}>
-                    $ {tile.value!.toLocaleString('es-AR', { maximumFractionDigits: 2 })}
-                  </div>
-                  {tile.gap !== null && (
-                    <div className="muted" style={{ fontSize: 11 }}>
-                      brecha {tile.gap >= 0 ? '+' : ''}
-                      {tile.gap.toFixed(1)}%
+          <div className="mf-rates-row">
+            {dolares.length > 0 && (
+              <div className="mf-rates-tiles">
+                {dolares.map((tile) => (
+                  <div
+                    key={tile.key}
+                    style={{
+                      background: 'var(--surface-2)',
+                      borderRadius: 8,
+                      padding: '8px 10px',
+                    }}
+                  >
+                    <div className="mf-caption" style={{ marginTop: 0 }}>
+                      {tile.label}
                     </div>
+                    <div className="mono" style={{ fontWeight: 600, fontSize: 15 }}>
+                      $ {tile.value!.toLocaleString('es-AR', { maximumFractionDigits: 2 })}
+                    </div>
+                    {tile.gap !== null && (
+                      <div className="muted" style={{ fontSize: 11 }}>
+                        brecha {tile.gap >= 0 ? '+' : ''}
+                        {tile.gap.toFixed(1)}%
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="mf-rates-list">
+              {rates.length === 0 && <p className="muted">Sin cotizaciones cargadas.</p>}
+              {rates.map((rate) => {
+                const autoLabel = autoRateLabel(rate.currency, providers);
+                return (
+                <div className="mf-list-row" key={rate.id}>
+                  <div className="mono" style={{ fontWeight: 600, width: 62 }}>
+                    {rate.currency}
+                  </div>
+                  {autoLabel !== null ? (
+                    <>
+                      <div className="mono" style={{ flex: 1 }}>
+                        $ {rate.rate.toLocaleString('es-AR', { maximumFractionDigits: 2 })}
+                      </div>
+                      <span
+                        className="mf-delta-badge"
+                        style={{ background: 'var(--accent-weak)', fontSize: 10.5 }}
+                        title={`Se actualiza a diario desde ${rate.currency === 'USD' ? 'Twelve Data' : 'data912'}.`}
+                      >
+                        {autoLabel}
+                      </span>
+                      <span className="muted" style={{ fontSize: 11.5 }}>
+                        {formatDate(rate.updatedAt)}
+                      </span>
+                    </>
+                  ) : rateEdit?.currency === rate.currency ? (
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flex: 1 }}>
+                      <input
+                        type="number"
+                        min="0.000001"
+                        step="any"
+                        value={rateEdit.value}
+                        onChange={(e) => setRateEdit({ currency: rate.currency, value: e.target.value })}
+                        style={{ width: 130 }}
+                        autoFocus
+                      />
+                      <button type="button" disabled={busy || !rateEdit.value} onClick={onConfirmRateEdit}>
+                        OK
+                      </button>
+                      <button type="button" className="secondary" onClick={() => setRateEdit(null)}>
+                        ✕
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="mono" style={{ flex: 1 }}>
+                        $ {rate.rate.toLocaleString('es-AR', { maximumFractionDigits: 2 })}
+                      </div>
+                      <span className="muted" style={{ fontSize: 11.5 }}>
+                        {formatDate(rate.updatedAt)}
+                      </span>
+                      <button
+                        type="button"
+                        className="mf-icon-btn"
+                        aria-label={`Editar cotización ${rate.currency}`}
+                        onClick={() => setRateEdit({ currency: rate.currency, value: String(rate.rate) })}
+                      >
+                        <IcoPencil size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        className="mf-icon-btn"
+                        aria-label={`Eliminar cotización ${rate.currency}`}
+                        onClick={() => onDeleteRate(rate.currency)}
+                      >
+                        <IcoTrash size={14} />
+                      </button>
+                    </>
                   )}
                 </div>
-              ))}
-            </div>
-          )}
-
-          {rates.length === 0 && <p className="muted">Sin cotizaciones cargadas.</p>}
-          {rates.map((rate) => {
-            const autoLabel = autoRateLabel(rate.currency, providers);
-            return (
-            <div className="mf-list-row" key={rate.id}>
-              <div className="mono" style={{ fontWeight: 600, width: 62 }}>
-                {rate.currency}
-              </div>
-              {autoLabel !== null ? (
-                <>
-                  <div className="mono" style={{ flex: 1 }}>
-                    $ {rate.rate.toLocaleString('es-AR', { maximumFractionDigits: 2 })}
-                  </div>
-                  <span
-                    className="mf-delta-badge"
-                    style={{ background: 'var(--accent-weak)', fontSize: 10.5 }}
-                    title={`Se actualiza a diario desde ${rate.currency === 'USD' ? 'Twelve Data' : 'data912'}.`}
-                  >
-                    {autoLabel}
-                  </span>
-                  <span className="muted" style={{ fontSize: 11.5 }}>
-                    {formatDate(rate.updatedAt)}
-                  </span>
-                </>
-              ) : rateEdit?.currency === rate.currency ? (
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flex: 1 }}>
+                );
+              })}
+              <form className="mf-rate-form" onSubmit={onSubmitRate}>
+                <label className="field mf-rate-currency">
+                  Moneda
+                  <input
+                    value={rateCurrency}
+                    onChange={(e) => setRateCurrency(e.target.value.toUpperCase())}
+                    placeholder="USD"
+                    maxLength={8}
+                    required
+                  />
+                </label>
+                <label className="field mf-rate-value">
+                  Cotización
                   <input
                     type="number"
                     min="0.000001"
                     step="any"
-                    value={rateEdit.value}
-                    onChange={(e) => setRateEdit({ currency: rate.currency, value: e.target.value })}
-                    style={{ width: 130 }}
-                    autoFocus
+                    value={rateValue}
+                    onChange={(e) => setRateValue(e.target.value)}
+                    placeholder="1300"
+                    required
                   />
-                  <button type="button" disabled={busy || !rateEdit.value} onClick={onConfirmRateEdit}>
-                    OK
-                  </button>
-                  <button type="button" className="secondary" onClick={() => setRateEdit(null)}>
-                    ✕
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <div className="mono" style={{ flex: 1 }}>
-                    $ {rate.rate.toLocaleString('es-AR', { maximumFractionDigits: 2 })}
-                  </div>
-                  <span className="muted" style={{ fontSize: 11.5 }}>
-                    {formatDate(rate.updatedAt)}
-                  </span>
-                  <button
-                    type="button"
-                    className="mf-icon-btn"
-                    aria-label={`Editar cotización ${rate.currency}`}
-                    onClick={() => setRateEdit({ currency: rate.currency, value: String(rate.rate) })}
-                  >
-                    <IcoPencil size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    className="mf-icon-btn"
-                    aria-label={`Eliminar cotización ${rate.currency}`}
-                    onClick={() => onDeleteRate(rate.currency)}
-                  >
-                    <IcoTrash size={14} />
-                  </button>
-                </>
-              )}
+                </label>
+                <button className="accent-soft" disabled={busy}>
+                  Guardar
+                </button>
+              </form>
             </div>
-            );
-          })}
-          <form className="mf-rate-form" onSubmit={onSubmitRate}>
-            <label className="field mf-rate-currency">
-              Moneda
-              <input
-                value={rateCurrency}
-                onChange={(e) => setRateCurrency(e.target.value.toUpperCase())}
-                placeholder="USD"
-                maxLength={8}
-                required
-              />
-            </label>
-            <label className="field mf-rate-value">
-              Cotización
-              <input
-                type="number"
-                min="0.000001"
-                step="any"
-                value={rateValue}
-                onChange={(e) => setRateValue(e.target.value)}
-                placeholder="1300"
-                required
-              />
-            </label>
-            <button className="accent-soft" disabled={busy}>
-              Guardar
-            </button>
-          </form>
+          </div>
         </div>
       </div>
 

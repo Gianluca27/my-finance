@@ -257,6 +257,14 @@ router.post(
           `No hay cotización cargada para convertir ${account.currency} a ${existing.currency}. Cargala en Inversiones y volvé a intentar.`,
         );
       }
+      // El convertido se redondea a centavos: un monto muy chico puede quedar en 0.00 y el
+      // "pago" no descontaría nada del saldo (quedaría una transacción sin efecto).
+      if (converted === 0) {
+        throw new HttpError(
+          400,
+          `El monto es demasiado chico: equivale a 0.00 ${existing.currency} al tipo de cambio vigente. Ingresá un monto mayor.`,
+        );
+      }
       entityAmount = converted;
     }
     // Monto que impacta el saldo de la deuda, en su moneda.

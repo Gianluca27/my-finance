@@ -1,5 +1,6 @@
 import cron from 'node-cron';
 import { config } from '../config';
+import { moneyLabel } from '../lib/currency';
 import { advanceDueDate, startOfTodayUTC } from '../lib/dates';
 import { debtReminderContent, getPaidAmount, isDebtReminderDue, remainingBalance } from '../lib/debts';
 import { buildSchedule, nextInstallment, planFromDebt } from '../lib/installments';
@@ -34,7 +35,7 @@ export async function runRemindersJob(): Promise<{ rolled: number; reminded: num
   // 2. Recordatorios de próximos vencimientos
   const upcoming = await prisma.recurringExpense.findMany({
     where: { active: true, nextDueDate: { gte: today } },
-    include: { category: true },
+    include: { category: true, user: { select: { baseCurrency: true } } },
   });
   for (const item of upcoming) {
     const msUntilDue = item.nextDueDate.getTime() - today.getTime();
@@ -47,7 +48,9 @@ export async function runRemindersJob(): Promise<{ rolled: number; reminded: num
     const verb = isIncome ? 'se cobra' : 'vence';
     const when = daysUntilDue === 0 ? `${verb} hoy` : `${verb} en ${daysUntilDue} día${daysUntilDue === 1 ? '' : 's'} (${dueStr})`;
     const title = `${isIncome ? 'Cobro' : 'Pago'} próximo: ${item.name}`;
-    const body = `${item.name} por $${item.amount.toNumber().toFixed(2)} ${when}.`;
+    // Los recurrentes no tienen moneda propia: sus montos se interpretan en la moneda base
+    // del usuario (spec 19, fase C) — el símbolo del copy sale de ella, no de un "$" fijo.
+    const body = `${item.name} por ${moneyLabel(item.amount.toNumber(), item.user.baseCurrency)} ${when}.`;
 
     await notifyUser(item.userId, {
       title,

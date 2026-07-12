@@ -1,6 +1,7 @@
 import type { Account, AccountsOverview, Category, Frequency, RecurringExpense, Transaction, TransactionType } from '@myfinance/shared';
 import { useState, type FormEvent } from 'react';
 import { api, formatDate, formatMoney } from '../api';
+import { useAuth } from '../auth';
 import { invalidate, useCached } from '../cache';
 import { IcoPause, IcoPencil, IcoPlay, IcoPlus, IcoTrash, IcoTrend } from '../components/icons';
 import { Modal } from '../components/Modal';
@@ -98,10 +99,17 @@ export function RecurringPage() {
   );
   const { data: categoriesData } = useCached<Category[]>('categories', () => api.listCategories());
   const { data: accountsData } = useCached<AccountsOverview>('accounts', () => api.listAccounts());
+  const allAccounts = accountsData?.items ?? [];
   // Las archivadas no se ofrecen para registrar nuevos pagos.
-  const accounts = (accountsData?.items ?? []).filter((a) => !a.archivedAt);
+  const accounts = allAccounts.filter((a) => !a.archivedAt);
   // Las categorías del formulario siguen el tipo elegido (gasto fijo vs ingreso fijo).
   const categories = (categoriesData ?? []).filter((c) => c.type === type);
+  const { user } = useAuth();
+  // Los recurrentes no tienen moneda propia: sus montos se interpretan en la moneda base del
+  // usuario (spec 19, fase C — mismo criterio que "Próximos pagos" del dashboard).
+  const baseCurrency = user?.baseCurrency;
+  // Los pagos registrados sí son transacciones en la moneda de su cuenta (puede estar archivada).
+  const accountCurrency = (id: string) => allAccounts.find((a) => a.id === id)?.currency ?? 'ARS';
 
   const activeItems = (items ?? []).filter((i) => i.active);
   const totalExpense = activeItems.filter((i) => i.type === 'EXPENSE').reduce((sum, i) => sum + i.amount, 0);
@@ -272,11 +280,11 @@ export function RecurringPage() {
       <div className="mf-grid-2" style={{ marginBottom: 14 }}>
         <div className="card mf-recur-total-card">
           <div className="mf-label">Gastos fijos comprometidos</div>
-          <div className="mf-figure mf-figure--stat" style={{ color: 'var(--neg)' }}>{formatMoney(totalExpense)}</div>
+          <div className="mf-figure mf-figure--stat" style={{ color: 'var(--neg)' }}>{formatMoney(totalExpense, baseCurrency)}</div>
         </div>
         <div className="card mf-recur-total-card">
           <div className="mf-label">Ingresos fijos esperados</div>
-          <div className="mf-figure mf-figure--stat" style={{ color: 'var(--pos)' }}>{formatMoney(totalIncome)}</div>
+          <div className="mf-figure mf-figure--stat" style={{ color: 'var(--pos)' }}>{formatMoney(totalIncome, baseCurrency)}</div>
         </div>
       </div>
 
@@ -309,7 +317,7 @@ export function RecurringPage() {
                   <span className={`mf-recur-badge ${badge.urgent ? 'urgent' : ''}`}>{badge.text}</span>
                   <div className="mf-recur-amount" style={{ color: isIncome ? 'var(--pos)' : undefined }}>
                     {isIncome ? '+' : ''}
-                    {formatMoney(item.amount)}
+                    {formatMoney(item.amount, baseCurrency)}
                   </div>
                   <div className="mf-recur-actions">
                     <button className="mf-recur-pay" onClick={() => onStartPay(item)}>
@@ -525,6 +533,8 @@ export function RecurringPage() {
                     <option key={a.id} value={a.id}>
                       {a.icon ? `${a.icon} ` : ''}
                       {a.name}
+                      {/* El pago se registra en la moneda de la cuenta, sin conversión (spec 19). */}
+                      {a.currency && a.currency !== 'ARS' ? ` · ${a.currency}` : ''}
                     </option>
                   ))}
                 </select>
@@ -558,20 +568,27 @@ export function RecurringPage() {
             </p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <div className="mf-label" style={{ marginBottom: 6 }}>
-                Promedio de los últimos {Math.min(6, historyPayments.length)}:{' '}
-                {formatMoney(
-                  historyPayments.slice(0, 6).reduce((sum, p) => sum + p.amount, 0) /
-                    Math.min(6, historyPayments.length),
-                )}
-              </div>
+              {(() => {
+                // Cada pago es una transacción en la moneda de su cuenta (spec 19). El promedio
+                // solo tiene sentido si los pagos recientes comparten moneda: si no, se omite
+                // (promediar nominales de monedas distintas daría un número sin sentido).
+                const recent = historyPayments.slice(0, 6);
+                const currencies = new Set(recent.map((p) => accountCurrency(p.accountId)));
+                if (currencies.size > 1) return null;
+                const avg = recent.reduce((sum, p) => sum + p.amount, 0) / recent.length;
+                return (
+                  <div className="mf-label" style={{ marginBottom: 6 }}>
+                    Promedio de los últimos {recent.length}: {formatMoney(avg, [...currencies][0])}
+                  </div>
+                );
+              })()}
               {historyPayments.map((p) => (
                 <div className="mf-list-row" key={p.id}>
                   <span className="muted" style={{ flex: 1 }}>
                     {formatDate(p.date)}
                   </span>
                   <span className="mono" style={{ fontWeight: 600 }}>
-                    {formatMoney(p.amount)}
+                    {formatMoney(p.amount, accountCurrency(p.accountId))}
                   </span>
                 </div>
               ))}

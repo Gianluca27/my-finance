@@ -173,6 +173,11 @@ describe('convertPaymentAmount', () => {
     expect(convertPaymentAmount(100, 'ARS', 'USD', rates({}))).toBeNull();
     expect(convertPaymentAmount(100, 'EUR', 'USD', rates({ USDMEP: 1200 }))).toBeNull();
   });
+
+  it('un monto muy chico puede redondear a 0.00: los callers deben rechazarlo (no impactaría la entidad)', () => {
+    // 5 ARS sobre una deuda USD a MEP 1300 → 0.0038 USD → 0.00 tras redondear a centavos.
+    expect(convertPaymentAmount(5, 'ARS', 'USD', rates({ USDMEP: 1300 }))).toBe(0);
+  });
 });
 
 describe('effectiveEntityAmount / sumEntityAmounts', () => {

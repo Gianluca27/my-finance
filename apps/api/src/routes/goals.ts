@@ -187,6 +187,15 @@ async function resolveGoalEntityAmount(
       `No hay cotización cargada para convertir ${accountCurrency} a ${goalCurrency}. Cargala en Inversiones y volvé a intentar.`,
     );
   }
+  // El convertido se redondea a centavos: un monto muy chico puede quedar en 0.00 y el
+  // movimiento no impactaría el ahorro (un retiro incluso acreditaría la cuenta sin
+  // descontar nada de la meta).
+  if (converted === 0) {
+    throw new HttpError(
+      400,
+      `El monto es demasiado chico: equivale a 0.00 ${goalCurrency} al tipo de cambio vigente. Ingresá un monto mayor.`,
+    );
+  }
   return converted;
 }
 

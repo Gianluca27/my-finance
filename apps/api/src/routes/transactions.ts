@@ -1,8 +1,9 @@
 import type { Prisma, TransactionType } from '@prisma/client';
 import { Router } from 'express';
 import { z } from 'zod';
-import { resolveAccountId } from '../lib/accounts';
+import { resolveAccount, resolveAccountId } from '../lib/accounts';
 import { loadRules, matchRule } from '../lib/categoryRules';
+import { scaleEntityAmount } from '../lib/currency';
 import { parseImportCsv, type ImportCategoryResolution } from '../lib/importCsv';
 import { serialize } from '../lib/serialize';
 import { suggestCategoryFromHistory } from '../lib/suggestions';
@@ -220,7 +221,33 @@ router.put(
     const { accountId: rawAccountId, ...rest } = input;
     const data: Prisma.TransactionUncheckedUpdateInput = { ...rest };
     if (rawAccountId !== undefined) {
-      data.accountId = await resolveAccountId(req.auth!.userId, rawAccountId);
+      const newAccount = await resolveAccount(req.auth!.userId, rawAccountId);
+      // Un pago de deuda / aporte de meta no puede moverse a una cuenta en otra moneda:
+      // su `amount` está en la moneda de la cuenta y reinterpretarlo desalinearía el
+      // saldo de la entidad (spec 19, fase B).
+      if ((existing.debtId || existing.goalId) && newAccount.id !== existing.accountId) {
+        const current = await prisma.account.findUnique({
+          where: { id: existing.accountId },
+          select: { currency: true },
+        });
+        if (current && current.currency !== newAccount.currency) {
+          throw new HttpError(
+            400,
+            'No se puede mover un pago de deuda o aporte de meta a una cuenta en otra moneda. Eliminá el movimiento y registralo de nuevo desde la deuda o la meta.',
+          );
+        }
+      }
+      data.accountId = newAccount.id;
+    }
+    // Editar el monto de un pago cross-currency reescala su entityAmount manteniendo el TC
+    // implícito de la operación original: el saldo de la deuda/meta no se reconvierte al
+    // TC del día (spec 19, fase B).
+    if (input.amount !== undefined && existing.entityAmount !== null) {
+      data.entityAmount = scaleEntityAmount(
+        existing.entityAmount.toNumber(),
+        existing.amount.toNumber(),
+        input.amount,
+      );
     }
     const transaction = await prisma.transaction.update({
       where: { id: existing.id },

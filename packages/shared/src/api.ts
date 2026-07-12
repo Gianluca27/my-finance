@@ -311,7 +311,9 @@ export class ApiClient {
     return this.request<void>('DELETE', `/api/debts/${id}`);
   }
   /** Registra un pago parcial: crea la Transaction (EXPENSE o INCOME según dirección) vinculada.
-   * `accountId` y `date` son opcionales: default cuenta por defecto del usuario y fecha actual. */
+   * `amount` está en la moneda de la cuenta elegida; si difiere de la moneda de la deuda, la API
+   * lo convierte al TC vigente (400 si falta cotización). `accountId` y `date` son opcionales:
+   * default cuenta por defecto del usuario y fecha actual. */
   payDebt(id: string, amount: number, accountId?: string | null, date?: string) {
     return this.request<{ transaction: Transaction; debt: Debt }>('POST', `/api/debts/${id}/payments`, {
       amount,
@@ -334,7 +336,9 @@ export class ApiClient {
     return this.request<void>('DELETE', `/api/goals/${id}`);
   }
   /** Registra un aporte: crea la Transaction (EXPENSE) vinculada y marca la meta como lograda al
-   * alcanzar el objetivo. `accountId` es opcional (default: cuenta por defecto del usuario). */
+   * alcanzar el objetivo. `amount` está en la moneda de la cuenta elegida; si difiere de la moneda
+   * de la meta, la API lo convierte al TC vigente (400 si falta cotización). `accountId` es
+   * opcional (default: cuenta por defecto del usuario). */
   contributeGoal(id: string, amount: number, accountId?: string | null) {
     return this.request<{ transaction: Transaction; goal: Goal }>('POST', `/api/goals/${id}/contributions`, {
       amount,
@@ -399,6 +403,11 @@ export class ApiClient {
   searchInvestmentSymbols(type: SymbolSearchKind, q: string) {
     const params = new URLSearchParams({ type, q });
     return this.request<SymbolSearchResponse>('GET', `/api/investments/symbols/search?${params.toString()}`);
+  }
+  /** Cotizaciones vigentes del usuario. Liviano: para previsualizar conversiones
+   * cross-currency (pagos de deuda / aportes de meta) sin traer el portafolio completo. */
+  listExchangeRates() {
+    return this.request<ExchangeRate[]>('GET', '/api/investments/rates');
   }
   upsertExchangeRate(input: ExchangeRateInput) {
     return this.request<ExchangeRate>('PUT', '/api/investments/rates', input);

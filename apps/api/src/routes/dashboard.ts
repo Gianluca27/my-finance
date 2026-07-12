@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { consolidateToBase } from '../lib/currency';
+import { consolidateToBase, sumEntityAmounts } from '../lib/currency';
 import { currentMonth, isValidMonth, monthLength, monthRange, shiftMonth, startOfTodayUTC } from '../lib/dates';
 import { buildInvestmentsSummary, investmentMetrics, type PositionOp } from '../lib/investments';
 import { serialize } from '../lib/serialize';
@@ -156,22 +156,23 @@ router.get(
           AND "date" >= ${anomalyRangeStart} AND "date" < ${start} AND "goalId" IS NULL
         GROUP BY 1, 2
       `,
-      // Aportes y retiros de metas del mes, para la línea "Ahorro en metas" (no son gasto/ingreso)
+      // Aportes y retiros de metas del mes, por cuenta para agrupar por moneda
+      // ("Ahorro en metas" se consolida a moneda base como flujo de caja del mes)
       prisma.transaction.groupBy({
-        by: ['type'],
+        by: ['type', 'accountId'],
         where: { userId, date: { gte: start, lt: end }, goalId: { not: null } },
         _sum: { amount: true },
       }),
-      // Deudas activas (no saldadas) para el resumen "Debés / Te deben"
+      // Deudas activas (no saldadas) para el resumen "Debés / Te deben", con su moneda
       prisma.debt.findMany({
         where: { userId, settledAt: null },
-        select: { id: true, direction: true, totalAmount: true },
+        select: { id: true, direction: true, totalAmount: true, currency: true },
       }),
-      // Pagos acumulados por deuda, para descontar del total original
-      prisma.transaction.groupBy({
-        by: ['debtId'],
+      // Pagos vinculados a deudas: los cross-currency cuentan por su entityAmount (moneda
+      // de la deuda), por eso se suman en memoria en vez de con groupBy.
+      prisma.transaction.findMany({
         where: { userId, debtId: { not: null } },
-        _sum: { amount: true },
+        select: { debtId: true, amount: true, entityAmount: true },
       }),
       // Todas las categorías del usuario (pocas filas): evita una segunda tanda
       // dependiente de los categoryId que aparecen en los agregados.
@@ -245,12 +246,13 @@ router.get(
       prisma.transfer.groupBy({ by: ['toAccountId'], where: { userId }, _sum: { amountTo: true } }),
     ]);
 
-    // --- Consolidación multi-moneda (spec 19, fase A) ---
-    // Balance, ingresos/gastos del mes, netWorthTrend y safe-to-spend se agrupan por
-    // moneda de cuenta y se convierten a la moneda base del usuario. Las monedas sin
-    // cotización quedan fuera de los totales y se reportan en `currency.missingRates`.
-    // El resto de los agregados (categorías, comparativas, anomalías, metas) sigue
-    // sumando nominales sin convertir: se consolidan en fases B/C.
+    // --- Consolidación multi-moneda (spec 19, fases A y B) ---
+    // Balance, ingresos/gastos del mes, netWorthTrend, safe-to-spend, ahorro en metas y
+    // resumen de deudas se agrupan por moneda y se convierten a la moneda base del usuario.
+    // Las monedas sin cotización quedan fuera de los totales y se reportan en
+    // `currency.missingRates` (deudas reportan las suyas en `debtsSummary.missingRates`).
+    // El resto de los agregados (categorías, comparativas, anomalías) sigue sumando
+    // nominales sin convertir: se consolidan en fase C.
     const baseCurrency = userRow?.baseCurrency ?? 'ARS';
     const rateMap = new Map(exchangeRates.map((r) => [r.currency, r.rate.toNumber()]));
     const currencyByAccount = new Map(accountRows.map((a) => [a.id, a.currency]));
@@ -288,11 +290,16 @@ router.get(
     const monthIncome = monthIncomeC.total;
     const monthExpense = monthExpenseC.total;
 
-    // Ahorro neto en metas del mes: aportes (EXPENSE con goalId) menos retiros (INCOME con goalId).
-    // Se muestra como línea propia ("Ahorro en metas") en vez de contarse como gasto o ingreso.
-    const monthGoalContributed = goalMonthTotals.find((t) => t.type === 'EXPENSE')?._sum.amount?.toNumber() ?? 0;
-    const monthGoalWithdrawn = goalMonthTotals.find((t) => t.type === 'INCOME')?._sum.amount?.toNumber() ?? 0;
-    const goalContributions = round2(monthGoalContributed - monthGoalWithdrawn);
+    // Ahorro neto en metas del mes: aportes (EXPENSE con goalId) menos retiros (INCOME con
+    // goalId), por moneda de cuenta y consolidado a base (spec 19, fase B). Se muestra como
+    // línea propia ("Ahorro en metas") en vez de contarse como gasto o ingreso.
+    const goalNetByCurrency = new Map<string, number>();
+    for (const row of goalMonthTotals) {
+      const sign = row.type === 'EXPENSE' ? 1 : -1;
+      addTo(goalNetByCurrency, currencyByAccount.get(row.accountId) ?? 'ARS', sign * (row._sum.amount?.toNumber() ?? 0));
+    }
+    const goalContributionsC = consolidateToBase(goalNetByCurrency, baseCurrency, rateMap);
+    const goalContributions = goalContributionsC.total;
 
     const categoryMap = new Map(categories.map((c) => [c.id, c]));
     const expensesByCategory = byCategory
@@ -401,20 +408,33 @@ router.get(
       .sort((a, b) => b.percentOfAvg - a.percentOfAvg);
 
     // --- Resumen de deudas activas (Debés / Te deben) ---
-    const debtPaidMap = new Map(
-      debtPaymentSums
-        .filter((row): row is typeof row & { debtId: string } => row.debtId !== null)
-        .map((row) => [row.debtId, row._sum.amount?.toNumber() ?? 0]),
-    );
-    const debtsSummary = activeDebts.reduce(
-      (acc, debt) => {
-        const remaining = Math.max(0, round2(debt.totalAmount.toNumber() - (debtPaidMap.get(debt.id) ?? 0)));
-        if (debt.direction === 'I_OWE') acc.totalIOwe = round2(acc.totalIOwe + remaining);
-        else acc.totalOwedToMe = round2(acc.totalOwedToMe + remaining);
-        return acc;
-      },
-      { totalIOwe: 0, totalOwedToMe: 0 },
-    );
+    // Saldo por deuda en su propia moneda (los pagos cross-currency cuentan por su
+    // entityAmount), agrupado por moneda y consolidado a base (spec 19, fase B).
+    const debtPaymentsByDebt = new Map<string, Array<(typeof debtPaymentSums)[number]>>();
+    for (const row of debtPaymentSums) {
+      if (!row.debtId) continue;
+      const list = debtPaymentsByDebt.get(row.debtId) ?? [];
+      list.push(row);
+      debtPaymentsByDebt.set(row.debtId, list);
+    }
+    const iOweByCurrency = new Map<string, number>();
+    const owedToMeByCurrency = new Map<string, number>();
+    for (const debt of activeDebts) {
+      const paid = sumEntityAmounts(debtPaymentsByDebt.get(debt.id) ?? []);
+      const remaining = Math.max(0, round2(debt.totalAmount.toNumber() - paid));
+      addTo(debt.direction === 'I_OWE' ? iOweByCurrency : owedToMeByCurrency, debt.currency, remaining);
+    }
+    const iOweC = consolidateToBase(iOweByCurrency, baseCurrency, rateMap);
+    const owedToMeC = consolidateToBase(owedToMeByCurrency, baseCurrency, rateMap);
+    const debtsSummary = {
+      totalIOwe: iOweC.total,
+      totalOwedToMe: owedToMeC.total,
+      baseCurrency,
+      converted: iOweC.converted || owedToMeC.converted,
+      missingRates: Array.from(new Set([...iOweC.missingRates, ...owedToMeC.missingRates])).sort(),
+      iOweByCurrency: toCurrencyAmounts(iOweByCurrency),
+      owedToMeByCurrency: toCurrencyAmounts(owedToMeByCurrency),
+    };
 
     // --- Disponible para gastar (Safe-to-spend) ---
     // Balance consolidado a moneda base menos gastos fijos activos que todavía vencen antes
@@ -471,9 +491,15 @@ router.get(
       ...balanceC.missingRates,
       ...monthIncomeC.missingRates,
       ...monthExpenseC.missingRates,
+      ...goalContributionsC.missingRates,
       ...nwMissing,
     ]);
-    const converted = balanceC.converted || monthIncomeC.converted || monthExpenseC.converted || nwConverted;
+    const converted =
+      balanceC.converted ||
+      monthIncomeC.converted ||
+      monthExpenseC.converted ||
+      goalContributionsC.converted ||
+      nwConverted;
 
     res.json({
       balance,

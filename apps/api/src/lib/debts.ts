@@ -1,5 +1,6 @@
 import type { DebtDirection } from '@prisma/client';
 import { prisma } from '../prisma';
+import { sumEntityAmounts } from './currency';
 
 /** Redondeo a 2 decimales (evita arrastre de errores de punto flotante en sumas de pagos). */
 export function round2(n: number): number {
@@ -11,10 +12,14 @@ export function remainingBalance(totalAmount: number, paid: number): number {
   return Math.max(0, round2(totalAmount - paid));
 }
 
-/** Suma de los pagos (transacciones) vinculados a una deuda. */
+/** Suma de los pagos (transacciones) vinculados a una deuda, en la moneda de la deuda:
+ * los pagos desde cuentas en otra moneda cuentan por su `entityAmount` convertido (spec 19). */
 export async function getPaidAmount(debtId: string): Promise<number> {
-  const result = await prisma.transaction.aggregate({ where: { debtId }, _sum: { amount: true } });
-  return result._sum.amount?.toNumber() ?? 0;
+  const payments = await prisma.transaction.findMany({
+    where: { debtId },
+    select: { amount: true, entityAmount: true },
+  });
+  return sumEntityAmounts(payments);
 }
 
 /** Ventana de recordatorio de vencimiento de deudas (días antes), constante global — ver spec 09.

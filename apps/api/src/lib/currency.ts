@@ -52,6 +52,57 @@ export function convertToBase(
   return (amount * from) / to;
 }
 
+/**
+ * Monto que impacta en una deuda/meta cuando el pago/aporte sale de una cuenta en
+ * `accountCurrency` y la entidad está en `entityCurrency` (spec 19, fase B). Redondeado
+ * a centavos porque se persiste (`Transaction.entityAmount`): el saldo de la entidad no
+ * debe flotar con el TC posterior. Devuelve `null` si falta cotización — el caller
+ * rechaza la operación con error claro en vez de adivinar el tipo de cambio.
+ */
+export function convertPaymentAmount(
+  amount: number,
+  accountCurrency: string,
+  entityCurrency: string,
+  rates: Map<string, number>,
+): number | null {
+  const converted = convertToBase(amount, accountCurrency, entityCurrency, rates);
+  return converted === null ? null : round2(converted);
+}
+
+/** Decimal de Prisma o número plano, indistinto para las sumas de pagos. */
+type NumberLike = number | { toNumber(): number };
+
+function toNumber(value: NumberLike): number {
+  return typeof value === 'number' ? value : value.toNumber();
+}
+
+/**
+ * Monto efectivo de un pago/aporte sobre su entidad (deuda o meta), en la moneda de la
+ * entidad: `entityAmount` si la operación cruzó monedas, `amount` nominal si no.
+ */
+export function effectiveEntityAmount(payment: {
+  amount: NumberLike;
+  entityAmount: NumberLike | null;
+}): number {
+  return toNumber(payment.entityAmount ?? payment.amount);
+}
+
+/** Suma de pagos/aportes en la moneda de la entidad (redondeada a centavos). */
+export function sumEntityAmounts(
+  payments: ReadonlyArray<{ amount: NumberLike; entityAmount: NumberLike | null }>,
+): number {
+  return round2(payments.reduce((sum, p) => sum + effectiveEntityAmount(p), 0));
+}
+
+/**
+ * Reescala el `entityAmount` persistido cuando se edita el monto nominal de un pago
+ * cross-currency: mantiene el TC implícito de la operación original en vez de
+ * reconvertir al TC del día (el saldo de la entidad no flota — spec 19, fase B).
+ */
+export function scaleEntityAmount(entityAmount: number, oldAmount: number, newAmount: number): number {
+  return round2(entityAmount * (newAmount / oldAmount));
+}
+
 export interface ConsolidatedTotals {
   /** Suma en moneda base de las monedas convertibles (excluye `missingRates`). */
   total: number;

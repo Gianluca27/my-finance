@@ -1,3 +1,4 @@
+import type { Account } from '@prisma/client';
 import { HttpError } from '../middleware/error';
 import { prisma } from '../prisma';
 
@@ -36,21 +37,25 @@ export function computeReconcileAdjustment(
   };
 }
 
-/** Cuenta por defecto del usuario (isDefault, o la más antigua). Lanza si no tiene ninguna. */
-export async function getDefaultAccountId(userId: string): Promise<string> {
+/**
+ * Resuelve la cuenta a usar (la pedida, validando propiedad, o la por defecto) y la
+ * devuelve completa — los pagos de deuda/aportes de meta necesitan su `currency`
+ * para decidir la conversión cross-currency (spec 19, fase B).
+ */
+export async function resolveAccount(userId: string, requested?: string | null): Promise<Account> {
+  if (requested) {
+    const acc = await prisma.account.findFirst({ where: { id: requested, userId } });
+    if (!acc) throw new HttpError(400, 'Cuenta inválida');
+    return acc;
+  }
   const def =
     (await prisma.account.findFirst({ where: { userId, isDefault: true } })) ??
     (await prisma.account.findFirst({ where: { userId }, orderBy: { createdAt: 'asc' } }));
   if (!def) throw new HttpError(400, 'No tenés ninguna cuenta. Creá una primero.');
-  return def.id;
+  return def;
 }
 
 /** Resuelve el accountId a usar: el pedido (validando propiedad) o la cuenta por defecto. */
 export async function resolveAccountId(userId: string, requested?: string | null): Promise<string> {
-  if (requested) {
-    const acc = await prisma.account.findFirst({ where: { id: requested, userId } });
-    if (!acc) throw new HttpError(400, 'Cuenta inválida');
-    return acc.id;
-  }
-  return getDefaultAccountId(userId);
+  return (await resolveAccount(userId, requested)).id;
 }

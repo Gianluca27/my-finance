@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { resolveAccountId } from '../lib/accounts';
+import { resolveAccount } from '../lib/accounts';
+import { convertPaymentAmount, sumEntityAmounts } from '../lib/currency';
 import { getPaidAmount, remainingBalance } from '../lib/debts';
+import { getRateMap } from '../lib/exchangeRates';
 import {
   buildSchedule,
   installmentPlanError,
@@ -23,6 +25,13 @@ const createSchema = z.object({
   counterparty: z.string().min(1).max(100),
   description: z.string().max(500).nullable().optional(),
   totalAmount: z.number().positive().max(999_999_999),
+  /** Moneda de la deuda. Default: la moneda base del usuario (se resuelve en el POST). */
+  currency: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z]{2,8}$/, 'Código de moneda inválido')
+    .transform((s) => s.toUpperCase())
+    .optional(),
   categoryId: z.string().nullable().optional(),
   dueDate: z.coerce.date().nullable().optional(),
   // Cuotas (spec 17): la coherencia entre los tres (y contra totalAmount) se valida con
@@ -56,8 +65,9 @@ type DebtRecord = {
   firstDueDate: Date | null;
 };
 
-/** Respuesta de deuda: `remainingBalance` calculado y, si está en cuotas, los derivados del
- * cronograma (`paidInstallments`, `nextInstallment`) — null para deudas simples. */
+/** Respuesta de deuda: `remainingBalance` calculado (en la moneda de la deuda) y, si está en
+ * cuotas, los derivados del cronograma (`paidInstallments`, `nextInstallment`) — null para
+ * deudas simples. `hasPayments` habilita al cliente a bloquear el cambio de moneda. */
 function withDerived(debt: DebtRecord, paid: number) {
   const plan = planFromDebt(debt);
   const schedule = plan ? buildSchedule(plan, paid) : null;
@@ -66,6 +76,8 @@ function withDerived(debt: DebtRecord, paid: number) {
     remainingBalance: remainingBalance(debt.totalAmount.toNumber(), paid),
     paidInstallments: plan ? paidInstallmentsCount(plan, paid) : null,
     nextInstallment: schedule ? serialize(nextInstallment(schedule)) : null,
+    // Los montos de pago son estrictamente positivos: paid > 0 ⇔ hay pagos vinculados.
+    hasPayments: paid > 0,
   };
 }
 
@@ -78,17 +90,20 @@ router.get(
       include: { category: true },
       orderBy: [{ settledAt: 'asc' }, { createdAt: 'desc' }],
     });
-    const paymentSums = await prisma.transaction.groupBy({
-      by: ['debtId'],
+    // Pagos por deuda en la moneda de cada deuda: los cross-currency cuentan por su
+    // entityAmount, por eso se suman en memoria (COALESCE no está en groupBy de Prisma).
+    const paymentRows = await prisma.transaction.findMany({
       where: { userId, debtId: { in: debts.map((d) => d.id) } },
-      _sum: { amount: true },
+      select: { debtId: true, amount: true, entityAmount: true },
     });
-    const paidMap = new Map(
-      paymentSums
-        .filter((p): p is typeof p & { debtId: string } => p.debtId !== null)
-        .map((p) => [p.debtId, p._sum.amount?.toNumber() ?? 0]),
-    );
-    res.json(debts.map((debt) => withDerived(debt, paidMap.get(debt.id) ?? 0)));
+    const paymentsByDebt = new Map<string, typeof paymentRows>();
+    for (const row of paymentRows) {
+      if (!row.debtId) continue;
+      const list = paymentsByDebt.get(row.debtId) ?? [];
+      list.push(row);
+      paymentsByDebt.set(row.debtId, list);
+    }
+    res.json(debts.map((debt) => withDerived(debt, sumEntityAmounts(paymentsByDebt.get(debt.id) ?? []))));
   }),
 );
 
@@ -108,7 +123,7 @@ router.get(
       include: { category: true },
       orderBy: { date: 'desc' },
     });
-    const paid = payments.reduce((sum, p) => sum + p.amount.toNumber(), 0);
+    const paid = sumEntityAmounts(payments);
     const plan = planFromDebt(existing);
     res.json({
       ...withDerived(existing, paid),
@@ -130,8 +145,15 @@ router.post(
     });
     if (planError) throw new HttpError(400, planError);
     await assertCategoryOwned(req.auth!.userId, input.categoryId);
+    // Default de moneda: la base del usuario (spec 19 fase B) — el default estático "ARS"
+    // de la columna es solo el backfill de deudas preexistentes.
+    const currency =
+      input.currency ??
+      (await prisma.user.findUnique({ where: { id: req.auth!.userId }, select: { baseCurrency: true } }))
+        ?.baseCurrency ??
+      'ARS';
     const debt = await prisma.debt.create({
-      data: { ...input, userId: req.auth!.userId },
+      data: { ...input, currency, userId: req.auth!.userId },
       include: { category: true },
     });
     res.status(201).json(withDerived(debt, 0));
@@ -145,6 +167,18 @@ router.put(
     const existing = await prisma.debt.findFirst({ where: { id: req.params.id, userId: req.auth!.userId } });
     if (!existing) throw new HttpError(404, 'Deuda no encontrada');
     if (input.categoryId !== undefined) await assertCategoryOwned(req.auth!.userId, input.categoryId);
+
+    // Regla dura (spec 19 fase B, espejo de Account.currency): la moneda es inmutable con
+    // pagos registrados — cambiarla reinterpretaría el saldo y los montos ya convertidos.
+    if (input.currency !== undefined && input.currency !== existing.currency) {
+      const paymentCount = await prisma.transaction.count({ where: { debtId: existing.id } });
+      if (paymentCount > 0) {
+        throw new HttpError(
+          400,
+          'No se puede cambiar la moneda: la deuda ya tiene pagos registrados en su moneda original.',
+        );
+      }
+    }
 
     // Coherencia de cuotas sobre los valores efectivos (lo enviado mergeado con lo existente).
     // Nota (spec 17): editar count/monto/primer vencimiento regenera el cronograma derivado —
@@ -193,6 +227,12 @@ router.delete(
  * Registra un pago parcial: crea la Transaction vinculada y salda la deuda si el saldo llega a 0.
  * `accountId` y `date` son opcionales: default cuenta por defecto del usuario y fecha actual
  * (mismo patrón que POST /api/recurring/:id/pay).
+ *
+ * `amount` está SIEMPRE en la moneda de la cuenta elegida (la transacción vive en esa
+ * moneda). Si difiere de la moneda de la deuda, se convierte con la cotización vigente y el
+ * resultado se persiste en `entityAmount`: el saldo de la deuda queda fijado al TC del día
+ * del pago y no flota si el TC se mueve después (spec 19, fase B). Sin cotización cargada
+ * se rechaza con error claro en vez de adivinar.
  */
 router.post(
   '/:id/payments',
@@ -202,23 +242,43 @@ router.post(
     if (!existing) throw new HttpError(404, 'Deuda no encontrada');
     if (existing.settledAt) throw new HttpError(400, 'La deuda ya está saldada');
 
+    const account = await resolveAccount(req.auth!.userId, input.accountId);
+    let entityAmount: number | null = null;
+    if (account.currency !== existing.currency) {
+      const converted = convertPaymentAmount(
+        input.amount,
+        account.currency,
+        existing.currency,
+        await getRateMap(req.auth!.userId),
+      );
+      if (converted === null) {
+        throw new HttpError(
+          400,
+          `No hay cotización cargada para convertir ${account.currency} a ${existing.currency}. Cargala en Inversiones y volvé a intentar.`,
+        );
+      }
+      entityAmount = converted;
+    }
+    // Monto que impacta el saldo de la deuda, en su moneda.
+    const debtAmount = entityAmount ?? input.amount;
+
     const paidSoFar = await getPaidAmount(existing.id);
     const balance = remainingBalance(existing.totalAmount.toNumber(), paidSoFar);
-    if (input.amount > balance) throw new HttpError(400, 'El monto supera el saldo restante');
+    if (debtAmount > balance) throw new HttpError(400, 'El monto supera el saldo restante');
 
     const type = existing.direction === 'I_OWE' ? 'EXPENSE' : 'INCOME';
-    const newRemaining = remainingBalance(existing.totalAmount.toNumber(), paidSoFar + input.amount);
-    const accountId = await resolveAccountId(req.auth!.userId, input.accountId);
+    const newRemaining = remainingBalance(existing.totalAmount.toNumber(), paidSoFar + debtAmount);
 
     const [transaction, debt] = await prisma.$transaction([
       prisma.transaction.create({
         data: {
           type,
           amount: input.amount,
+          entityAmount,
           date: input.date ?? new Date(),
           note: `Pago de deuda: ${existing.counterparty}`,
           categoryId: existing.categoryId,
-          accountId,
+          accountId: account.id,
           debtId: existing.id,
           userId: req.auth!.userId,
         },
@@ -239,7 +299,7 @@ router.post(
 
     res.status(201).json({
       transaction: serialize(transaction),
-      debt: withDerived(debt, Math.max(0, paidSoFar + input.amount)),
+      debt: withDerived(debt, Math.max(0, paidSoFar + debtAmount)),
     });
   }),
 );

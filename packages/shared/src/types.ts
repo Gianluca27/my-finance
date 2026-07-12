@@ -54,6 +54,7 @@ export interface Category {
 export interface Transaction {
   id: string;
   type: TransactionType;
+  /** Monto en la moneda de la cuenta (`accountId`). */
   amount: number;
   date: string;
   note: string | null;
@@ -62,6 +63,10 @@ export interface Transaction {
   accountId: string;
   debtId: string | null;
   goalId: string | null;
+  /** Solo pagos de deuda / aportes-retiros de meta cross-currency: monto que impactó en la
+   * entidad vinculada, en la moneda de la deuda/meta, fijado al TC del día de la operación.
+   * Null (o ausente en respuestas viejas) = la cuenta y la entidad comparten moneda. */
+  entityAmount?: number | null;
   recurringId: string | null;
   /** MIME del recibo adjunto, o null si no tiene. Los bytes se sirven aparte. */
   receiptMime: string | null;
@@ -118,8 +123,14 @@ export interface Debt {
   counterparty: string;
   description: string | null;
   totalAmount: number;
-  /** Calculado: totalAmount - suma de pagos vinculados. No se persiste. */
+  /** Moneda de la deuda (código libre, ej: ARS, USD): totalAmount, installmentAmount y
+   * remainingBalance están en esta moneda. Inmutable una vez que hay pagos registrados. */
+  currency: string;
+  /** Calculado: totalAmount - suma de pagos vinculados (los cross-currency cuentan por su
+   * monto convertido al TC del día del pago). No se persiste. En la moneda de la deuda. */
   remainingBalance: number;
+  /** Calculado: true si tiene pagos vinculados (la moneda ya no se puede cambiar). */
+  hasPayments: boolean;
   /** Vencimiento opcional (ISO). Solo se usa la parte de fecha. */
   dueDate: string | null;
   /** Cantidad de cuotas (null = deuda simple sin cronograma). */
@@ -458,10 +469,22 @@ export interface DashboardCurrency {
 }
 
 export interface DebtsSummary {
-  /** Suma de remainingBalance de deudas activas (no saldadas) con direction I_OWE. */
+  /** Suma de remainingBalance de deudas activas (no saldadas) con direction I_OWE,
+   * consolidada a la moneda base del usuario (spec 19, fase B). */
   totalIOwe: number;
-  /** Suma de remainingBalance de deudas activas (no saldadas) con direction OWED_TO_ME. */
+  /** Suma de remainingBalance de deudas activas (no saldadas) con direction OWED_TO_ME,
+   * consolidada a la moneda base del usuario. */
   totalOwedToMe: number;
+  /** Moneda base del usuario: los totales están expresados en ella. */
+  baseCurrency: string;
+  /** true si algún saldo entró convertido desde otra moneda (la UI muestra "≈"). */
+  converted: boolean;
+  /** Monedas de deuda sin cotización cargada, excluidas de los totales. */
+  missingRates: string[];
+  /** Desglose de "Debés" por moneda de deuda (montos originales). */
+  iOweByCurrency: CurrencyAmount[];
+  /** Desglose de "Te deben" por moneda de deuda (montos originales). */
+  owedToMeByCurrency: CurrencyAmount[];
 }
 
 /** Patrimonio neto a fin de un mes "YYYY-MM" (saldos iniciales + ingresos - gastos
@@ -484,8 +507,9 @@ export interface DashboardData {
   /** Total de movimientos del mes (incluye aportes/retiros de metas, a diferencia de
    * monthIncome/monthExpense). Alimenta el footnote de Reportes sin pedir un listado aparte. */
   monthTransactionCount: number;
-  /** Ahorro neto en metas del mes (aportes - retiros). No está incluido en monthExpense/monthIncome:
-   * se muestra como línea propia ("Ahorro en metas") para que la tasa de ahorro no lo cuente como gasto. */
+  /** Ahorro neto en metas del mes (aportes - retiros), consolidado a moneda base (fase B).
+   * No está incluido en monthExpense/monthIncome: se muestra como línea propia ("Ahorro en
+   * metas") para que la tasa de ahorro no lo cuente como gasto. */
   goalContributions: number;
   expensesByCategory: CategorySummary[];
   monthlyComparison: MonthlySummary[];
@@ -692,6 +716,8 @@ export interface DebtInput {
   counterparty: string;
   description?: string | null;
   totalAmount: number;
+  /** Moneda de la deuda. Default: la moneda base del usuario. Solo editable sin pagos. */
+  currency?: string;
   categoryId?: string | null;
   /** Vencimiento opcional como `YYYY-MM-DD` o null. */
   dueDate?: string | null;
@@ -711,20 +737,28 @@ export interface Goal {
   id: string;
   name: string;
   targetAmount: number;
+  /** Moneda de la meta (código libre, ej: ARS, USD): targetAmount, saved y remaining están
+   * en esta moneda. Inmutable una vez que hay aportes o retiros registrados. */
+  currency: string;
   targetDate: string | null;
   color: string;
   icon: string | null;
   achievedAt: string | null;
-  /** Calculado: suma de los aportes vinculados. No se persiste. */
+  /** Calculado: aportes menos retiros vinculados (los cross-currency cuentan por su monto
+   * convertido al TC del día). No se persiste. En la moneda de la meta. */
   saved: number;
   /** Calculado: targetAmount - saved (mínimo 0). No se persiste. */
   remaining: number;
+  /** Calculado: true si tiene aportes o retiros vinculados (la moneda ya no se puede cambiar). */
+  hasMovements: boolean;
   createdAt: string;
 }
 
 export interface GoalInput {
   name: string;
   targetAmount: number;
+  /** Moneda de la meta. Default: la moneda base del usuario. Solo editable sin movimientos. */
+  currency?: string;
   targetDate?: string | null;
   color?: string;
   icon?: string | null;
@@ -732,7 +766,8 @@ export interface GoalInput {
 
 export type GoalUpdateInput = Partial<GoalInput>;
 
-/** Body de POST /:id/withdrawals. `amount` no puede superar lo ahorrado (`saved`). */
+/** Body de POST /:id/withdrawals. `amount` está en la moneda de la cuenta destino; su
+ * equivalente en la moneda de la meta no puede superar lo ahorrado (`saved`). */
 export interface GoalWithdrawalInput {
   amount: number;
   /** Cuenta destino del retiro. Default: cuenta por defecto del usuario. */

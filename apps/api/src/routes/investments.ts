@@ -314,6 +314,20 @@ function assertRateEditable(currency: string): void {
   }
 }
 
+/** Cotizaciones vigentes del usuario. Liviano: lo usan los modales de pago/aporte
+ * cross-currency (deudas/metas, spec 19 fase B) para previsualizar la conversión
+ * sin traer el portafolio completo de GET /api/investments. */
+router.get(
+  '/rates',
+  asyncHandler(async (req, res) => {
+    const rates = await prisma.exchangeRate.findMany({
+      where: { userId: req.auth!.userId },
+      orderBy: { currency: 'asc' },
+    });
+    res.json(serialize(rates));
+  }),
+);
+
 router.put(
   '/rates',
   asyncHandler(async (req, res) => {

@@ -156,6 +156,11 @@ model Transaction {
   goal        Goal?             @relation(fields: [goalId], references: [id], onDelete: SetNull)
   recurringId String?
   recurring   RecurringExpense? @relation(fields: [recurringId], references: [id], onDelete: SetNull)
+  /// Solo pagos de deuda / aportes-retiros de meta cross-currency (spec 19, fase B):
+  /// monto que impactó en la entidad vinculada, en la moneda de la deuda/meta, convertido
+  /// al TC del día de la operación. Se persiste para que el saldo de la entidad no flote
+  /// con el TC posterior. Null = la cuenta y la entidad comparten moneda (vale `amount`).
+  entityAmount Decimal?         @db.Decimal(12, 2)
   /// MIME del recibo adjunto (flag liviano). Los bytes viven en el modelo Receipt aparte.
   receiptMime String?
   receipt     Receipt?
@@ -244,6 +249,10 @@ model Debt {
   counterparty    String
   description     String?
   totalAmount     Decimal       @db.Decimal(12, 2)
+  /// Moneda de la deuda (código libre en mayúsculas, ej: ARS, USD). totalAmount,
+  /// installmentAmount y el saldo restante están en esta moneda. Inmutable una vez
+  /// que hay pagos registrados (regla dura, spec 19 fase B).
+  currency        String        @default("ARS")
   /// Fecha de vencimiento opcional (solo día). Se usa para resaltar deudas vencidas.
   dueDate         DateTime?
   /// Cantidad de cuotas (null = deuda simple sin cronograma). El cronograma se deriva, nunca se persiste (spec 17).
@@ -285,6 +294,10 @@ model Goal {
   id           String    @id @default(cuid())
   name         String
   targetAmount Decimal   @db.Decimal(12, 2)
+  /// Moneda de la meta (código libre en mayúsculas, ej: ARS, USD). targetAmount y el
+  /// ahorro acumulado están en esta moneda. Inmutable una vez que hay aportes o
+  /// retiros registrados (regla dura, spec 19 fase B).
+  currency     String    @default("ARS")
   /// Fecha objetivo opcional para estimar ritmo de ahorro
   targetDate   DateTime?
   color        String    @default("#6366f1")

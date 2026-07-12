@@ -746,43 +746,67 @@ const priceAtQuerySchema = z.object({
  * `notes`/`corp` (sin endpoint histórico) y los activos manuales sólo pueden
  * resolver contra lo que ya haya en la tabla.
  */
+async function resolveHistoricalMatch(
+  existing: Investment,
+  target: Date,
+): Promise<{ price: number; date: Date } | null> {
+  const snapshots = await prisma.investmentPriceSnapshot.findMany({
+    where: { investmentId: existing.id },
+    select: { price: true, date: true },
+  });
+  let match = closestPriceMatch(
+    snapshots.map((s) => ({ date: s.date, price: s.price.toNumber() })),
+    target,
+  );
+
+  if (!match && existing.providerSymbol && existing.providerSource) {
+    const provider = getProvider(existing.providerSource as ProviderSource);
+    if (provider.enabled) {
+      const closes = await provider
+        .fetchDailyCloses(toRef(existing.providerSymbol, existing.providerMarket))
+        .catch((err) => {
+          console.warn(`[investments] Falló el histórico en vivo para ${existing.providerSymbol}:`, err);
+          return [] as DailyClose[];
+        });
+      if (closes.length > 0) {
+        const existingDays = new Set(snapshots.map((s) => dayKey(s.date)));
+        const toInsert = closes.filter((c) => !existingDays.has(dayKey(c.date)));
+        if (toInsert.length > 0) {
+          await prisma.investmentPriceSnapshot.createMany({
+            data: toInsert.map((c) => ({ investmentId: existing.id, price: c.price, date: c.date })),
+          });
+        }
+        match = closestPriceMatch(closes, target);
+      }
+    }
+  }
+
+  return match;
+}
+
+/**
+ * Precio automático para una operación de compra/venta en un activo vinculado a
+ * proveedor: si la fecha es hoy usa `currentPrice` (más fresco que el snapshot
+ * diario), si es pasada resuelve contra el histórico. `null` si no hay dato
+ * disponible (p. ej. notes/corp sin OHLC todavía) — en ese caso el precio se
+ * carga a mano, el servidor no lo fuerza.
+ */
+async function resolveAutoOperationPrice(existing: Investment, opDate: Date): Promise<number | null> {
+  if (!existing.providerSymbol) return null;
+  if (dayKey(opDate) === dayKey(new Date())) {
+    return existing.currentPrice ? existing.currentPrice.toNumber() : null;
+  }
+  const match = await resolveHistoricalMatch(existing, opDate);
+  return match ? match.price : null;
+}
+
 router.get(
   '/:id/price-at',
   asyncHandler(async (req, res) => {
     const { date } = priceAtQuerySchema.parse(req.query);
     const existing = await findOwned(req.auth!.userId, req.params.id);
     const target = new Date(`${date}T00:00:00.000Z`);
-
-    const snapshots = await prisma.investmentPriceSnapshot.findMany({
-      where: { investmentId: existing.id },
-      select: { price: true, date: true },
-    });
-    let match = closestPriceMatch(
-      snapshots.map((s) => ({ date: s.date, price: s.price.toNumber() })),
-      target,
-    );
-
-    if (!match && existing.providerSymbol && existing.providerSource) {
-      const provider = getProvider(existing.providerSource as ProviderSource);
-      if (provider.enabled) {
-        const closes = await provider
-          .fetchDailyCloses(toRef(existing.providerSymbol, existing.providerMarket))
-          .catch((err) => {
-            console.warn(`[investments] Falló el histórico en vivo para ${existing.providerSymbol}:`, err);
-            return [] as DailyClose[];
-          });
-        if (closes.length > 0) {
-          const existingDays = new Set(snapshots.map((s) => dayKey(s.date)));
-          const toInsert = closes.filter((c) => !existingDays.has(dayKey(c.date)));
-          if (toInsert.length > 0) {
-            await prisma.investmentPriceSnapshot.createMany({
-              data: toInsert.map((c) => ({ investmentId: existing.id, price: c.price, date: c.date })),
-            });
-          }
-          match = closestPriceMatch(closes, target);
-        }
-      }
-    }
+    const match = await resolveHistoricalMatch(existing, target);
 
     res.json({
       price: match ? match.price : null,
@@ -848,6 +872,14 @@ router.post(
     assertOperationValid(input, opDate, ops, now);
 
     const stored = opStorageFields(input);
+    // Activo vinculado a proveedor: el precio de compra/venta lo resuelve el
+    // servidor, nunca confía en el que mande el cliente (mismo criterio que
+    // priceFactor). Si no hay precio automático para esa fecha, se acepta el
+    // que cargó el usuario a mano.
+    if (stored.type !== 'RENTA') {
+      const autoPrice = await resolveAutoOperationPrice(existing, opDate);
+      if (autoPrice !== null) stored.unitPrice = autoPrice;
+    }
     // Acreditar la renta como INCOME en una cuenta (opcional, default off). Sin
     // categoría: `checkBudgetAlert` sólo mira gastos con categoría, así que nunca dispara alerta.
     const credit =
@@ -904,6 +936,11 @@ router.put(
     assertOperationValid(input, opDate, others, operation.createdAt);
 
     const stored = opStorageFields(input);
+    // Ídem alta: el servidor resuelve el precio si el activo está vinculado y hay dato.
+    if (stored.type !== 'RENTA') {
+      const autoPrice = await resolveAutoOperationPrice(existing, opDate);
+      if (autoPrice !== null) stored.unitPrice = autoPrice;
+    }
     // La edición no toca el INCOME que se hubiera acreditado al alta: no hay vínculo
     // persistido entre operación y movimiento (acreditar es una conveniencia del alta).
     await prisma.investmentOperation.update({

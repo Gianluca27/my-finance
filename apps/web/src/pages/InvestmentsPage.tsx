@@ -258,6 +258,9 @@ export function InvestmentsPage() {
   const [opPriceLoading, setOpPriceLoading] = useState(false);
   // Último precio autocompletado: si el usuario lo pisó a mano, no lo volvemos a tocar.
   const opPriceAutoRef = useRef<string | null>(null);
+  // Precio automático resuelto para la fecha elegida (null = sin dato). Si el activo
+  // está vinculado a un proveedor y hay dato, el campo de precio se bloquea con este valor.
+  const [opAutoPrice, setOpAutoPrice] = useState<string | null>(null);
 
   // Formulario de renta (dividendo/cupón/amortización). rentaOpId = edición; null = alta.
   const [rentaTarget, setRentaTarget] = useState<Investment | null>(null);
@@ -329,18 +332,19 @@ export function InvestmentsPage() {
     };
   }, [symbolQuery, formSearchKind, searchAvailable]);
 
-  // Autocompleta el precio de la operación al elegir una fecha pasada, sin pisar
-  // un precio que el usuario ya haya tipeado a mano.
+  // Resuelve el precio automático para la fecha elegida: autocompleta el precio de
+  // altas nuevas (sin pisar lo que el usuario ya tipeó a mano) y, en cualquier caso
+  // (alta o edición), determina si corresponde bloquear el campo de precio porque el
+  // activo está vinculado a un proveedor y hay dato disponible para esa fecha.
   useEffect(() => {
     if (!opTarget) return;
-    // Editando una operación existente: no autocompletar (pisaría el precio real cargado).
-    if (opEditId) return;
     const todayStr = new Date().toISOString().slice(0, 10);
     if (opDate === todayStr) {
       setOpPriceLoading(false);
       setOpPriceHint(null);
       const auto = opTarget.currentPrice !== null ? String(opTarget.currentPrice) : null;
-      if (auto !== null && (opPrice === '' || opPrice === opPriceAutoRef.current)) {
+      setOpAutoPrice(auto);
+      if (!opEditId && auto !== null && (opPrice === '' || opPrice === opPriceAutoRef.current)) {
         setOpPrice(auto);
       }
       opPriceAutoRef.current = auto;
@@ -354,7 +358,8 @@ export function InvestmentsPage() {
         const res = await api.getInvestmentPriceAtDate(opTarget.id, opDate);
         if (cancelled) return;
         if (res.price !== null && res.date !== null) {
-          if (opPrice === '' || opPrice === opPriceAutoRef.current) {
+          setOpAutoPrice(String(res.price));
+          if (!opEditId && (opPrice === '' || opPrice === opPriceAutoRef.current)) {
             setOpPrice(String(res.price));
           }
           opPriceAutoRef.current = String(res.price);
@@ -362,11 +367,15 @@ export function InvestmentsPage() {
             `${res.exact ? 'Cierre' : 'Cierre más cercano'} · ${formatDate(res.date)}: ${formatAsset(res.price, opTarget.currency)}`,
           );
         } else {
+          setOpAutoPrice(null);
           opPriceAutoRef.current = null;
           setOpPriceHint('Sin dato histórico para esta fecha: ingresá el precio manualmente.');
         }
       } catch {
-        if (!cancelled) setOpPriceHint(null);
+        if (!cancelled) {
+          setOpAutoPrice(null);
+          setOpPriceHint(null);
+        }
       } finally {
         if (!cancelled) setOpPriceLoading(false);
       }
@@ -375,9 +384,9 @@ export function InvestmentsPage() {
       cancelled = true;
       clearTimeout(handle);
     };
-    // Sólo re-dispara por cambio de fecha/activo: opPrice se lee al momento del pedido, no gatilla el efecto.
+    // Sólo re-dispara por cambio de fecha/activo/edición: opPrice se lee al momento del pedido, no gatilla el efecto.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opDate, opTarget]);
+  }, [opDate, opTarget, opEditId]);
 
   function openAssetForm(form: AssetFormState) {
     setSymbolQuery('');
@@ -514,6 +523,7 @@ export function InvestmentsPage() {
     const auto = inv.currentPrice !== null ? String(inv.currentPrice) : null;
     setOpPrice(auto ?? '');
     opPriceAutoRef.current = auto;
+    setOpAutoPrice(auto);
     setOpPriceHint(null);
     setOpDate(new Date().toISOString().slice(0, 10));
     setOpNote('');
@@ -530,11 +540,15 @@ export function InvestmentsPage() {
     if (!opTarget) return;
     const target = opTarget;
     const editId = opEditId;
+    // Si el precio está bloqueado (activo vinculado con precio automático para la
+    // fecha), se manda ese valor; el servidor lo vuelve a resolver igual, esto es
+    // sólo para que el total mostrado y el enviado coincidan.
+    const price = opEffectivePrice;
     run(async () => {
       const input = {
         type: opType,
         quantity: Number(opQuantity),
-        unitPrice: Number(opPrice),
+        unitPrice: Number(price),
         date: opDate,
         note: opNote || null,
       } as const;
@@ -609,6 +623,7 @@ export function InvestmentsPage() {
     setOpQuantity(String(op.quantity));
     setOpPrice(String(op.unitPrice));
     opPriceAutoRef.current = String(op.unitPrice);
+    setOpAutoPrice(null);
     setOpPriceHint(null);
     setOpDate(op.date.slice(0, 10));
     setOpNote(op.note ?? '');
@@ -922,10 +937,14 @@ export function InvestmentsPage() {
     );
   }
 
+  // Bloqueado = activo vinculado a proveedor + precio automático disponible para la fecha elegida.
+  const opPriceLocked = Boolean(opTarget?.providerSymbol) && opAutoPrice !== null;
+  const opEffectivePrice = opPriceLocked ? (opAutoPrice as string) : opPrice;
+
   // En renta fija el precio cotiza cada 100 nominales: el importe se divide por el factor.
   const opTotal =
-    opTarget && Number(opQuantity) > 0 && Number(opPrice) > 0
-      ? (Number(opQuantity) * Number(opPrice)) / opTarget.priceFactor
+    opTarget && Number(opQuantity) > 0 && Number(opEffectivePrice) > 0
+      ? (Number(opQuantity) * Number(opEffectivePrice)) / opTarget.priceFactor
       : null;
 
   return (
@@ -939,141 +958,90 @@ export function InvestmentsPage() {
         </div>
       )}
 
-      <div className="card" style={{ marginBottom: 14 }}>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 10,
-            marginBottom: 12,
-            flexWrap: 'wrap',
-          }}
-        >
-          <div className="mf-label mf-label--dot" style={{ marginBottom: 0 }}>
-            Curva del portafolio
+      <div className="mf-inv-row-top" style={{ marginBottom: 14 }}>
+        <div className="card">
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 10,
+              marginBottom: 12,
+              flexWrap: 'wrap',
+            }}
+          >
+            <div className="mf-label mf-label--dot" style={{ marginBottom: 0 }}>
+              Curva del portafolio
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {HISTORY_RANGES.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  className={historyMonths === m ? 'accent-soft' : 'ghost'}
+                  onClick={() => setHistoryMonths(m)}
+                >
+                  {m}M
+                </button>
+              ))}
+            </div>
           </div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            {HISTORY_RANGES.map((m) => (
-              <button
-                key={m}
-                type="button"
-                className={historyMonths === m ? 'accent-soft' : 'ghost'}
-                onClick={() => setHistoryMonths(m)}
+          {curve === null ? (
+            <p className="muted" style={{ fontSize: 12.5 }}>
+              Necesitás al menos dos días con precios registrados para ver la evolución del portafolio.
+            </p>
+          ) : (
+            <>
+              <svg
+                viewBox={`0 0 ${curve.W} ${curve.H}`}
+                width="100%"
+                height={curve.H}
+                preserveAspectRatio="none"
+                style={{ display: 'block' }}
               >
-                {m}M
-              </button>
-            ))}
-          </div>
-        </div>
-        {curve === null ? (
-          <p className="muted" style={{ fontSize: 12.5 }}>
-            Necesitás al menos dos días con precios registrados para ver la evolución del portafolio.
-          </p>
-        ) : (
-          <>
-            <svg
-              viewBox={`0 0 ${curve.W} ${curve.H}`}
-              width="100%"
-              height={curve.H}
-              preserveAspectRatio="none"
-              style={{ display: 'block' }}
-            >
-              <defs>
-                <linearGradient id="invCurveFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.25" />
-                  <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
-                </linearGradient>
-              </defs>
-              <path d={curve.area} fill="url(#invCurveFill)" />
-              <path
-                d={curve.line}
-                fill="none"
-                stroke="var(--accent)"
-                strokeWidth={2}
-                strokeLinejoin="round"
-                strokeLinecap="round"
-                vectorEffect="non-scaling-stroke"
-              />
-              {curve.investedY !== null && (
-                <line
-                  x1={0}
-                  y1={curve.investedY}
-                  x2={curve.W}
-                  y2={curve.investedY}
-                  stroke="var(--text-4)"
-                  strokeWidth={1}
-                  strokeDasharray="4 4"
+                <defs>
+                  <linearGradient id="invCurveFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.25" />
+                    <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                <path d={curve.area} fill="url(#invCurveFill)" />
+                <path
+                  d={curve.line}
+                  fill="none"
+                  stroke="var(--accent)"
+                  strokeWidth={2}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
                   vectorEffect="non-scaling-stroke"
                 />
-              )}
-            </svg>
-            <div
-              className="muted"
-              style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, marginTop: 2 }}
-            >
-              <span>{formatDate(curve.first)}</span>
-              {(history?.invested ?? 0) > 0 && (
-                <span className="mono">– – invertido {formatMoney(history!.invested)}</span>
-              )}
-              <span>{formatDate(curve.last)}</span>
-            </div>
-          </>
-        )}
-      </div>
-
-      {(providers.twelveData || providers.data912) && (
-        <div
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, marginBottom: 12 }}
-        >
-          {lastPriceUpdate !== null && (
-            <span className="muted" style={{ fontSize: 12.5 }}>
-              Actualizado {formatAgo(lastPriceUpdate)}
-            </span>
-          )}
-          <button type="button" className="secondary" disabled={refreshing} onClick={onRefreshPrices}>
-            {refreshing ? 'Actualizando…' : 'Actualizar precios'}
-          </button>
-        </div>
-      )}
-
-      <div className="mf-grid-3" style={{ marginBottom: 14 }}>
-        <div className="mf-hero-card">
-          <div className="mf-hero-glow" />
-          <div className="mf-hero-body">
-            <div className="mf-label">Valor del portafolio</div>
-            <div className="mf-figure mf-figure--stat" style={{ fontSize: 32 }}>
-              {formatMoney(summary?.totalValue ?? 0)}
-            </div>
-          </div>
-        </div>
-        <div className="card">
-          <div className="mf-label">Invertido</div>
-          <div className="mf-figure mf-figure--stat" style={{ fontSize: 32 }}>
-            {formatMoney(summary?.totalInvested ?? 0)}
-          </div>
-        </div>
-        <div className="card">
-          <div className="mf-label">Resultado</div>
-          <div className="mf-figure mf-figure--stat" style={{ fontSize: 32, color: pnlColor(summary?.pnl ?? 0) }}>
-            {(summary?.pnl ?? 0) >= 0 ? '+' : ''}
-            {formatMoney(summary?.pnl ?? 0)}
-          </div>
-          {summary && summary.totalInvested > 0 && (
-            <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>
-              {summary.pnlPercent >= 0 ? '+' : ''}
-              {summary.pnlPercent}% sobre lo invertido
-            </div>
-          )}
-          {summary?.tir != null && (
-            <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>
-              TIR anualizada {formatTir(summary.tir)}
-            </div>
+                {curve.investedY !== null && (
+                  <line
+                    x1={0}
+                    y1={curve.investedY}
+                    x2={curve.W}
+                    y2={curve.investedY}
+                    stroke="var(--text-4)"
+                    strokeWidth={1}
+                    strokeDasharray="4 4"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                )}
+              </svg>
+              <div
+                className="muted"
+                style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, marginTop: 2 }}
+              >
+                <span>{formatDate(curve.first)}</span>
+                {(history?.invested ?? 0) > 0 && (
+                  <span className="mono">– – invertido {formatMoney(history!.invested)}</span>
+                )}
+                <span>{formatDate(curve.last)}</span>
+              </div>
+            </>
           )}
         </div>
-      </div>
 
-      <div className="mf-grid-2" style={{ marginBottom: 14 }}>
         <div className="card">
           <div className="mf-label mf-label--dot" style={{ marginBottom: 14 }}>
             Distribución por tipo
@@ -1119,6 +1087,59 @@ export function InvestmentsPage() {
               </div>
             </div>
           )}
+        </div>
+      </div>
+
+      {(providers.twelveData || providers.data912) && (
+        <div
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, marginBottom: 12 }}
+        >
+          {lastPriceUpdate !== null && (
+            <span className="muted" style={{ fontSize: 12.5 }}>
+              Actualizado {formatAgo(lastPriceUpdate)}
+            </span>
+          )}
+          <button type="button" className="secondary" disabled={refreshing} onClick={onRefreshPrices}>
+            {refreshing ? 'Actualizando…' : 'Actualizar precios'}
+          </button>
+        </div>
+      )}
+
+      <div className="mf-inv-row-stats" style={{ marginBottom: 14 }}>
+        <div className="mf-inv-stats-col">
+          <div className="mf-hero-card">
+            <div className="mf-hero-glow" />
+            <div className="mf-hero-body">
+              <div className="mf-label">Valor del portafolio</div>
+              <div className="mf-figure mf-figure--stat" style={{ fontSize: 32 }}>
+                {formatMoney(summary?.totalValue ?? 0)}
+              </div>
+            </div>
+          </div>
+          <div className="card">
+            <div className="mf-label">Invertido</div>
+            <div className="mf-figure mf-figure--stat" style={{ fontSize: 32 }}>
+              {formatMoney(summary?.totalInvested ?? 0)}
+            </div>
+          </div>
+          <div className="card">
+            <div className="mf-label">Resultado</div>
+            <div className="mf-figure mf-figure--stat" style={{ fontSize: 32, color: pnlColor(summary?.pnl ?? 0) }}>
+              {(summary?.pnl ?? 0) >= 0 ? '+' : ''}
+              {formatMoney(summary?.pnl ?? 0)}
+            </div>
+            {summary && summary.totalInvested > 0 && (
+              <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>
+                {summary.pnlPercent >= 0 ? '+' : ''}
+                {summary.pnlPercent}% sobre lo invertido
+              </div>
+            )}
+            {summary?.tir != null && (
+              <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>
+                TIR anualizada {formatTir(summary.tir)}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="card">
@@ -1556,15 +1577,22 @@ export function InvestmentsPage() {
                   type="number"
                   min="0.00000001"
                   step="any"
-                  value={opPrice}
+                  value={opEffectivePrice}
                   onChange={(e) => setOpPrice(e.target.value)}
+                  disabled={opPriceLocked}
                   required
                 />
               </label>
             </div>
-            {(opPriceLoading || opPriceHint) && (
+            {(opPriceLoading || opPriceLocked || opPriceHint) && (
               <p className="muted" style={{ fontSize: 12, margin: 0 }}>
-                {opPriceLoading ? 'Buscando precio histórico…' : opPriceHint}
+                {opPriceLoading
+                  ? 'Buscando precio histórico…'
+                  : opPriceLocked
+                    ? `Precio automático desde ${
+                        opTarget.providerSource ? SOURCE_LABELS[opTarget.providerSource] : 'el proveedor'
+                      }. Desvinculá el activo para cargarlo a mano.`
+                    : opPriceHint}
               </p>
             )}
             {opType === 'VENTA' && (

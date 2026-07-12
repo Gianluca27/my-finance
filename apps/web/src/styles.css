@@ -1637,6 +1637,25 @@ td.num {
   gap: 14px;
 }
 
+/* Inversiones: curva angosta + distribución al lado (arriba), stats apiladas + cotizaciones al lado (abajo) */
+.mf-inv-row-top {
+  display: grid;
+  grid-template-columns: 62fr 38fr;
+  gap: 14px;
+}
+
+.mf-inv-row-stats {
+  display: grid;
+  grid-template-columns: 38fr 62fr;
+  gap: 14px;
+}
+
+.mf-inv-stats-col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
 /* Dashboard bento: 12 -> 6 -> 1 columnas */
 @media (max-width: 1300px) {
   .mf-dashboard {
@@ -1685,6 +1704,10 @@ td.num {
 
 @media (max-width: 1000px) {
   .mf-grid-2 {
+    grid-template-columns: 1fr;
+  }
+  .mf-inv-row-top,
+  .mf-inv-row-stats {
     grid-template-columns: 1fr;
   }
   .mf-dashboard {
